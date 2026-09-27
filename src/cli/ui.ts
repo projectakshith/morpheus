@@ -25,7 +25,10 @@ export class UI {
   }
 
   streamChunk(chunk: string) {
-    this.isThinking = false;
+    if (this.isThinking) {
+      console.log();
+      this.isThinking = false;
+    }
     this.lineBuffer += chunk;
     const lines = this.lineBuffer.split("\n");
     this.lineBuffer = lines.pop() ?? "";
@@ -56,7 +59,10 @@ export class UI {
 
   startStep(step: number) {
     this.flushStream();
-    this.isThinking = false;
+    if (this.isThinking) {
+      console.log();
+      this.isThinking = false;
+    }
     if (this.lastWasStream) {
       console.log();
       this.lastWasStream = false;
@@ -67,18 +73,17 @@ export class UI {
   }
 
   streamReasoning(chunk: string) {
-    if (this.verbose) {
-      process.stdout.write(pc.dim(chunk));
-      this.lastWasStream = true;
-    } else if (!this.isThinking) {
-      this.isThinking = true;
-      console.log(`  ${pc.dim("thinking...")}`);
-    }
+    this.isThinking = true;
+    process.stdout.write(pc.dim(chunk));
+    this.lastWasStream = true;
   }
 
   startTool(name: string, args: Record<string, unknown>) {
     this.flushStream();
-    this.isThinking = false;
+    if (this.isThinking) {
+      console.log();
+      this.isThinking = false;
+    }
 
     if (this.lastWasStream) {
       console.log();
@@ -112,12 +117,21 @@ export class UI {
       return;
     }
 
-    const maxLines = this.verbose ? 300 : 4;
+    const isDiff = lines.some((l) => l.startsWith("@@") || l.startsWith("---") || l.startsWith("+++"));
+    const maxLines = this.verbose ? 300 : isDiff ? 12 : 4;
     const preview = lines.slice(0, maxLines);
 
     if (lines.length > 0) {
       for (const line of preview) {
-        console.log(`    ${pc.dim("│")} ${pc.dim(line.slice(0, 160))}`);
+        if (line.startsWith("+") && !line.startsWith("+++")) {
+          console.log(`    ${pc.green("│")} ${pc.green(line.slice(0, 160))}`);
+        } else if (line.startsWith("-") && !line.startsWith("---")) {
+          console.log(`    ${pc.red("│")} ${pc.red(line.slice(0, 160))}`);
+        } else if (line.startsWith("@@")) {
+          console.log(`    ${pc.cyan("│")} ${pc.cyan(line.slice(0, 160))}`);
+        } else {
+          console.log(`    ${pc.dim("│")} ${pc.dim(line.slice(0, 160))}`);
+        }
       }
       if (lines.length > maxLines) {
         console.log(`    ${pc.dim("│")} ${pc.dim(`... (${lines.length - maxLines} more lines)`)}`);

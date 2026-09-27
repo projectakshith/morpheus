@@ -1,5 +1,6 @@
 import fs from "node:fs/promises";
-import { resolvePath, exists, detectLineEnding, normalizeLineEndings } from "../utils/filesystem";
+import { createPatch } from "diff";
+import { resolvePathWithFallbacks, exists, detectLineEnding, normalizeLineEndings } from "../utils/filesystem";
 import { similarity } from "../utils/levenshtein";
 import type { ToolResult } from "../core/types";
 
@@ -10,10 +11,8 @@ export interface EditFileParams {
   replaceAll?: boolean;
 }
 
-/**
- * Fallback fuzzy block finder when exact substring match fails.
- * Scans line windows for the highest similarity match above threshold.
- */
+/* Fallback fuzzy block finder when exact substring match fails.
+ * Scans line windows for the highest similarity match above threshold. */
 function findFuzzyMatch(
   sourceLines: string[],
   targetLines: string[],
@@ -52,7 +51,7 @@ export async function editFile(
   params: EditFileParams,
   cwd: string = process.cwd()
 ): Promise<ToolResult> {
-  const fullPath = resolvePath(params.filePath, cwd);
+  const fullPath = await resolvePathWithFallbacks(params.filePath, cwd);
 
   if (!(await exists(fullPath))) {
     throw new Error(`File not found: ${params.filePath}`);
@@ -108,7 +107,11 @@ export async function editFile(
 
   await fs.writeFile(fullPath, finalContent, "utf-8");
 
+  /* Generate clean unified diff */
+  const patch = createPatch(params.filePath, raw, finalContent, "", "", { context: 3 });
+  const patchLines = patch.split("\n").slice(4).join("\n").trim();
+
   return {
-    output: `Successfully applied edits to ${params.filePath}.`,
+    output: `Successfully applied edits to ${params.filePath}.\n\n${patchLines}`,
   };
 }

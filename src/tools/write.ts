@@ -1,6 +1,6 @@
 import fs from "node:fs/promises";
 import path from "node:path";
-import { resolvePath } from "../utils/filesystem";
+import { resolvePath, resolvePathWithFallbacks, exists } from "../utils/filesystem";
 import type { ToolResult } from "../core/types";
 
 export interface WriteFileParams {
@@ -12,7 +12,13 @@ export async function writeFile(
   params: WriteFileParams,
   cwd: string = process.cwd()
 ): Promise<ToolResult> {
-  const fullPath = resolvePath(params.filePath, cwd);
+  let fullPath = resolvePath(params.filePath, cwd);
+  if (!(await exists(fullPath))) {
+    const fallback = await resolvePathWithFallbacks(params.filePath, cwd);
+    if (await exists(fallback)) {
+      fullPath = fallback;
+    }
+  }
   const dir = path.dirname(fullPath);
 
   await fs.mkdir(dir, { recursive: true });
