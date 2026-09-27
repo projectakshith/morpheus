@@ -4,7 +4,7 @@
  * Morpheus CLI Entry Point
  */
 
-import { runCLI } from "../src/cli/index.js";
+import { runCLI } from "../src/cli/index";
 
 runCLI().catch((err: unknown) => {
   console.error(err);

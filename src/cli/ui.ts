@@ -1,23 +1,31 @@
 import pc from "picocolors";
-import { theme } from "./theme.js";
-import { MarkdownFormatter } from "./format.js";
+import { theme } from "./theme";
+import { MarkdownFormatter } from "./format";
+import type { TokenUsage } from "../core/types";
 
 export class UI {
   private lastWasStream = false;
   private lineBuffer = "";
   private formatter = new MarkdownFormatter();
+  private verbose = false;
+
+  constructor(options: { verbose?: boolean } = {}) {
+    this.verbose = Boolean(options.verbose);
+  }
 
   banner(version: string) {
     console.log();
     console.log(theme.brightGreen(" ◬ MORPHEUS ") + theme.dim(`v${version}`));
     console.log(theme.dim("   Agentic Coding Harness"));
+    if (this.verbose) {
+      console.log(theme.dim("   [Verbose mode active - full tool streams enabled]"));
+    }
     console.log();
   }
 
   streamChunk(chunk: string) {
     this.lineBuffer += chunk;
     const lines = this.lineBuffer.split("\n");
-    // All elements except the last one are complete lines
     this.lineBuffer = lines.pop() ?? "";
 
     for (const line of lines) {
@@ -73,15 +81,19 @@ export class UI {
     const lines = rawLines.filter((l) => l.trim().length > 0);
 
     if (isError) {
-      const errLines = lines.slice(0, 8);
+      const errLimit = this.verbose ? 50 : 8;
+      const errLines = lines.slice(0, errLimit);
       for (const line of errLines) {
-        console.log(`    ${pc.red("│")} ${pc.red(line.slice(0, 160))}`);
+        console.log(`    ${pc.red("│")} ${pc.red(line.slice(0, 200))}`);
+      }
+      if (lines.length > errLimit) {
+        console.log(`    ${pc.red("│")} ${pc.dim(`... (${lines.length - errLimit} more error lines)`)}`);
       }
       console.log(`    ${pc.red("✖")} ${pc.red("Execution failed")}\n`);
       return;
     }
 
-    const maxPreview = 8;
+    const maxPreview = this.verbose ? 50 : 8;
     const preview = lines.slice(0, maxPreview);
 
     if (lines.length > 0) {
@@ -98,6 +110,23 @@ export class UI {
       : "done";
 
     console.log(`    ${pc.green("✔")} ${pc.dim(summary)}\n`);
+  }
+
+  showUsage(usage: TokenUsage) {
+    if (usage.totalTokens === 0) return;
+    const inStr = pc.cyan(`${usage.promptTokens.toLocaleString()} in`);
+    const outStr = pc.cyan(`${usage.completionTokens.toLocaleString()} out`);
+    const totalStr = pc.dim(`(${usage.totalTokens.toLocaleString()} total API roundtrips)`);
+    console.log(`\n  ${pc.dim("⚡ Tokens:")} ${inStr} ${pc.dim("·")} ${outStr} ${totalStr}`);
+  }
+
+  showLog(logPath: string) {
+    console.log(`  ${pc.dim("📜 Session log:")} ${pc.cyan(logPath)}`);
+  }
+
+  stopped(reason = "Esc") {
+    this.flushStream();
+    console.log(`\n  ${pc.yellow("⚠")} ${pc.yellow(`Run stopped by user (${reason})`)}`);
   }
 
   error(message: string) {

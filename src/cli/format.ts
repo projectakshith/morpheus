@@ -19,7 +19,6 @@ export class MarkdownFormatter {
   processLine(raw: string): string[] {
     const trimmed = raw.trim();
 
-    // Check if line is part of a markdown table
     if (trimmed.startsWith("|") && trimmed.endsWith("|")) {
       this.tableBuffer.push(trimmed);
       return [];
@@ -27,13 +26,11 @@ export class MarkdownFormatter {
 
     const output: string[] = [];
 
-    // If we were buffering a table, flush it now
     if (this.tableBuffer.length > 0) {
       output.push(...this.renderTable(this.tableBuffer));
       this.tableBuffer = [];
     }
 
-    // Format single line
     const formatted = this.formatSingleLine(raw);
     if (formatted !== null) {
       output.push(formatted);
@@ -90,7 +87,6 @@ export class MarkdownFormatter {
 
     const output: string[] = [];
 
-    // Top border
     output.push(pc.dim("  ┌" + colWidths.map((w) => "─".repeat(w + 2)).join("┬") + "┐"));
 
     for (let r = 0; r < rows.length; r++) {
@@ -108,13 +104,11 @@ export class MarkdownFormatter {
 
       output.push(pc.dim("  │ ") + cells.join(pc.dim(" │ ")) + pc.dim(" │"));
 
-      // Header separator
       if (r === separatorIndex && r < rows.length - 1) {
         output.push(pc.dim("  ├" + colWidths.map((w) => "─".repeat(w + 2)).join("┼") + "┤"));
       }
     }
 
-    // Bottom border
     output.push(pc.dim("  └" + colWidths.map((w) => "─".repeat(w + 2)).join("┴") + "┘"));
 
     return output;
@@ -126,7 +120,6 @@ export class MarkdownFormatter {
   formatSingleLine(raw: string): string | null {
     const trimmed = raw.trim();
 
-    // 1. Code blocks
     if (trimmed.startsWith("```")) {
       if (this.inCodeBlock) {
         this.inCodeBlock = false;
@@ -144,12 +137,10 @@ export class MarkdownFormatter {
       return `  ${pc.dim("│")} ${raw}`;
     }
 
-    // 2. Horizontal rules
     if (/^(?:---|===|\*\*\*|___)\s*$/.test(trimmed)) {
       return pc.dim("  ────────────────────────────────────────");
     }
 
-    // 3. Headers
     const h1 = raw.match(/^#\s+(.+)$/);
     if (h1) return "\n" + pc.bold(pc.white(this.formatInline(h1[1]))) + "\n";
 
@@ -159,11 +150,9 @@ export class MarkdownFormatter {
     const h3 = raw.match(/^###+\s+(.+)$/);
     if (h3) return pc.bold(pc.cyan(this.formatInline(h3[1])));
 
-    // 4. Blockquote
     const bq = raw.match(/^>\s*(.+)$/);
     if (bq) return `  ${pc.dim("│")} ${pc.italic(this.formatInline(bq[1]))}`;
 
-    // 5. Bold numbered lists: e.g. **1. `morpheus`** or **1. morpheus**
     const boldNum = raw.match(/^(\s*)\*\*(\d+)\.\s*(.+?)\*\*(.*)$/);
     if (boldNum) {
       const indent = boldNum[1];
@@ -173,13 +162,11 @@ export class MarkdownFormatter {
       return `${indent}  ${pc.bold(pc.white(num + "."))} ${pc.bold(this.formatInline(title))}${this.formatInline(rest)}`;
     }
 
-    // 6. Standard numbered list: 1. item
     const num = raw.match(/^(\s*)(\d+)\.\s+(.+)$/);
     if (num) {
       return `${num[1]}  ${pc.bold(pc.white(num[2] + "."))} ${this.formatInline(num[3])}`;
     }
 
-    // 7. Unordered bullet lists: -, *, +
     const bullet = raw.match(/^(\s*)[-*+]\s+(.+)$/);
     if (bullet) {
       return `${bullet[1]}  • ${this.formatInline(bullet[2])}`;
@@ -196,21 +183,16 @@ export class MarkdownFormatter {
 
     let result = text;
 
-    // 1. Inline code: `code`
     result = result.replace(/`([^`\n]+)`/g, (_, code) => pc.cyan(code));
 
-    // 2. Bold: **text** or __text__
     result = result.replace(/\*\*([^*\n]+)\*\*/g, (_, b) => pc.bold(b));
     result = result.replace(/__([^\n_]+)__/g, (_, b) => pc.bold(b));
 
-    // 3. Italic: *text* or _text_
     result = result.replace(/(?<!\*)\*([^*\n]+)\*(?!\*)/g, (_, i) => pc.italic(i));
     result = result.replace(/(?<!_)_([^\n_]+)_(?!_)/g, (_, i) => pc.italic(i));
 
-    // 4. Strikethrough: ~~text~~
     result = result.replace(/~~([^~\n]+)~~/g, (_, s) => pc.strikethrough(s));
 
-    // 5. Links: [text](url) -> text (url)
     result = result.replace(
       /\[([^\]\n]+)\]\(([^)\n]+)\)/g,
       (_, t, url) => `${pc.underline(pc.cyan(t))} ${pc.dim(`(${url})`)}`

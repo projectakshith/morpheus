@@ -23,7 +23,6 @@ export function resolveModel(config: ProviderConfig = {}): {
     process.env.MORPHEUS_MODEL ||
     (process.env.OPENROUTER_API_KEY ? "stealth/space-bunny-alpha" : "claude-3-7-sonnet-latest");
 
-  // OpenRouter (Prioritized if OPENROUTER_API_KEY set or model is openrouter-specific)
   if (
     process.env.OPENROUTER_API_KEY &&
     (modelId.startsWith("stealth/") || !process.env.GROQ_API_KEY)
@@ -39,7 +38,6 @@ export function resolveModel(config: ProviderConfig = {}): {
     };
   }
 
-  // Groq (Ultra-fast LPU inference)
   if (process.env.GROQ_API_KEY && !modelId.startsWith("stealth/")) {
     const groq = createOpenAI({
       apiKey: config.apiKey || process.env.GROQ_API_KEY,
@@ -52,7 +50,6 @@ export function resolveModel(config: ProviderConfig = {}): {
     };
   }
 
-  // NVIDIA NIM
   if (process.env.NVIDIA_API_KEY || modelId.startsWith("deepseek-ai/") || modelId.startsWith("nvidia/")) {
     const nvidia = createOpenAI({
       apiKey: config.apiKey || process.env.NVIDIA_API_KEY,
@@ -65,7 +62,6 @@ export function resolveModel(config: ProviderConfig = {}): {
     };
   }
 
-  // Anthropic
   if (modelId.startsWith("claude") || process.env.ANTHROPIC_API_KEY) {
     const anthropic = createAnthropic({
       apiKey: config.apiKey || process.env.ANTHROPIC_API_KEY,
@@ -77,7 +73,6 @@ export function resolveModel(config: ProviderConfig = {}): {
     };
   }
 
-  // Google Gemini
   if (modelId.startsWith("gemini") || process.env.GEMINI_API_KEY) {
     const google = createGoogleGenerativeAI({
       apiKey: config.apiKey || process.env.GEMINI_API_KEY,
@@ -89,7 +84,6 @@ export function resolveModel(config: ProviderConfig = {}): {
     };
   }
 
-  // OpenAI / Fallback
   const openai = createOpenAI({
     apiKey: config.apiKey || process.env.OPENAI_API_KEY,
     baseURL: config.baseURL,

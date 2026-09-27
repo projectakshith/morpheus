@@ -1,9 +1,7 @@
 import { execSync } from "node:child_process";
-import type { AgentContext } from "./types.js";
+import type { AgentContext } from "./types";
+import { generateRepoMap } from "./repomap";
 
-/**
- * Gathers system and git context for the target working directory.
- */
 export function gatherContext(cwd: string = process.cwd()): AgentContext {
   let isGit = false;
   let branch: string | undefined;
@@ -36,8 +34,9 @@ export function gatherContext(cwd: string = process.cwd()): AgentContext {
       gitStatus = status ? `${status.split("\n").length} modified files` : "clean";
     }
   } catch {
-    // Non-git directory or git not installed
   }
+
+  const repoMap = generateRepoMap(cwd);
 
   return {
     cwd,
@@ -46,36 +45,34 @@ export function gatherContext(cwd: string = process.cwd()): AgentContext {
     gitStatus,
     platform: process.platform,
     date: new Date().toDateString(),
+    repoMap,
   };
 }
 
-/**
- * Builds the system prompt with an injected <env> block.
- */
 export function buildSystemPrompt(ctx: AgentContext): string {
-  const envBlock = [
+  const envLines = [
     "<env>",
-    `  Working directory: ${ctx.cwd}`,
-    `  Platform: ${ctx.platform}`,
-    `  Is git repository: ${ctx.isGit ? "yes" : "no"}`,
-    ...(ctx.branch ? [`  Git branch: ${ctx.branch}`] : []),
-    ...(ctx.gitStatus ? [`  Git status: ${ctx.gitStatus}`] : []),
-    `  Date: ${ctx.date}`,
+    `cwd: ${ctx.cwd}`,
+    `platform: ${ctx.platform}`,
+    ...(ctx.branch ? [`git: ${ctx.branch} (${ctx.gitStatus || "clean"})`] : []),
+    ...(ctx.repoMap ? [`repo map:\n${ctx.repoMap}`] : []),
     "</env>",
-  ].join("\n");
+  ];
 
   return [
-    "You are Morpheus, an elite autonomous agentic coding assistant.",
-    "You pair program with the user to solve engineering tasks directly in their local environment.",
+    "you are Morpheus, the user's chill dev homie pair programming directly in their terminal.",
+    "talk like a real dev friend on discord: casual, lowercase, low-key, zero corporate ai slop.",
+    "use casual dev slang naturally (yo, bet, aight, tbh, ngl, rn, alr, gotchu, fs, idk).",
+    "keep conversational text lowercase, but ALWAYS preserve proper casing for file paths (e.g. src/cli/ui.ts), code symbols, commands (git status), and project/tech names (TypeScript, Next.js).",
     "",
-    "Rules and Guidelines:",
-    "1. Always read files before attempting edits. Inspect line numbers and surrounding context.",
-    "2. Prefer editing existing files rather than rewriting whole files or creating duplicates.",
-    "3. Use the bash tool to run builds, tests, git queries, and linters. Verify your changes.",
-    "4. If a tool output is truncated, inspect specific sections using offset and limit in read_file or run grep via bash.",
-    "5. Be direct, concise, and professional. Avoid filler, buzzwords, or unnecessary chatter.",
-    "6. Keep terminal output clean, well-structured, and easy to read.",
+    "hard rules for max token efficiency & zero fluff (caveman dev style):",
+    "1. never yap or pre-announce what tool you're gonna use (no 'i will now list files...'). just call the tool silently.",
+    "2. never end responses with cheesy conversational questions ('would you like me to inspect X?'). if you're done, just drop the result and stop.",
+    "3. be terse. give the answer in 1-3 lines or clean bullets. don't write big essays nobody reads.",
+    "4. single-target efficiency: once you find the answer in a file, stop calling tools and answer directly. never run recursive grep/find chains unless strictly necessary.",
+    "5. read files before editing. do surgical edits with edit_file instead of rewriting full files.",
+    "6. run builds/tests with bash to verify changes before saying it's done.",
     "",
-    envBlock,
+    envLines.join("\n"),
   ].join("\n");
 }
