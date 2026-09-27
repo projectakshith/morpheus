@@ -161,68 +161,21 @@ export function App({
   const inputBoxHeight = 1;
   const feedHeight = Math.max(4, terminalHeight - headerHeight - statusBarHeight - inputBoxHeight);
 
-  /* Enable SGR mouse tracking for wheel scrolling and click-to-expand */
+  /* Ensure terminal mouse capture is completely disabled so clicks never leak escape characters into input */
   useEffect(() => {
     try {
-      process.stdout.write("\x1b[?1000h\x1b[?1006h");
+      process.stdout.write("\x1b[?1000l\x1b[?1002l\x1b[?1006l");
     } catch {}
-
-    const onData = (chunk: Buffer | string) => {
-      const str = typeof chunk === "string" ? chunk : chunk.toString("utf-8");
-      const mouseMatches = str.matchAll(/\x1b\[<(\d+);(\d+);(\d+)([Mm])/g);
-
-      for (const match of mouseMatches) {
-        const button = parseInt(match[1], 10);
-        const col = parseInt(match[2], 10);
-        const row = parseInt(match[3], 10);
-        const isRelease = match[4] === "m";
-
-        if (button === 64) {
-          /* Mouse wheel up: scroll view up */
-          setScrollOffset((prev) => {
-            isUserScrolledRef.current = true;
-            return prev + 3;
-          });
-        } else if (button === 65) {
-          /* Mouse wheel down: scroll view down */
-          setScrollOffset((prev) => {
-            const next = Math.max(0, prev - 3);
-            if (next === 0) {
-              isUserScrolledRef.current = false;
-            }
-            return next;
-          });
-        } else if (button === 0 && !isRelease) {
-          /* Left click: check if clicked on left column thread/step line */
-          if (col <= leftWidth) {
-            const clickedLineIndex = row - 3;
-            if (clickedLineIndex >= 0 && clickedLineIndex < visibleLinesRef.current.length) {
-              const target = visibleLinesRef.current[clickedLineIndex];
-              if (target && target.threadId) {
-                setThreads((prev) =>
-                  prev.map((t) =>
-                    t.id === target.threadId ? { ...t, isExpanded: !t.isExpanded } : t
-                  )
-                );
-              }
-            }
-          }
-        }
-      }
-    };
-
-    process.stdin.on("data", onData);
 
     const cleanup = () => {
       try {
-        process.stdout.write("\x1b[?1000l\x1b[?1006l");
+        process.stdout.write("\x1b[?1000l\x1b[?1002l\x1b[?1006l");
       } catch {}
-      process.stdin.off("data", onData);
     };
 
     process.on("exit", cleanup);
     return cleanup;
-  }, [leftWidth]);
+  }, []);
 
   /* Handle keyboard shortcuts */
   useInput((input, key) => {
@@ -608,7 +561,7 @@ export function App({
             node: (
               <Text color="gray">
                 │ <Text color="cyan">↳ {thread.stepCount} {thread.stepCount === 1 ? "step" : "steps"}</Text> ({toolsSummary}) · {sec}s ·{" "}
-                <Text color="cyan">[click to expand · tab]</Text>
+                <Text color="cyan">[tab to expand]</Text>
               </Text>
             ),
           });
@@ -620,7 +573,7 @@ export function App({
             node: (
               <Text color="gray">
                 ┌ <Text color="cyan" bold>{thread.stepCount} {thread.stepCount === 1 ? "step" : "steps"}</Text> ({toolsSummary}) · {sec}s ·{" "}
-                <Text color="cyan">[click to collapse · tab]</Text>
+                <Text color="cyan">[tab to collapse]</Text>
               </Text>
             ),
           });

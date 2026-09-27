@@ -112,7 +112,7 @@ export function ThreadCard({ thread, isThinkingExpanded = false }: ThreadCardPro
             <Box marginY={0}>
               <Text color="gray">
                 │ <Text color="cyan">↳ {thread.stepCount} {thread.stepCount === 1 ? "step" : "steps"}</Text> ({summarizeStepTools(thread.steps)}) · {seconds}s ·{" "}
-                <Text color="cyan">[click to expand · tab]</Text>
+                <Text color="cyan">[tab to expand]</Text>
               </Text>
             </Box>
           )}
@@ -125,7 +125,7 @@ export function ThreadCard({ thread, isThinkingExpanded = false }: ThreadCardPro
                   {thread.stepCount} {thread.stepCount === 1 ? "step" : "steps"}
                 </Text>
                 <Text color="gray"> ({summarizeStepTools(thread.steps)}) · {seconds}s · </Text>
-                <Text color="cyan">[click to collapse · tab]</Text>
+                <Text color="cyan">[tab to collapse]</Text>
               </Box>
               {thread.steps.map((step) => {
                 if (step.type === "thinking") {

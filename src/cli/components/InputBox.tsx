@@ -43,6 +43,14 @@ export function InputBox({ onSubmit, isDisabled = false, history = [] }: InputBo
     onSubmit(trimmed);
   };
 
+  const handleChange = (raw: string) => {
+    /* Strip any raw ANSI or mouse escape sequences from input */
+    const sanitized = raw
+      .replace(/\x1b\[[0-9;<>?]*[a-zA-Z]/g, "")
+      .replace(/<[\d;]+[Mm]/g, "");
+    setValue(sanitized);
+  };
+
   return (
     <Box marginY={0}>
       <Text color="greenBright" bold>
@@ -54,7 +62,7 @@ export function InputBox({ onSubmit, isDisabled = false, history = [] }: InputBo
       ) : (
         <TextInput
           value={value}
-          onChange={setValue}
+          onChange={handleChange}
           onSubmit={handleSubmit}
           placeholder="ask a question or describe a task..."
         />
