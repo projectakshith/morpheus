@@ -191,6 +191,14 @@ const MATRIX_QUOTES = [
   "Ignorance is bliss.",
 ];
 
+const BRAILLE_DOTS = ["⠶", "⠾", "⠿", "⠷", "⠵", "⠯", "⠮", "⠺"];
+
+interface StripCell {
+  ch: string;
+  kind: "title" | "sub" | "sap" | "num" | "badge" | "dots" | "quote";
+  bold?: boolean;
+}
+
 function buildFullScreenIntro(
   width: number,
   height: number,
@@ -201,23 +209,79 @@ function buildFullScreenIntro(
   const W = Math.max(20, width);
   const H = Math.max(8, height);
 
-  const eggLiqueur: [number, number, number] = [218, 204, 167];
-  const honeyBeige: [number, number, number] = [245, 212, 181];
-  const sapBright: [number, number, number] = [152, 217, 118];
-
   const rawQuote = quote || MATRIX_QUOTES[0];
   const fullQuote = `· ${rawQuote} ·`;
-  const topText = fullQuote.length <= W - 4 ? fullQuote : rawQuote.length <= W - 2 ? rawQuote : "· wake up, neo ·";
-  const titleText = W >= 45 ? "M   O   R   P   H   E   U   S" : "M O R P H E U S";
-  const subText = "a g e n t i c   h a r n e s s";
+  const quoteText = fullQuote.length <= W - 4 ? fullQuote : rawQuote.length <= W - 2 ? rawQuote : "";
 
-  const topY = Math.max(1, Math.min(2, Math.floor(H * 0.08)));
-  const titleY = Math.max(topY + 3, H - 3);
-  const subY = Math.max(titleY + 1, H - 2);
+  const stripY = Math.floor(H / 2);
+  const quoteY = Math.max(1, Math.min(stripY - 3, Math.floor(H * 0.1)));
 
-  const topX = Math.floor((W - topText.length) / 2);
-  const titleX = Math.floor((W - titleText.length) / 2);
-  const subX = Math.floor((W - subText.length) / 2);
+  const cells = new Map<string, StripCell>();
+  const setCell = (x: number, y: number, ch: string, kind: StripCell["kind"], bold = false) => {
+    if (x >= 0 && x < W && y >= 0 && y < H && ch !== " ") {
+      cells.set(`${x},${y}`, { ch, kind, bold });
+    }
+  };
+  const setStr = (x: number, y: number, str: string, kind: StripCell["kind"], bold = false) => {
+    for (let i = 0; i < str.length; i++) {
+      setCell(x + i, y, str[i], kind, bold);
+    }
+  };
+
+  if (quoteText && H >= 11) {
+    const qX = Math.floor((W - quoteText.length) / 2);
+    setStr(qX, quoteY, quoteText, "quote", false);
+  }
+
+  const brailleStr = [
+    BRAILLE_DOTS[(tick + 0) % BRAILLE_DOTS.length],
+    BRAILLE_DOTS[(tick + 1) % BRAILLE_DOTS.length],
+    BRAILLE_DOTS[(tick + 2) % BRAILLE_DOTS.length],
+    BRAILLE_DOTS[(tick + 3) % BRAILLE_DOTS.length],
+  ].join("");
+
+  const isWide = W >= 72;
+  if (isWide) {
+    const leftMargin = Math.max(3, Math.floor(W * 0.04));
+    const title = W >= 95 ? "MORPHEUS  FORWARD" : "MORPHEUS  CORE";
+    const sub = "AGENTIC HARNESS";
+
+    setStr(leftMargin, stripY, "M/", "title", true);
+    setStr(leftMargin + 4, stripY, "●●", "sap", true);
+    setStr(leftMargin + 8, stripY, "01", "num", true);
+
+    const textX = leftMargin + 13;
+    setStr(textX, stripY - 1, title, "title", true);
+    setStr(textX, stripY + 1, sub, "sub", false);
+
+    const centerBox = "████";
+    const centerFullWidth = centerBox.length + 2 + brailleStr.length;
+    const centerX = Math.floor((W - centerFullWidth) / 2);
+    setStr(centerX, stripY, centerBox, "badge", true);
+    setStr(centerX + centerBox.length + 2, stripY, brailleStr, "dots", true);
+
+    const rightX = W - leftMargin - 10;
+    if (rightX > centerX + centerFullWidth + 4) {
+      setStr(rightX, stripY, "M/", "title", true);
+      setStr(rightX + 4, stripY, "●●", "sap", true);
+      setStr(rightX + 8, stripY, "01", "num", true);
+    }
+  } else {
+    const title = "M O R P H E U S";
+    const sub = "agentic harness";
+    setStr(Math.floor((W - title.length) / 2), stripY - 1, title, "title", true);
+
+    const centerBox = "████";
+    const midStr = `M/  ●●  01    ${centerBox}  ${brailleStr}`;
+    const midX = Math.floor((W - midStr.length) / 2);
+    setStr(midX, stripY, "M/", "title", true);
+    setStr(midX + 4, stripY, "●●", "sap", true);
+    setStr(midX + 8, stripY, "01", "num", true);
+    setStr(midX + 14, stripY, centerBox, "badge", true);
+    setStr(midX + 14 + centerBox.length + 2, stripY, brailleStr, "dots", true);
+
+    setStr(Math.floor((W - sub.length) / 2), stripY + 1, sub, "sub", false);
+  }
 
   const lines: FeedLine[] = [];
 
@@ -235,35 +299,12 @@ function buildFullScreenIntro(
       const frontier = rainP * (H + 6) * speed;
       const dist = frontier - y;
 
+      const cell = cells.get(`${x},${y}`);
       let ch = " ";
       let bgCode = "";
       let fgCode = "";
 
       if (dist >= 3) {
-        let isTextChar = false;
-        let charStr = " ";
-        let fgR = 0;
-        let fgG = 0;
-        let fgB = 0;
-        let isBold = false;
-
-        if (y === topY && x >= topX && x < topX + topText.length) {
-          isTextChar = true;
-          charStr = topText[x - topX];
-          [fgR, fgG, fgB] = eggLiqueur;
-          isBold = true;
-        } else if (y === titleY && x >= titleX && x < titleX + titleText.length) {
-          isTextChar = true;
-          charStr = titleText[x - titleX];
-          [fgR, fgG, fgB] = honeyBeige;
-          isBold = true;
-        } else if (y === subY && x >= subX && x < subX + subText.length) {
-          isTextChar = true;
-          charStr = subText[x - subX];
-          [fgR, fgG, fgB] = sapBright;
-          isBold = false;
-        }
-
         const wave =
           Math.sin(x * 0.28 + y * 0.2 + tick * 0.05) * 0.05 +
           Math.sin(x * 0.11 - y * 0.15) * 0.04;
@@ -278,10 +319,23 @@ function buildFullScreenIntro(
 
         bgCode = `\x1b[48;2;${gr};${gg};${gb}m`;
 
-        if (isTextChar) {
-          const boldCode = isBold ? ";1" : "";
-          fgCode = `\x1b[38;2;${fgR};${fgG};${fgB}${boldCode}m`;
-          ch = charStr;
+        if (cell) {
+          ch = cell.ch;
+          if (cell.kind === "badge") {
+            fgCode = "\x1b[38;2;255;255;255;1m";
+          } else if (cell.kind === "title") {
+            fgCode = "\x1b[38;2;255;238;210;1m";
+          } else if (cell.kind === "num") {
+            fgCode = "\x1b[38;2;218;204;167;1m";
+          } else if (cell.kind === "sap") {
+            fgCode = "\x1b[38;2;165;240;135;1m";
+          } else if (cell.kind === "sub") {
+            fgCode = "\x1b[38;2;165;240;135m";
+          } else if (cell.kind === "dots") {
+            fgCode = "\x1b[38;2;165;240;135;1m";
+          } else {
+            fgCode = "\x1b[38;2;218;204;167m";
+          }
         } else {
           const charIdx = Math.floor(Math.abs(grain) * HERO_DITHERS.length) % HERO_DITHERS.length;
           ch = t < 0.72 ? HERO_DITHERS[charIdx] : " ";
@@ -291,27 +345,47 @@ function buildFullScreenIntro(
           fgCode = `\x1b[38;2;${fgr};${fgg};${fgb}m`;
         }
       } else if (dist >= 0) {
-        const charIdx = (x * 7 + y * 13 + tick) % MATRIX_CHARS.length;
-        const matrixChar = MATRIX_CHARS[charIdx];
-        const step = Math.floor(dist);
-
-        if (step === 0) {
-          bgCode = "\x1b[48;2;22;34;22m";
-          fgCode = "\x1b[38;2;240;255;240;1m";
-          ch = matrixChar;
-        } else if (step === 1) {
-          bgCode = "\x1b[48;2;18;26;18m";
-          fgCode = "\x1b[38;2;152;217;118;1m";
-          ch = matrixChar;
+        if (cell) {
+          ch = cell.ch;
+          bgCode = "\x1b[48;2;28;46;28m";
+          fgCode = dist < 1 ? "\x1b[38;2;255;255;255;1m" : "\x1b[38;2;210;255;195;1m";
         } else {
-          bgCode = "\x1b[48;2;16;22;16m";
-          fgCode = "\x1b[38;2;95;145;75m";
-          ch = matrixChar;
+          const charIdx = (x * 7 + y * 13 + tick) % MATRIX_CHARS.length;
+          const matrixChar = MATRIX_CHARS[charIdx];
+          const step = Math.floor(dist);
+          if (step === 0) {
+            bgCode = "\x1b[48;2;22;34;22m";
+            fgCode = "\x1b[38;2;240;255;240;1m";
+            ch = matrixChar;
+          } else if (step === 1) {
+            bgCode = "\x1b[48;2;18;26;18m";
+            fgCode = "\x1b[38;2;152;217;118;1m";
+            ch = matrixChar;
+          } else {
+            bgCode = "\x1b[48;2;16;22;16m";
+            fgCode = "\x1b[38;2;95;145;75m";
+            ch = matrixChar;
+          }
         }
       } else {
         bgCode = "\x1b[48;2;22;20;21m";
-        fgCode = "\x1b[38;2;22;20;21m";
-        ch = " ";
+        if (cell) {
+          ch = cell.ch;
+          if (cell.kind === "badge") {
+            fgCode = "\x1b[38;2;95;135;85m";
+          } else if (cell.kind === "title" || cell.kind === "num") {
+            fgCode = "\x1b[38;2;90;135;80;1m";
+          } else if (cell.kind === "sap" || cell.kind === "sub") {
+            fgCode = "\x1b[38;2;75;115;65m";
+          } else if (cell.kind === "dots") {
+            fgCode = "\x1b[38;2;65;105;55m";
+          } else {
+            fgCode = "\x1b[38;2;85;110;80m";
+          }
+        } else {
+          fgCode = "\x1b[38;2;22;20;21m";
+          ch = " ";
+        }
       }
 
       if (bgCode !== lastBg) {
@@ -355,7 +429,7 @@ function buildHeroFeedLines(width: number, totalLines: number, quote?: string): 
   const textMap: Record<number, [string, [number, number, number], boolean]> = {};
 
   if (safeLines >= 10) {
-    textMap[1] = [heroQuote, [22, 20, 21], true];
+    textMap[1] = [heroQuote, [218, 204, 167], true];
     textMap[safeLines - 5] = [title, [245, 212, 181], true];
     textMap[safeLines - 4] = [sub, [152, 217, 118], false];
     textMap[safeLines - 2] = [hint, [218, 204, 167], false];
