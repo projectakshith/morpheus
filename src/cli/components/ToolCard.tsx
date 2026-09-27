@@ -11,7 +11,6 @@ export interface ToolCardProps {
   outputPreview?: string[];
 }
 
-/* Minimalist tool execution card with Vercel-style vertical lines and status icons */
 export function ToolCard({
   name,
   args,
@@ -20,7 +19,6 @@ export function ToolCard({
   outputSummary,
   outputPreview = [],
 }: ToolCardProps) {
-  /* Format key arguments concisely on a single line */
   const primaryArg =
     args.filePath ?? args.command ?? args.url ?? args.dirPath ?? args.query ?? "";
   const primaryArgStr = typeof primaryArg === "string" ? primaryArg : JSON.stringify(primaryArg);

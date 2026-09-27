@@ -14,7 +14,6 @@ export interface StatusBarProps {
   scrollOffset?: number;
 }
 
-/* Minimalist telemetry status bar with non-wrapping layout and thin divider */
 export function StatusBar({
   status,
   stepCount,
@@ -27,7 +26,6 @@ export function StatusBar({
   const width = customWidth ?? Math.max(40, process.stdout.columns ? process.stdout.columns - 2 : 76);
   const lineWidth = Math.max(10, width - 2);
 
-  /* Format elapsed time as mm:ss */
   const mins = Math.floor(elapsedSeconds / 60)
     .toString()
     .padStart(2, "0");

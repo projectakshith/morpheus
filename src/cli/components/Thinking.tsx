@@ -9,7 +9,6 @@ export interface ThinkingProps {
   durationMs?: number;
 }
 
-/* Collapsible reasoning block with subtle monochrome borders and status indicator */
 export function Thinking({
   content,
   isStreaming = false,

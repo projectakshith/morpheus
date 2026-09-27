@@ -10,7 +10,6 @@ export interface HeaderProps {
   width?: number;
 }
 
-/* Minimalist Vercel-inspired monochrome header with emerald accent */
 export function Header({ version, model, branch, gitStatus, width: customWidth }: HeaderProps) {
   const width = customWidth ?? Math.max(40, process.stdout.columns ? process.stdout.columns - 2 : 76);
 

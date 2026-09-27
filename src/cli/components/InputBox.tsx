@@ -7,7 +7,6 @@ export interface InputBoxProps {
   history?: string[];
 }
 
-/* Custom interactive prompt input with escape code filtering and history navigation */
 export function InputBox({ onSubmit, isDisabled = false, history = [] }: InputBoxProps) {
   const [value, setValue] = useState("");
   const [cursorPos, setCursorPos] = useState(0);
@@ -16,7 +15,6 @@ export function InputBox({ onSubmit, isDisabled = false, history = [] }: InputBo
   useInput((input, key) => {
     if (isDisabled) return;
 
-    /* Completely ignore mouse escape sequences and ANSI control codes */
     if (
       (input.includes("<") && input.includes(";")) ||
       input.charCodeAt(0) === 27 ||
@@ -25,7 +23,6 @@ export function InputBox({ onSubmit, isDisabled = false, history = [] }: InputBo
       return;
     }
 
-    /* Submit on Enter */
     if (key.return) {
       const trimmed = value.trim();
       if (!trimmed) return;
@@ -44,7 +41,6 @@ export function InputBox({ onSubmit, isDisabled = false, history = [] }: InputBo
       return;
     }
 
-    /* History navigation: Up Arrow */
     if (key.upArrow && history.length > 0) {
       const nextIndex = historyIndex === -1 ? history.length - 1 : Math.max(0, historyIndex - 1);
       setHistoryIndex(nextIndex);
@@ -54,7 +50,6 @@ export function InputBox({ onSubmit, isDisabled = false, history = [] }: InputBo
       return;
     }
 
-    /* History navigation: Down Arrow */
     if (key.downArrow && history.length > 0) {
       if (historyIndex >= 0 && historyIndex < history.length - 1) {
         const nextIndex = historyIndex + 1;
@@ -70,7 +65,6 @@ export function InputBox({ onSubmit, isDisabled = false, history = [] }: InputBo
       return;
     }
 
-    /* Cursor navigation: Left / Right arrows */
     if (key.leftArrow) {
       setCursorPos((prev) => Math.max(0, prev - 1));
       return;
@@ -80,7 +74,6 @@ export function InputBox({ onSubmit, isDisabled = false, history = [] }: InputBo
       return;
     }
 
-    /* Backspace / Delete */
     if (key.backspace || key.delete) {
       if (cursorPos > 0) {
         setValue((prev) => prev.slice(0, cursorPos - 1) + prev.slice(cursorPos));
@@ -89,14 +82,12 @@ export function InputBox({ onSubmit, isDisabled = false, history = [] }: InputBo
       return;
     }
 
-    /* Standard character input: only accept printable text */
     if (input.length === 1 && input.charCodeAt(0) >= 32) {
       setValue((prev) => prev.slice(0, cursorPos) + input + prev.slice(cursorPos));
       setCursorPos((prev) => prev + 1);
       return;
     }
 
-    /* Multicharacter paste input */
     if (input.length > 1 && !input.includes("\x1b") && !input.includes("<")) {
       setValue((prev) => prev.slice(0, cursorPos) + input + prev.slice(cursorPos));
       setCursorPos((prev) => prev + input.length);

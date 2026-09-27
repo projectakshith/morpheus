@@ -1,6 +1,5 @@
 import React from "react";
 import { Box, Text } from "ink";
-import Spinner from "ink-spinner";
 import { Thinking } from "./Thinking";
 import { ToolCard } from "./ToolCard";
 import { MessageCard } from "./MessageCard";
@@ -39,7 +38,6 @@ export interface ThreadCardProps {
   isThinkingExpanded?: boolean;
 }
 
-/* Helper to summarize tool steps into a compact readable string */
 function summarizeStepTools(steps: ThreadStep[]): string {
   const toolCounts = new Map<string, number>();
   for (const step of steps) {
@@ -59,7 +57,6 @@ function summarizeStepTools(steps: ThreadStep[]): string {
   return parts.join(", ");
 }
 
-/* Trinity-inspired expandable conversation thread card with Vercel minimalist styling */
 export function ThreadCard({ thread, isThinkingExpanded = false }: ThreadCardProps) {
   const seconds = thread.durationMs
     ? (thread.durationMs / 1000).toFixed(1)
@@ -67,7 +64,6 @@ export function ThreadCard({ thread, isThinkingExpanded = false }: ThreadCardPro
 
   return (
     <Box flexDirection="column" marginBottom={1}>
-      {/* User message */}
       <Box flexDirection="column">
         <Text color="white" bold>
           ▲ you
@@ -77,7 +73,6 @@ export function ThreadCard({ thread, isThinkingExpanded = false }: ThreadCardPro
         </Box>
       </Box>
 
-      {/* Internal steps below message: active live execution or folded/expanded history */}
       {thread.status === "running" ? (
         <Box flexDirection="column" marginLeft={2} marginY={0}>
           {thread.steps.map((step) => {
@@ -166,7 +161,6 @@ export function ThreadCard({ thread, isThinkingExpanded = false }: ThreadCardPro
         </Box>
       )}
 
-      {/* Assistant final markdown answer */}
       {Boolean(thread.response || thread.isStreaming) && (
         <Box flexDirection="column" marginTop={0}>
           <Box>

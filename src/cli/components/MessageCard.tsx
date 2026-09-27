@@ -8,7 +8,6 @@ export interface MessageCardProps {
   isStreaming?: boolean;
 }
 
-/* Minimalist message card formatting with full ANSI markdown rendering */
 export function MessageCard({ role, content, isStreaming = false }: MessageCardProps) {
   if (!content.trim() && !isStreaming) {
     return null;
@@ -16,7 +15,6 @@ export function MessageCard({ role, content, isStreaming = false }: MessageCardP
 
   const isUser = role === "user";
 
-  /* Process assistant markdown into rich ANSI terminal lines */
   const formattedLines = useMemo(() => {
     if (isUser) {
       return content.split("\n");
