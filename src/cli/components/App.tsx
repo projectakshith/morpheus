@@ -1,15 +1,43 @@
 import React, { useState, useEffect, useRef, useMemo } from "react";
-import { Box, useInput, useWindowSize } from "ink";
+import { Box, Text, useInput, useWindowSize } from "ink";
+import Spinner from "ink-spinner";
 import { Header } from "./Header";
 import { StatusBar } from "./StatusBar";
-import { ThreadCard, type Thread, type ThreadStep } from "./ThreadCard";
 import { DiffColumn, type FileEditRecord } from "./DiffColumn";
 import { InputBox } from "./InputBox";
 import { runAgent } from "../../core/agent";
 import { gatherContext } from "../../core/context";
 import { MORPHEUS_VERSION } from "../../index";
+import { MarkdownFormatter } from "../format";
 import type { ChatMessage, Finding, TokenUsage } from "../../core/types";
 import { isToolError } from "../../utils/errors";
+
+export interface ThreadStep {
+  id: string;
+  type: "thinking" | "tool";
+  content?: string;
+  name?: string;
+  args?: Record<string, unknown>;
+  isRunning?: boolean;
+  isError?: boolean;
+  durationMs?: number;
+  outputSummary?: string;
+  outputPreview?: string[];
+}
+
+export interface Thread {
+  id: string;
+  index: number;
+  prompt: string;
+  response: string;
+  isStreaming?: boolean;
+  steps: ThreadStep[];
+  isExpanded: boolean;
+  status: "running" | "completed" | "aborted" | "error";
+  stepCount: number;
+  startTime: number;
+  durationMs?: number;
+}
 
 export interface AppProps {
   model: string;
@@ -18,6 +46,33 @@ export interface AppProps {
   isVerbose?: boolean;
   initialTask?: string;
   maxSteps?: number;
+}
+
+interface FeedLine {
+  id: string;
+  threadId: string;
+  node: React.ReactNode;
+  isStepToggle?: boolean;
+}
+
+/* Helper to summarize tool steps into a compact readable string */
+function summarizeStepTools(steps: ThreadStep[]): string {
+  const toolCounts = new Map<string, number>();
+  for (const step of steps) {
+    if (step.type === "tool" && step.name) {
+      toolCounts.set(step.name, (toolCounts.get(step.name) || 0) + 1);
+    }
+  }
+
+  if (toolCounts.size === 0) {
+    return "reasoning only";
+  }
+
+  const parts: string[] = [];
+  for (const [name, count] of toolCounts.entries()) {
+    parts.push(count > 1 ? `${name} x${count}` : name);
+  }
+  return parts.join(", ");
 }
 
 /* Helper to extract structured diff records from tool execution results */
@@ -63,7 +118,7 @@ function extractDiffRecord(
   return null;
 }
 
-/* Root interactive full-screen Ink application with dedicated split inspector and Trinity thread hierarchy */
+/* Root interactive full-screen application with mouse scrolling, click-to-expand, and static bottom bar */
 export function App({
   model,
   isLocal = false,
@@ -92,6 +147,7 @@ export function App({
   const timerRef = useRef<NodeJS.Timeout | null>(null);
   const baseContext = useRef(gatherContext(process.cwd()));
   const initialTaskFired = useRef(false);
+  const isUserScrolledRef = useRef(false);
 
   /* Compute full-screen dimensions and dedicated side column partition */
   const terminalWidth = columns || process.stdout.columns || 80;
@@ -99,11 +155,76 @@ export function App({
   const isSplitLayout = terminalWidth >= 90;
   const leftWidth = isSplitLayout ? Math.floor(terminalWidth * 0.58) : terminalWidth;
   const rightWidth = isSplitLayout ? terminalWidth - leftWidth - 2 : 0;
-  const headerHeight = 2;
-  const footerHeight = 3;
-  const workspaceHeight = Math.max(6, terminalHeight - headerHeight - footerHeight);
 
-  /* Handle global shortcut keys */
+  const headerHeight = 2;
+  const statusBarHeight = 2;
+  const inputBoxHeight = 1;
+  const feedHeight = Math.max(4, terminalHeight - headerHeight - statusBarHeight - inputBoxHeight);
+
+  /* Enable SGR mouse tracking for wheel scrolling and click-to-expand */
+  useEffect(() => {
+    try {
+      process.stdout.write("\x1b[?1000h\x1b[?1006h");
+    } catch {}
+
+    const onData = (chunk: Buffer | string) => {
+      const str = typeof chunk === "string" ? chunk : chunk.toString("utf-8");
+      const mouseMatches = str.matchAll(/\x1b\[<(\d+);(\d+);(\d+)([Mm])/g);
+
+      for (const match of mouseMatches) {
+        const button = parseInt(match[1], 10);
+        const col = parseInt(match[2], 10);
+        const row = parseInt(match[3], 10);
+        const isRelease = match[4] === "m";
+
+        if (button === 64) {
+          /* Mouse wheel up: scroll view up */
+          setScrollOffset((prev) => {
+            isUserScrolledRef.current = true;
+            return prev + 3;
+          });
+        } else if (button === 65) {
+          /* Mouse wheel down: scroll view down */
+          setScrollOffset((prev) => {
+            const next = Math.max(0, prev - 3);
+            if (next === 0) {
+              isUserScrolledRef.current = false;
+            }
+            return next;
+          });
+        } else if (button === 0 && !isRelease) {
+          /* Left click: check if clicked on left column thread/step line */
+          if (col <= leftWidth) {
+            const clickedLineIndex = row - 3;
+            if (clickedLineIndex >= 0 && clickedLineIndex < visibleLinesRef.current.length) {
+              const target = visibleLinesRef.current[clickedLineIndex];
+              if (target && target.threadId) {
+                setThreads((prev) =>
+                  prev.map((t) =>
+                    t.id === target.threadId ? { ...t, isExpanded: !t.isExpanded } : t
+                  )
+                );
+              }
+            }
+          }
+        }
+      }
+    };
+
+    process.stdin.on("data", onData);
+
+    const cleanup = () => {
+      try {
+        process.stdout.write("\x1b[?1000l\x1b[?1006l");
+      } catch {}
+      process.stdin.off("data", onData);
+    };
+
+    process.on("exit", cleanup);
+    return cleanup;
+  }, [leftWidth]);
+
+  /* Handle keyboard shortcuts */
   useInput((input, key) => {
     if (key.escape && status === "running") {
       abortControllerRef.current?.abort();
@@ -129,24 +250,26 @@ export function App({
 
     /* Scroll history up */
     if (key.pageUp || (key.ctrl && input === "u")) {
-      setScrollOffset((prev) => prev + 1);
+      isUserScrolledRef.current = true;
+      setScrollOffset((prev) => prev + 4);
       return;
     }
 
     /* Scroll history down */
     if (key.pageDown || (key.ctrl && input === "d")) {
-      setScrollOffset((prev) => Math.max(0, prev - 1));
+      setScrollOffset((prev) => {
+        const next = Math.max(0, prev - 4);
+        if (next === 0) {
+          isUserScrolledRef.current = false;
+        }
+        return next;
+      });
       return;
     }
 
-    /* Jump to earliest thread */
-    if (key.home) {
-      setScrollOffset(Math.max(0, threads.length - 1));
-      return;
-    }
-
-    /* Jump to latest thread / bottom */
+    /* Jump to bottom */
     if (key.end) {
+      isUserScrolledRef.current = false;
       setScrollOffset(0);
       return;
     }
@@ -158,6 +281,7 @@ export function App({
     setStatus("running");
     setStepCount(0);
     setElapsedSeconds(0);
+    isUserScrolledRef.current = false;
     setScrollOffset(0);
     setPromptHistory((prev) => [...prev, taskText]);
 
@@ -200,6 +324,9 @@ export function App({
         findings,
         onStepStart: (step) => {
           setStepCount(step);
+          if (!isUserScrolledRef.current) {
+            setScrollOffset(0);
+          }
           setThreads((prev) =>
             prev.map((t) =>
               t.id === threadId ? { ...t, stepCount: step } : t
@@ -207,6 +334,9 @@ export function App({
           );
         },
         onReasoningDelta: (chunk) => {
+          if (!isUserScrolledRef.current) {
+            setScrollOffset(0);
+          }
           if (!activeThinkingId) {
             activeThinkingId = `think_${Date.now()}`;
             thinkingStartTime = Date.now();
@@ -244,7 +374,9 @@ export function App({
           }
         },
         onToolCall: (name, toolArgs) => {
-          /* Close open thinking step on tool call */
+          if (!isUserScrolledRef.current) {
+            setScrollOffset(0);
+          }
           if (activeThinkingId) {
             const curThinkId = activeThinkingId;
             setThreads((prev) =>
@@ -276,6 +408,9 @@ export function App({
           );
         },
         onToolResult: (name, res) => {
+          if (!isUserScrolledRef.current) {
+            setScrollOffset(0);
+          }
           const isError = isToolError(res.output, res.metadata?.isError as boolean | undefined);
           const lines = res.output.trim().split("\n").filter(Boolean);
           const outputSummary = `${lines.length} lines output`;
@@ -302,7 +437,6 @@ export function App({
           );
           activeToolId = null;
 
-          /* Record file edits or writes for right column inspector */
           const editRecord = extractDiffRecord(
             name,
             (newThread.steps.find((s) => s.id === curToolId)?.args as Record<string, unknown>) || {},
@@ -313,7 +447,9 @@ export function App({
           }
         },
         onTextDelta: (chunk) => {
-          /* Close open thinking step on assistant text stream */
+          if (!isUserScrolledRef.current) {
+            setScrollOffset(0);
+          }
           if (activeThinkingId) {
             const curThinkId = activeThinkingId;
             setThreads((prev) =>
@@ -344,7 +480,6 @@ export function App({
         },
       });
 
-      /* Finalize thread completion */
       setThreads((prev) =>
         prev.map((t) =>
           t.id === threadId
@@ -395,14 +530,200 @@ export function App({
     }
   }, []);
 
-  /* Compute slice of threads to display in the visible window */
-  const visibleThreads = useMemo(() => {
-    if (threads.length === 0) return [];
-    const endIndex = Math.max(1, threads.length - scrollOffset);
-    const maxVisible = Math.max(1, Math.floor(workspaceHeight / 4));
-    const startIndex = Math.max(0, endIndex - maxVisible);
-    return threads.slice(startIndex, endIndex);
-  }, [threads, scrollOffset, workspaceHeight]);
+  /* Flatten all conversation threads into structured single-line feed items */
+  const allFeedLines = useMemo<FeedLine[]>(() => {
+    const lines: FeedLine[] = [];
+
+    threads.forEach((thread, tIdx) => {
+      /* 1. User message */
+      lines.push({
+        id: `${thread.id}_user_hdr`,
+        threadId: thread.id,
+        node: (
+          <Text color="white" bold>
+            ▲ you
+          </Text>
+        ),
+      });
+
+      const promptLines = thread.prompt.split("\n");
+      promptLines.forEach((pLine, idx) => {
+        lines.push({
+          id: `${thread.id}_prompt_${idx}`,
+          threadId: thread.id,
+          node: <Text color="white">  {pLine}</Text>,
+        });
+      });
+
+      /* 2. Steps pill / execution box below the message */
+      if (thread.status === "running") {
+        thread.steps.forEach((step) => {
+          if (step.type === "thinking") {
+            const sec = ((step.durationMs || 0) / 1000).toFixed(1);
+            lines.push({
+              id: `${step.id}_think_live`,
+              threadId: thread.id,
+              node: (
+                <Text color="yellow">
+                  │ <Spinner type="dots" /> thinking ({sec}s)...
+                </Text>
+              ),
+            });
+          } else if (step.type === "tool") {
+            const primaryArg = step.args?.filePath ?? step.args?.command ?? step.args?.url ?? "";
+            const primaryArgStr = typeof primaryArg === "string" ? primaryArg : "";
+            lines.push({
+              id: `${step.id}_tool_live`,
+              threadId: thread.id,
+              node: step.isRunning ? (
+                <Text color="yellow">
+                  │ <Spinner type="dots" /> <Text color="white" bold>{step.name}</Text>
+                  {primaryArgStr ? <Text color="cyan"> {primaryArgStr}</Text> : null}
+                </Text>
+              ) : step.isError ? (
+                <Text color="red">
+                  │ ✖ <Text color="white" bold>{step.name}</Text>
+                  {primaryArgStr ? <Text color="cyan"> {primaryArgStr}</Text> : null}
+                  {step.outputSummary ? <Text color="red"> · {step.outputSummary}</Text> : null}
+                </Text>
+              ) : (
+                <Text color="green">
+                  │ ✔ <Text color="white" bold>{step.name}</Text>
+                  {primaryArgStr ? <Text color="cyan"> {primaryArgStr}</Text> : null}
+                  {step.outputSummary ? <Text color="gray"> · {step.outputSummary}</Text> : null}
+                </Text>
+              ),
+            });
+          }
+        });
+      } else {
+        const sec = thread.durationMs ? (thread.durationMs / 1000).toFixed(1) : "0.0";
+        const toolsSummary = summarizeStepTools(thread.steps);
+
+        if (thread.steps.length > 0 && !thread.isExpanded) {
+          lines.push({
+            id: `${thread.id}_steps_collapsed`,
+            threadId: thread.id,
+            isStepToggle: true,
+            node: (
+              <Text color="gray">
+                │ <Text color="cyan">↳ {thread.stepCount} {thread.stepCount === 1 ? "step" : "steps"}</Text> ({toolsSummary}) · {sec}s ·{" "}
+                <Text color="cyan">[click to expand · tab]</Text>
+              </Text>
+            ),
+          });
+        } else if (thread.steps.length > 0 && thread.isExpanded) {
+          lines.push({
+            id: `${thread.id}_steps_exp_hdr`,
+            threadId: thread.id,
+            isStepToggle: true,
+            node: (
+              <Text color="gray">
+                ┌ <Text color="cyan" bold>{thread.stepCount} {thread.stepCount === 1 ? "step" : "steps"}</Text> ({toolsSummary}) · {sec}s ·{" "}
+                <Text color="cyan">[click to collapse · tab]</Text>
+              </Text>
+            ),
+          });
+
+          thread.steps.forEach((step) => {
+            if (step.type === "thinking") {
+              const sSec = ((step.durationMs || 0) / 1000).toFixed(1);
+              lines.push({
+                id: `${step.id}_think_done`,
+                threadId: thread.id,
+                node: (
+                  <Text color="gray">
+                    │ ● thinking ({sSec}s)
+                  </Text>
+                ),
+              });
+            } else if (step.type === "tool") {
+              const primaryArg = step.args?.filePath ?? step.args?.command ?? step.args?.url ?? "";
+              const primaryArgStr = typeof primaryArg === "string" ? primaryArg : "";
+              lines.push({
+                id: `${step.id}_tool_done`,
+                threadId: thread.id,
+                node: step.isError ? (
+                  <Text color="red">
+                    │ ✖ <Text color="white" bold>{step.name}</Text>
+                    {primaryArgStr ? <Text color="cyan"> {primaryArgStr}</Text> : null}
+                    {step.outputSummary ? <Text color="red"> · {step.outputSummary}</Text> : null}
+                  </Text>
+                ) : (
+                  <Text color="green">
+                    │ ✔ <Text color="white" bold>{step.name}</Text>
+                    {primaryArgStr ? <Text color="cyan"> {primaryArgStr}</Text> : null}
+                    {step.outputSummary ? <Text color="gray"> · {step.outputSummary}</Text> : null}
+                  </Text>
+                ),
+              });
+            }
+          });
+
+          lines.push({
+            id: `${thread.id}_steps_exp_ftr`,
+            threadId: thread.id,
+            node: <Text color="gray">└</Text>,
+          });
+        }
+      }
+
+      /* 3. Assistant answer */
+      if (thread.response || thread.isStreaming) {
+        lines.push({
+          id: `${thread.id}_asst_hdr`,
+          threadId: thread.id,
+          node: (
+            <Text color="greenBright" bold>
+              ▲ morpheus
+            </Text>
+          ),
+        });
+
+        const formatter = new MarkdownFormatter();
+        const rawLines = thread.response.split("\n");
+        const formattedLines: string[] = [];
+        for (const raw of rawLines) {
+          formattedLines.push(...formatter.processLine(raw));
+        }
+        formattedLines.push(...formatter.flush());
+
+        formattedLines.forEach((mLine, mIdx) => {
+          lines.push({
+            id: `${thread.id}_asst_line_${mIdx}`,
+            threadId: thread.id,
+            node: <Text>  {mLine}</Text>,
+          });
+        });
+      }
+
+      /* Spacer between turns */
+      if (tIdx < threads.length - 1) {
+        lines.push({
+          id: `${thread.id}_spacer`,
+          threadId: thread.id,
+          node: <Text> </Text>,
+        });
+      }
+    });
+
+    return lines;
+  }, [threads]);
+
+  /* Calculate exact visible lines window respecting clamped scrollOffset */
+  const visibleLines = useMemo(() => {
+    const total = allFeedLines.length;
+    if (total <= feedHeight) {
+      return allFeedLines;
+    }
+    const maxScroll = total - feedHeight;
+    const clampedOffset = Math.min(scrollOffset, maxScroll);
+    const startIndex = Math.max(0, total - feedHeight - clampedOffset);
+    return allFeedLines.slice(startIndex, startIndex + feedHeight);
+  }, [allFeedLines, scrollOffset, feedHeight]);
+
+  const visibleLinesRef = useRef(visibleLines);
+  visibleLinesRef.current = visibleLines;
 
   return (
     <Box
@@ -411,7 +732,7 @@ export function App({
       height={terminalHeight}
       overflow="hidden"
     >
-      {/* Full-width header spanning the top of the terminal */}
+      {/* Full-width header spanning top */}
       <Header
         version={MORPHEUS_VERSION}
         model={model}
@@ -420,27 +741,25 @@ export function App({
         width={terminalWidth}
       />
 
-      {/* Full-height workspace: Left conversation threads, Right dedicated inspector */}
-      <Box flexDirection="row" flexGrow={1} height={workspaceHeight} overflow="hidden">
-        {/* Left Column: Thread workspace, Status bar, Input box */}
+      {/* Main split viewport: Left conversation & static footer, Right dedicated column */}
+      <Box flexDirection="row" flexGrow={1} height={terminalHeight - headerHeight} overflow="hidden">
+        {/* Left Column: Fixed height feed box with permanently pinned footer */}
         <Box
           flexDirection="column"
           width={leftWidth}
           height="100%"
           paddingRight={isSplitLayout ? 1 : 0}
         >
-          {/* Scrollable feed of conversation threads */}
-          <Box flexDirection="column" flexGrow={1} overflow="hidden">
-            {visibleThreads.map((thread) => (
-              <ThreadCard
-                key={thread.id}
-                thread={thread}
-                isThinkingExpanded={isThinkingExpanded}
-              />
+          {/* Scrollable feed box strictly clamped to feedHeight */}
+          <Box flexDirection="column" height={feedHeight} overflow="hidden">
+            {visibleLines.map((line) => (
+              <Box key={line.id} height={1} overflow="hidden">
+                {line.node}
+              </Box>
             ))}
           </Box>
 
-          {/* Telemetry status bar pinned directly above input */}
+          {/* Permanently static telemetry status bar */}
           <StatusBar
             status={status}
             stepCount={stepCount}
@@ -452,7 +771,7 @@ export function App({
             scrollOffset={scrollOffset}
           />
 
-          {/* Interactive prompt input pinned to the bottom */}
+          {/* Permanently static prompt input */}
           <InputBox
             onSubmit={executeTask}
             isDisabled={status === "running"}
@@ -460,7 +779,7 @@ export function App({
           />
         </Box>
 
-        {/* Right Dedicated Column: Full-height diff & inspector pane */}
+        {/* Right Dedicated Column: Spans full vertical height */}
         {isSplitLayout && (
           <DiffColumn
             width={rightWidth}

@@ -65,35 +65,19 @@ export function ThreadCard({ thread, isThinkingExpanded = false }: ThreadCardPro
 
   return (
     <Box flexDirection="column" marginBottom={1}>
-      {/* Thread Header */}
-      <Box justifyContent="space-between">
-        <Box>
-          <Text color="greenBright" bold>
-            ▲ [Thread #{thread.index}]
-          </Text>
-          <Text color="white"> "{thread.prompt}"</Text>
-        </Box>
-        <Box>
-          {thread.status === "running" ? (
-            <Text color="yellow">
-              <Spinner type="dots" /> running ({seconds}s)
-            </Text>
-          ) : thread.status === "completed" ? (
-            <Text color="gray">
-              {thread.stepCount} {thread.stepCount === 1 ? "step" : "steps"} · {seconds}s ·{" "}
-              <Text color="cyan">{thread.isExpanded ? "▲ expanded" : "▼ collapsed"}</Text>
-            </Text>
-          ) : thread.status === "aborted" ? (
-            <Text color="yellow">● stopped ({seconds}s)</Text>
-          ) : (
-            <Text color="red">● error ({seconds}s)</Text>
-          )}
+      {/* User message */}
+      <Box flexDirection="column">
+        <Text color="white" bold>
+          ▲ you
+        </Text>
+        <Box marginLeft={2}>
+          <Text color="white">{thread.prompt}</Text>
         </Box>
       </Box>
 
-      {/* Internal steps: active live execution or folded/expanded history */}
+      {/* Internal steps below message: active live execution or folded/expanded history */}
       {thread.status === "running" ? (
-        <Box flexDirection="column" marginLeft={1} marginY={0}>
+        <Box flexDirection="column" marginLeft={2} marginY={0}>
           {thread.steps.map((step) => {
             if (step.type === "thinking") {
               return (
@@ -123,17 +107,26 @@ export function ThreadCard({ thread, isThinkingExpanded = false }: ThreadCardPro
           })}
         </Box>
       ) : (
-        <Box flexDirection="column" marginLeft={1}>
+        <Box flexDirection="column" marginLeft={2}>
           {thread.steps.length > 0 && !thread.isExpanded && (
             <Box marginY={0}>
               <Text color="gray">
-                │ ↳ {thread.stepCount} steps ({summarizeStepTools(thread.steps)}) · [tab to expand]
+                │ <Text color="cyan">↳ {thread.stepCount} {thread.stepCount === 1 ? "step" : "steps"}</Text> ({summarizeStepTools(thread.steps)}) · {seconds}s ·{" "}
+                <Text color="cyan">[click to expand · tab]</Text>
               </Text>
             </Box>
           )}
 
           {thread.steps.length > 0 && thread.isExpanded && (
             <Box flexDirection="column" marginY={0}>
+              <Box>
+                <Text color="gray">┌ </Text>
+                <Text color="cyan" bold>
+                  {thread.stepCount} {thread.stepCount === 1 ? "step" : "steps"}
+                </Text>
+                <Text color="gray"> ({summarizeStepTools(thread.steps)}) · {seconds}s · </Text>
+                <Text color="cyan">[click to collapse · tab]</Text>
+              </Box>
               {thread.steps.map((step) => {
                 if (step.type === "thinking") {
                   return (
@@ -161,6 +154,7 @@ export function ThreadCard({ thread, isThinkingExpanded = false }: ThreadCardPro
                 }
                 return null;
               })}
+              <Text color="gray">└</Text>
             </Box>
           )}
         </Box>
@@ -168,12 +162,19 @@ export function ThreadCard({ thread, isThinkingExpanded = false }: ThreadCardPro
 
       {/* Assistant final markdown answer */}
       {Boolean(thread.response || thread.isStreaming) && (
-        <Box marginLeft={1}>
-          <MessageCard
-            role="assistant"
-            content={thread.response}
-            isStreaming={thread.isStreaming}
-          />
+        <Box flexDirection="column" marginTop={0}>
+          <Box>
+            <Text color="greenBright" bold>
+              ▲ morpheus
+            </Text>
+          </Box>
+          <Box marginLeft={2}>
+            <MessageCard
+              role="assistant"
+              content={thread.response}
+              isStreaming={thread.isStreaming}
+            />
+          </Box>
         </Box>
       )}
     </Box>
