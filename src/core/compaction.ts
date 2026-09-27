@@ -40,7 +40,7 @@ export interface CompactionOptions {
  */
 export function extractFileOutline(rawContent: string): string {
   const lines = rawContent.split("\n");
-  if (lines.length <= 160) {
+  if (lines.length <= 80) {
     return rawContent;
   }
 
@@ -118,6 +118,52 @@ export function extractBashSummary(rawContent: string): string {
   return `${head.join("\n")}\n... [${omitted} intermediate output lines omitted] ...\n${tail.join("\n")}`;
 }
 
+/* Applies micro-compaction to a tool output:
+ * 1. For active turns, specialized formatters preserve semantic structure (read_file, list_dir, grep_code, bash).
+ * 2. Small outputs under compactThresholdChars are kept intact to avoid entity loss.
+ * 3. Error outputs preserve root cause stack headers.
+ * 4. Cold historical outputs are replaced with a concise operator tombstone. */
+export function compactToolOutput(
+  toolName: string,
+  rawContent: string,
+  isColdTurn: boolean,
+  isError?: boolean,
+  options: {
+    compactThresholdChars?: number;
+    errorLinesToPreserve?: number;
+  } = {}
+): string {
+  if (!isColdTurn) {
+    if (toolName === "read_file") {
+      return extractFileOutline(rawContent);
+    }
+    if (toolName === "list_dir") {
+      return extractDirSummary(rawContent);
+    }
+    if (toolName === "grep_code") {
+      return extractGrepSummary(rawContent);
+    }
+    if (toolName === "bash") {
+      return extractBashSummary(rawContent);
+    }
+  }
+
+  const lines = rawContent.split("\n");
+  const threshold = options.compactThresholdChars ?? 400;
+  if (lines.length <= 15 && rawContent.length <= threshold) {
+    return rawContent;
+  }
+
+  const errorPreserve = options.errorLinesToPreserve ?? 4;
+  if (isToolError(rawContent, isError)) {
+    const preserved = lines.slice(0, errorPreserve).join("\n");
+    const remainingCount = lines.length - errorPreserve;
+    return `${preserved}\n... [${remainingCount} lines pruned for token efficiency]`;
+  }
+
+  return `[Operator: ${toolName} | ${lines.length} lines, done]`;
+}
+
 export function compactHistory(
   history: (ChatMessage | CoreMessage)[],
   options: CompactionOptions = {}
@@ -175,56 +221,12 @@ export function compactHistory(
 
     if (msg.role === "tool" && typeof msg.content === "string") {
       const toolName = msg.name || "tool";
-
-      if (toolName === "read_file" && !isColdTurn) {
-        return {
-          ...msg,
-          content: extractFileOutline(msg.content),
-        };
-      }
-
-      if (toolName === "list_dir" && !isColdTurn) {
-        return {
-          ...msg,
-          content: extractDirSummary(msg.content),
-        };
-      }
-
-      if (toolName === "grep_code" && !isColdTurn) {
-        return {
-          ...msg,
-          content: extractGrepSummary(msg.content),
-        };
-      }
-
-      if (toolName === "bash" && !isColdTurn) {
-        return {
-          ...msg,
-          content: extractBashSummary(msg.content),
-        };
-      }
-
-      const rawResult = msg.content;
-      const lines = rawResult.split("\n");
-
-      if (lines.length <= 15 && rawResult.length <= compactThresholdChars) {
-        return msg as ChatMessage;
-      }
-
-      const isError = isToolError(rawResult, msg.isError);
-      if (isError) {
-        const preserved = lines.slice(0, errorLinesToPreserve).join("\n");
-        const remainingCount = lines.length - errorLinesToPreserve;
-        return {
-          ...msg,
-          content: `${preserved}\n... [${remainingCount} lines pruned for token efficiency]`,
-        };
-      }
-
-      const tombstone = `[Operator: ${toolName} | ${lines.length} lines, done]`;
       return {
         ...msg,
-        content: tombstone,
+        content: compactToolOutput(toolName, msg.content, isColdTurn, msg.isError, {
+          compactThresholdChars,
+          errorLinesToPreserve,
+        }),
       };
     }
 
@@ -240,55 +242,15 @@ export function compactHistory(
             ? part.result
             : JSON.stringify(part.result);
 
-        if (toolName === "read_file" && !isColdTurn) {
-          return {
-            ...part,
-            result: extractFileOutline(rawResult),
-          };
-        }
-
-        if (toolName === "list_dir" && !isColdTurn) {
-          return {
-            ...part,
-            result: extractDirSummary(rawResult),
-          };
-        }
-
-        if (toolName === "grep_code" && !isColdTurn) {
-          return {
-            ...part,
-            result: extractGrepSummary(rawResult),
-          };
-        }
-
-        if (toolName === "bash" && !isColdTurn) {
-          return {
-            ...part,
-            result: extractBashSummary(rawResult),
-          };
-        }
-
-        const lines = rawResult.split("\n");
-
-        if (lines.length <= 15 && rawResult.length <= compactThresholdChars) {
-          return part;
-        }
-        const isError = isToolError(rawResult, part.isError !== undefined ? Boolean(part.isError) : undefined);
-
-        if (isError) {
-          const preserved = lines.slice(0, errorLinesToPreserve).join("\n");
-          const remainingCount = lines.length - errorLinesToPreserve;
-          return {
-            ...part,
-            result: `${preserved}\n... [${remainingCount} lines pruned for token efficiency]`,
-          };
-        }
-
-        const tombstone = `[Operator: ${toolName} | ${lines.length} lines, done]`;
-
         return {
           ...part,
-          result: tombstone,
+          result: compactToolOutput(
+            toolName,
+            rawResult,
+            isColdTurn,
+            part.isError !== undefined ? Boolean(part.isError) : undefined,
+            { compactThresholdChars, errorLinesToPreserve }
+          ),
         };
       });
 
@@ -297,7 +259,6 @@ export function compactHistory(
         content: compactedContent,
       };
     }
-
     return msg as ChatMessage;
   });
 }

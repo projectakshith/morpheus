@@ -1,7 +1,8 @@
 import fs from "node:fs/promises";
 import path from "node:path";
 import { resolvePathWithFallbacks, exists } from "../utils/filesystem";
-import type { ToolResult } from "../core/types";
+import type { ToolDefinition, ToolResult } from "../core/types";
+import { formatError } from "../utils/errors";
 
 export interface ListDirParams {
   dirPath?: string;
@@ -136,4 +137,32 @@ export async function listDir(
 
   const output = [`${baseName}/`, ...lines].join("\n");
   return { output };
+}
+
+export function createListTool(cwd: string = process.cwd()): ToolDefinition {
+  return {
+    name: "list_dir",
+    description:
+      "List files and directories in a tree hierarchy up to a specified depth. Automatically ignores .git, node_modules, build directories, and dotfiles. Much faster and cleaner than running bash ls/find.",
+    parameters: {
+      type: "object",
+      properties: {
+        dirPath: {
+          type: "string",
+          description: "Path to directory to list (defaults to current directory)",
+        },
+        depth: {
+          type: "number",
+          description: "Maximum directory depth to traverse (1 to 4, defaults to 2)",
+        },
+      },
+    },
+    execute: async (params: Record<string, any>) => {
+      try {
+        return await listDir(params as unknown as ListDirParams, cwd);
+      } catch (err: unknown) {
+        return `Error: ${formatError(err)}`;
+      }
+    },
+  };
 }

@@ -6,77 +6,34 @@ import { UI } from "./ui";
 import { theme } from "./theme";
 import { MORPHEUS_VERSION } from "../index";
 import { isToolError } from "../utils/errors";
+import { parseCLIArgs } from "./args";
+import { setupEscapeListener } from "./escape";
 
 dotenv.config();
 
-/**
- * Listens for the Escape key on stdin to abort the current generation.
- * Returns a cleanup function that restores stdin to its previous state.
- */
-function setupEscapeListener(onAbort: () => void): () => void {
-  if (!process.stdin.isTTY) {
-    return () => {};
-  }
-
-  let wasRaw = false;
-  try {
-    wasRaw = process.stdin.isRaw ?? false;
-  } catch {
-  }
-
-  const onData = (chunk: Buffer) => {
-    if (chunk.length === 1 && chunk[0] === 27) {
-      onAbort();
-    } else if (chunk.length === 1 && chunk[0] === 3) {
-      onAbort();
-      process.exit(0);
-    }
-  };
-
-  try {
-    process.stdin.setRawMode?.(true);
-    process.stdin.resume();
-    process.stdin.on("data", onData);
-  } catch {
-  }
-
-  return () => {
-    try {
-      process.stdin.removeListener("data", onData);
-      process.stdin.setRawMode?.(wasRaw);
-      process.stdin.pause();
-    } catch {
-    }
+/* Creates unified terminal UI event callbacks for the agent loop. */
+function createAgentCallbacks(ui: UI) {
+  return {
+    onStepStart: (step: number) => ui.startStep(step),
+    onReasoningDelta: (chunk: string) => ui.streamReasoning(chunk),
+    onTextDelta: (chunk: string) => ui.streamChunk(chunk),
+    onToolCall: (name: string, toolArgs: Record<string, unknown>) => {
+      ui.startTool(name, toolArgs);
+    },
+    onToolResult: (name: string, res: { output: string; metadata?: Record<string, unknown> }) => {
+      const isError = isToolError(res.output, res.metadata?.isError as boolean | undefined);
+      ui.finishTool(name, res.output, isError);
+    },
   };
 }
 
 export async function runCLI(args: string[] = process.argv.slice(2)) {
-  let isVerbose = false;
-  let isLocal = false;
-  let model: string | undefined;
-  let baseURL: string | undefined;
-  const remainingArgs: string[] = [];
-
-  for (let i = 0; i < args.length; i++) {
-    const arg = args[i];
-    if (arg === "-v" || arg === "--verbose") {
-      isVerbose = true;
-    } else if (arg === "--local" || arg === "--ollama") {
-      isLocal = true;
-    } else if (arg === "-m" || arg === "--model") {
-      if (i + 1 < args.length) {
-        model = args[++i];
-      }
-    } else if (arg === "--base-url") {
-      if (i + 1 < args.length) {
-        baseURL = args[++i];
-      }
-    } else {
-      remainingArgs.push(arg);
-    }
-  }
-
-  const initialTask = remainingArgs.join(" ").trim();
+  const parsed = parseCLIArgs(args);
+  const isVerbose = parsed.isVerbose;
+  const isLocal = parsed.isLocal;
+  let model = parsed.model;
+  const baseURL = parsed.baseURL;
+  const initialTask = parsed.task;
 
   const ui = new UI({ verbose: isVerbose });
   ui.banner(MORPHEUS_VERSION);
@@ -87,6 +44,8 @@ export async function runCLI(args: string[] = process.argv.slice(2)) {
     }
     console.log(theme.dim(`Local engine: Ollama (${model})\n`));
   }
+
+  const agentCallbacks = createAgentCallbacks(ui);
 
   if (initialTask) {
     const abortController = new AbortController();
@@ -104,16 +63,7 @@ export async function runCLI(args: string[] = process.argv.slice(2)) {
         isLocal,
         model,
         baseURL,
-        onStepStart: (step) => ui.startStep(step),
-        onReasoningDelta: (chunk) => ui.streamReasoning(chunk),
-        onTextDelta: (chunk) => ui.streamChunk(chunk),
-        onToolCall: (name, toolArgs) => {
-          ui.startTool(name, toolArgs);
-        },
-        onToolResult: (name, res) => {
-          const isError = isToolError(res.output, res.metadata?.isError as boolean | undefined);
-          ui.finishTool(name, res.output, isError);
-        },
+        ...agentCallbacks,
       });
 
       ui.flushStream();
@@ -176,19 +126,7 @@ export async function runCLI(args: string[] = process.argv.slice(2)) {
         isLocal,
         model,
         baseURL,
-        onStepStart: (step) => ui.startStep(step),
-        onReasoningDelta: (chunk) => ui.streamReasoning(chunk),
-        onTextDelta: (chunk) => ui.streamChunk(chunk),
-        onToolCall: (name, toolArgs) => {
-          ui.startTool(name, toolArgs);
-        },
-        onToolResult: (name, toolResult) => {
-          const isError = isToolError(
-            toolResult.output,
-            toolResult.metadata?.isError as boolean | undefined
-          );
-          ui.finishTool(name, toolResult.output, isError);
-        },
+        ...agentCallbacks,
       });
 
       ui.flushStream();

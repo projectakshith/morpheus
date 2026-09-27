@@ -1,7 +1,8 @@
 import fs from "node:fs/promises";
 import path from "node:path";
 import { resolvePath, resolvePathWithFallbacks, exists } from "../utils/filesystem";
-import type { ToolResult } from "../core/types";
+import type { ToolDefinition, ToolResult } from "../core/types";
+import { formatError } from "../utils/errors";
 
 export interface WriteFileParams {
   filePath: string;
@@ -29,5 +30,34 @@ export async function writeFile(
 
   return {
     output: `Successfully wrote ${bytes} bytes (${lineCount} lines) to ${params.filePath}`,
+  };
+}
+
+export function createWriteTool(cwd: string = process.cwd()): ToolDefinition {
+  return {
+    name: "write_file",
+    description:
+      "Create a new file or completely overwrite an existing file. Automatically creates any missing parent directories.",
+    parameters: {
+      type: "object",
+      properties: {
+        filePath: {
+          type: "string",
+          description: "Path to the file to create or overwrite",
+        },
+        content: {
+          type: "string",
+          description: "Full content to write into the file",
+        },
+      },
+      required: ["filePath", "content"],
+    },
+    execute: async (params: Record<string, any>) => {
+      try {
+        return await writeFile(params as unknown as WriteFileParams, cwd);
+      } catch (err: unknown) {
+        return `Error: ${formatError(err)}`;
+      }
+    },
   };
 }

@@ -1,7 +1,8 @@
 import fs from "node:fs/promises";
 import path from "node:path";
 import { resolvePathWithFallbacks, exists } from "../utils/filesystem";
-import type { ToolResult } from "../core/types";
+import type { ToolDefinition, ToolResult } from "../core/types";
+import { formatError } from "../utils/errors";
 
 export interface OutlineParams {
   filePath: string;
@@ -161,4 +162,29 @@ export async function outlineCode(
   ].join("\n");
 
   return { output };
+}
+
+export function createOutlineTool(cwd: string = process.cwd()): ToolDefinition {
+  return {
+    name: "outline_code",
+    description:
+      "Extract high-level structure (classes, functions, types, and route definitions) with exact line numbers from a file. Far more token-efficient than reading full files.",
+    parameters: {
+      type: "object",
+      properties: {
+        filePath: {
+          type: "string",
+          description: "Path to the code file to outline",
+        },
+      },
+      required: ["filePath"],
+    },
+    execute: async (params: Record<string, any>) => {
+      try {
+        return await outlineCode(params as unknown as OutlineParams, cwd);
+      } catch (err: unknown) {
+        return `Error: ${formatError(err)}`;
+      }
+    },
+  };
 }

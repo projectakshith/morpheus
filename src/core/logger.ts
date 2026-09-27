@@ -10,6 +10,7 @@ export class SessionLogger {
   private latestPath: string = "";
   private startTime: number = Date.now();
   private buffer: string[] = [];
+  private reasoningBuffer: string = "";
 
   constructor() {
     const timestamp = new Date().toISOString().replace(/[:.]/g, "-");
@@ -46,11 +47,13 @@ export class SessionLogger {
   }
 
   async logStep(step: number) {
+    this.flushReasoningBuffer();
     this.buffer.push(`\n[STEP ${step}] ----------------------------------------`);
     await this.flush();
   }
 
   async logToolCall(step: number, name: string, args: Record<string, unknown>) {
+    this.flushReasoningBuffer();
     const serializedArgs = JSON.stringify(args, null, 2);
     this.buffer.push(`[TOOL CALL] ${name}\nArguments:\n${serializedArgs}`);
     await this.flush();
@@ -63,27 +66,49 @@ export class SessionLogger {
   }
 
   async logReasoning(delta: string) {
-    this.buffer.push(`[THINKING] ${delta}`);
-    await this.flush();
+    this.reasoningBuffer += delta;
+    if (this.reasoningBuffer.length >= 1000 || delta.includes("\n")) {
+      this.buffer.push(`[THINKING] ${this.reasoningBuffer}`);
+      this.reasoningBuffer = "";
+      await this.flush();
+    }
+  }
+
+  private flushReasoningBuffer() {
+    if (this.reasoningBuffer.length > 0) {
+      this.buffer.push(`[THINKING] ${this.reasoningBuffer}`);
+      this.reasoningBuffer = "";
+    }
   }
 
   async logAssistantResponse(text: string) {
+    this.flushReasoningBuffer();
     this.buffer.push(`\n[ASSISTANT RESPONSE]\n${text}\n`);
     await this.flush();
   }
 
   async logFinish(usage: TokenUsage, aborted = false) {
+    this.flushReasoningBuffer();
     const duration = ((Date.now() - this.startTime) / 1000).toFixed(2);
     const summary = [
       "",
       "============================================================",
       `SESSION COMPLETED in ${duration}s (Aborted: ${aborted})`,
-      `Token Usage: ${usage.promptTokens.toLocaleString()} in | ${usage.completionTokens.toLocaleString()} out | ${usage.totalTokens.toLocaleString()} total`,
+      `Token Usage: ${usage.promptTokens.toLocaleString()} in | ${usage.completionTokens.toLocaleString()} out | ${usage.totalTokens.toLocaleString()} total` +
+        (usage.peakContextTokens
+          ? ` | Peak Context: ${usage.peakContextTokens.toLocaleString()}/${usage.contextLimit ? usage.contextLimit.toLocaleString() : "?"}`
+          : ""),
       "============================================================",
       "",
     ].join("\n");
     this.buffer.push(summary);
     await this.flush();
+
+    /* Atomically update latest.log once at session finish to avoid quadratic disk read/writes */
+    try {
+      await fs.copyFile(this.logPath, this.latestPath);
+    } catch {
+    }
   }
 
   private async flush() {
@@ -92,7 +117,6 @@ export class SessionLogger {
     this.buffer = [];
     try {
       await fs.appendFile(this.logPath, content, "utf-8");
-      await fs.writeFile(this.latestPath, await fs.readFile(this.logPath, "utf-8"), "utf-8");
     } catch {
     }
   }

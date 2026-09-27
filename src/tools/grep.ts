@@ -1,7 +1,8 @@
 import fs from "node:fs/promises";
 import path from "node:path";
 import { resolvePathWithFallbacks, exists } from "../utils/filesystem";
-import type { ToolResult } from "../core/types";
+import type { ToolDefinition, ToolResult } from "../core/types";
+import { formatError } from "../utils/errors";
 
 export interface GrepParams {
   pattern: string;
@@ -189,4 +190,47 @@ export async function grepCode(
   }
 
   return { output: outputLines.join("\n") };
+}
+
+export function createGrepTool(cwd: string = process.cwd()): ToolDefinition {
+  return {
+    name: "grep_code",
+    description:
+      "Fast code search across files in a directory or file. Automatically skips node_modules, build dirs, lockfiles, and git directories. Returns line numbers and snippets with matching lines. Far more token-efficient than bash grep.",
+    parameters: {
+      type: "object",
+      properties: {
+        pattern: {
+          type: "string",
+          description: "Search query or regular expression to match",
+        },
+        searchPath: {
+          type: "string",
+          description:
+            "Path to file or directory to search (defaults to current directory)",
+        },
+        caseSensitive: {
+          type: "boolean",
+          description: "Whether search is case-sensitive (defaults to false)",
+        },
+        maxMatches: {
+          type: "number",
+          description: "Maximum total matches to return (defaults to 20)",
+        },
+        includeDocs: {
+          type: "boolean",
+          description:
+            "Whether to include markdown documentation files (.md, .txt) in search results (defaults to false)",
+        },
+      },
+      required: ["pattern"],
+    },
+    execute: async (params: Record<string, any>) => {
+      try {
+        return await grepCode(params as unknown as GrepParams, cwd);
+      } catch (err: unknown) {
+        return `Error: ${formatError(err)}`;
+      }
+    },
+  };
 }

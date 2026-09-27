@@ -36,6 +36,88 @@ interface AccumulatedToolCall {
   arguments: string;
 }
 
+/* Transforms internal chat messages into OpenAI-compatible payload format. */
+export function formatMessagesForPayload(
+  messages: ChatMessage[],
+  system?: string
+): Record<string, unknown>[] {
+  const rawMessages: Record<string, unknown>[] = [];
+
+  if (system) {
+    rawMessages.push({ role: "system", content: system });
+  }
+
+  for (const msg of messages) {
+    if (msg.role === "system") {
+      rawMessages.push({ role: "system", content: msg.content });
+    } else if (msg.role === "user") {
+      rawMessages.push({ role: "user", content: msg.content });
+    } else if (msg.role === "assistant") {
+      const item: Record<string, unknown> = {
+        role: "assistant",
+        content: msg.content || null,
+      };
+      if (msg.tool_calls && msg.tool_calls.length > 0) {
+        item.tool_calls = msg.tool_calls;
+      }
+      rawMessages.push(item);
+    } else if (msg.role === "tool") {
+      const strContent =
+        typeof msg.content === "string"
+          ? msg.content
+          : JSON.stringify(msg.content);
+      rawMessages.push({
+        role: "tool",
+        tool_call_id: msg.tool_call_id || "call_default",
+        name: msg.name,
+        content: strContent,
+      });
+    }
+  }
+
+  return rawMessages;
+}
+
+/* Formats registered tools into OpenAI function call definition specs. */
+export function formatToolsForPayload(
+  tools?: Record<string, ToolDefinition> | ToolDefinition[]
+): Record<string, unknown>[] | undefined {
+  if (!tools) return undefined;
+  const toolList = Array.isArray(tools) ? tools : Object.values(tools);
+  if (toolList.length === 0) return undefined;
+
+  return toolList.map((t) => ({
+    type: "function",
+    function: {
+      name: t.name,
+      description: t.description,
+      parameters: t.parameters,
+    },
+  }));
+}
+
+/* Flushes all accumulated streaming tool calls into discrete stream events. */
+export function flushAccumulatedToolCalls(
+  toolCallsByIndex: Map<number, AccumulatedToolCall>
+): StreamEvent[] {
+  const events: StreamEvent[] = [];
+  for (const [_, tc] of toolCallsByIndex.entries()) {
+    events.push({
+      type: "tool_call",
+      toolCall: {
+        id: tc.id || `call_${Math.random().toString(36).slice(2, 9)}`,
+        type: "function",
+        function: {
+          name: tc.name,
+          arguments: tc.arguments,
+        },
+      },
+    });
+  }
+  toolCallsByIndex.clear();
+  return events;
+}
+
 export class Operator {
   private apiKey: string;
   private baseURL: string;
@@ -79,7 +161,7 @@ export class Operator {
 
       this.numCtx =
         config.numCtx ||
-        (process.env.MORPHEUS_NUM_CTX ? parseInt(process.env.MORPHEUS_NUM_CTX, 10) : 12288);
+        (process.env.MORPHEUS_NUM_CTX ? parseInt(process.env.MORPHEUS_NUM_CTX, 10) : 32768);
     } else {
       this.baseURL =
         config.baseURL ||
@@ -104,7 +186,7 @@ export class Operator {
 
       this.numCtx =
         config.numCtx ||
-        (process.env.MORPHEUS_NUM_CTX ? parseInt(process.env.MORPHEUS_NUM_CTX, 10) : 32768);
+        (process.env.MORPHEUS_NUM_CTX ? parseInt(process.env.MORPHEUS_NUM_CTX, 10) : 128000);
     }
 
     this.defaultHeaders = config.defaultHeaders || {};
@@ -122,45 +204,24 @@ export class Operator {
     return this.isLocal;
   }
 
+  getNumCtx(): number {
+    return this.numCtx;
+  }
+
+  /* Computes safe token threshold before context overflow, reserving generation headroom */
+  getContextSafetyLimit(): number {
+    const completionReserve = Math.min(8192, Math.floor(this.numCtx * 0.15));
+    return Math.max(4096, this.numCtx - completionReserve);
+  }
+
   async *chatStream(options: ChatStreamOptions): AsyncGenerator<StreamEvent> {
-    const rawMessages: Record<string, unknown>[] = [];
-
-    if (options.system) {
-      rawMessages.push({ role: "system", content: options.system });
-    }
-
-    for (const msg of options.messages) {
-      if (msg.role === "system") {
-        rawMessages.push({ role: "system", content: msg.content });
-      } else if (msg.role === "user") {
-        rawMessages.push({ role: "user", content: msg.content });
-      } else if (msg.role === "assistant") {
-        const item: Record<string, unknown> = {
-          role: "assistant",
-          content: msg.content || null,
-        };
-        if (msg.tool_calls && msg.tool_calls.length > 0) {
-          item.tool_calls = msg.tool_calls;
-        }
-        rawMessages.push(item);
-      } else if (msg.role === "tool") {
-        const strContent =
-          typeof msg.content === "string"
-            ? msg.content
-            : JSON.stringify(msg.content);
-        rawMessages.push({
-          role: "tool",
-          tool_call_id: msg.tool_call_id || "call_default",
-          name: msg.name,
-          content: strContent,
-        });
-      }
-    }
+    const rawMessages = formatMessagesForPayload(options.messages, options.system);
 
     const payload: Record<string, unknown> = {
       model: this.model,
       messages: rawMessages,
       stream: true,
+      max_tokens: 8192,
       stream_options: { include_usage: true },
     };
 
@@ -170,21 +231,9 @@ export class Operator {
       };
     }
 
-    if (options.tools) {
-      const toolList = Array.isArray(options.tools)
-        ? options.tools
-        : Object.values(options.tools);
-
-      if (toolList.length > 0) {
-        payload.tools = toolList.map((t) => ({
-          type: "function",
-          function: {
-            name: t.name,
-            description: t.description,
-            parameters: t.parameters,
-          },
-        }));
-      }
+    const formattedTools = formatToolsForPayload(options.tools);
+    if (formattedTools) {
+      payload.tools = formattedTools;
     }
 
     const response = await fetch(`${this.baseURL}/chat/completions`, {
@@ -229,20 +278,9 @@ export class Operator {
 
           const dataStr = trimmed.slice(5).trim();
           if (dataStr === "[DONE]") {
-            for (const [_, tc] of toolCallsByIndex.entries()) {
-              yield {
-                type: "tool_call",
-                toolCall: {
-                  id: tc.id || `call_${Math.random().toString(36).slice(2, 9)}`,
-                  type: "function",
-                  function: {
-                    name: tc.name,
-                    arguments: tc.arguments,
-                  },
-                },
-              };
+            for (const event of flushAccumulatedToolCalls(toolCallsByIndex)) {
+              yield event;
             }
-            toolCallsByIndex.clear();
             yield { type: "finish", finishReason: "stop" };
             return;
           }
@@ -294,40 +332,18 @@ export class Operator {
           }
 
           if (choice.finish_reason === "tool_calls" || choice.finish_reason === "function_call") {
-            for (const [_, tc] of toolCallsByIndex.entries()) {
-              yield {
-                type: "tool_call",
-                toolCall: {
-                  id: tc.id || `call_${Math.random().toString(36).slice(2, 9)}`,
-                  type: "function",
-                  function: {
-                    name: tc.name,
-                    arguments: tc.arguments,
-                  },
-                },
-              };
+            for (const event of flushAccumulatedToolCalls(toolCallsByIndex)) {
+              yield event;
             }
-            toolCallsByIndex.clear();
             yield { type: "finish", finishReason: choice.finish_reason };
           }
         }
       }
 
       if (toolCallsByIndex.size > 0) {
-        for (const [_, tc] of toolCallsByIndex.entries()) {
-          yield {
-            type: "tool_call",
-            toolCall: {
-              id: tc.id || `call_${Math.random().toString(36).slice(2, 9)}`,
-              type: "function",
-              function: {
-                name: tc.name,
-                arguments: tc.arguments,
-              },
-            },
-          };
+        for (const event of flushAccumulatedToolCalls(toolCallsByIndex)) {
+          yield event;
         }
-        toolCallsByIndex.clear();
       }
     } finally {
       reader.releaseLock();

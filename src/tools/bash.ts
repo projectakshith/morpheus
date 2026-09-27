@@ -1,6 +1,7 @@
 import { spawn } from "node:child_process";
 import { truncateOutput } from "./construct";
-import type { ToolResult } from "../core/types";
+import type { ToolDefinition, ToolResult } from "../core/types";
+import { formatError } from "../utils/errors";
 
 export interface BashParams {
   command: string;
@@ -74,4 +75,33 @@ export async function executeBash(
       });
     });
   });
+}
+
+export function createBashTool(cwd: string = process.cwd()): ToolDefinition {
+  return {
+    name: "bash",
+    description:
+      "Execute a terminal command in the host environment. Use this for git, builds, package managers, and tests.",
+    parameters: {
+      type: "object",
+      properties: {
+        command: {
+          type: "string",
+          description: "The bash command line string to run",
+        },
+        timeoutMs: {
+          type: "number",
+          description: "Timeout in milliseconds (defaults to 60000)",
+        },
+      },
+      required: ["command"],
+    },
+    execute: async (params: Record<string, any>) => {
+      try {
+        return await executeBash(params as unknown as BashParams, cwd);
+      } catch (err: unknown) {
+        return `Error: ${formatError(err)}`;
+      }
+    },
+  };
 }

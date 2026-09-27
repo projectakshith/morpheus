@@ -3,7 +3,8 @@ import path from "node:path";
 import { resolvePathWithFallbacks, exists } from "../utils/filesystem";
 import { similarity } from "../utils/levenshtein";
 import { truncateOutput } from "./construct";
-import type { ToolResult } from "../core/types";
+import type { ToolDefinition, ToolResult } from "../core/types";
+import { formatError } from "../utils/errors";
 
 export interface ReadFileParams {
   filePath: string;
@@ -65,7 +66,7 @@ export async function readFile(
   const lines = raw.split("\n");
 
   const offset = Math.max(1, params.offset ?? 1);
-  const limit = Math.max(1, Math.min(params.limit ?? 250, 1000));
+  const limit = Math.max(1, Math.min(params.limit ?? 1000, 2000));
   const startIndex = offset - 1;
   const slice = lines.slice(startIndex, startIndex + limit);
 
@@ -80,4 +81,37 @@ export async function readFile(
 
   const result = await truncateOutput(`${numbered}${pagination}`);
   return { output: result.content };
+}
+
+export function createReadTool(cwd: string = process.cwd()): ToolDefinition {
+  return {
+    name: "read_file",
+    description:
+      "Read contents of a file or directory from the filesystem with 1-indexed line numbers.",
+    parameters: {
+      type: "object",
+      properties: {
+        filePath: {
+          type: "string",
+          description: "Relative or absolute path to the file/directory",
+        },
+        offset: {
+          type: "number",
+          description: "Line number to start reading from (defaults to 1)",
+        },
+        limit: {
+          type: "number",
+          description: "Maximum number of lines to return (defaults to 1000, max 2000)",
+        },
+      },
+      required: ["filePath"],
+    },
+    execute: async (params: Record<string, any>) => {
+      try {
+        return await readFile(params as unknown as ReadFileParams, cwd);
+      } catch (err: unknown) {
+        return `Error: ${formatError(err)}`;
+      }
+    },
+  };
 }

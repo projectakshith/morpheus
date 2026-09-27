@@ -5,6 +5,12 @@ import { compactHistory } from "./compaction";
 import { SessionLogger } from "./logger";
 import { isToolError, formatError } from "../utils/errors";
 import { tryExtractTextToolCalls } from "../utils/toolExtraction";
+import { isConversationalStall } from "./stallGuard";
+import {
+  calculateInitialStepBudget,
+  shouldExtendStepBudget,
+  DEFAULT_HARD_MAX_STEPS,
+} from "./stepBudget";
 import type {
   AgentOptions,
   AgentRunResult,
@@ -12,35 +18,30 @@ import type {
   Finding,
   TokenUsage,
   ToolCall,
+  ToolDefinition,
 } from "./types";
+
+export { isConversationalStall };
 
 const DOOM_LOOP_THRESHOLD = 3;
 
-/* Evaluates whether assistant content is an advisory deflection, future narrative,
- * or permission prompt that stalls autonomous tool execution. */
-export function isConversationalStall(
-  content: string,
-  stepCount: number,
-  maxSteps: number,
-  nudges: number
-): boolean {
-  if (stepCount >= maxSteps || nudges >= 3) {
-    return false;
+/* Safely executes a tool handler, extracting output and detecting errors cleanly. */
+async function executeToolSafely(
+  tool: ToolDefinition,
+  args: Record<string, unknown>,
+  cwd: string
+): Promise<{ output: string; isError: boolean }> {
+  try {
+    const res = await tool.execute(args, cwd);
+    const output = typeof res === "string" ? res : res.output;
+    const isError = isToolError(
+      output,
+      typeof res === "object" ? (res.metadata?.isError as boolean) : undefined
+    );
+    return { output, isError };
+  } catch (err: unknown) {
+    return { output: `Error: ${formatError(err)}`, isError: true };
   }
-
-  const matchesFutureAction =
-    /(\b(let's|let us|i'll|i will|we will|we can|we should|we need to)\s+(?:try\s+(?:to\s+)?|first\s+|now\s+|also\s+|proceed\s+to\s+|go\s+ahead\s+and\s+)?(?:take\s+(?:a\s+)?(?:look|peek)|check(?:\s+out)?|dig\s+into|dive\s+into|turn\s+(?:our\s+)?attention\s+to|look(?:\s+at|\s+into)?|explore|investigate|search|inspect|scan|list|read|outline|see\s+(?:if|whether)|find\s+out|examine|start\s+(?:by|with)?|locate|head\s+over\s+to)\b|\bdoes this help\b|\bshall i\b|\bshould we\b|\bwould you like\b|\bwhat's next\b)/i.test(
-      content
-    );
-
-  const matchesAdvisory =
-    /\b(you can|you may|feel free to|you should|you might want to)\s+(?:check|read|inspect|look at|explore|see|review|find|open)\b/i.test(
-      content
-    );
-
-  const endsWithColon = /:[\s\n]*$/.test(content);
-
-  return matchesFutureAction || matchesAdvisory || endsWithColon;
 }
 
 /**
@@ -79,16 +80,13 @@ export async function runAgent(
   let stepCount = 0;
   let promptTokens = 0;
   let completionTokens = 0;
+  let currentPromptTokens = 0;
+  let peakContextTokens = 0;
   let wasAborted = false;
   const userSpecifiedMaxSteps = options.maxSteps;
-  /* Dynamic step budgeting:
-   * Tasks requiring modifications (add, fix, implement, test, etc.) start with 12 steps
-   * so they have adequate runway to edit code, write test cases, and verify.
-   * Inquiry or exploration queries start with 8 steps to keep tokens frugal. */
-  const isCodingTask = /\b(add|fix|create|implement|update|refactor|test|write|build|solve|patch)\b/i.test(prompt);
-  let maxSteps = userSpecifiedMaxSteps ?? (isCodingTask ? 12 : 8);
-  const hardMaxSteps = userSpecifiedMaxSteps ?? 16;
-  const tokenSafetyCeiling = 85_000;
+  let maxSteps = calculateInitialStepBudget({ prompt, userSpecifiedMaxSteps });
+  const hardMaxSteps = userSpecifiedMaxSteps ?? DEFAULT_HARD_MAX_STEPS;
+  const tokenSafetyCeiling = operator.getContextSafetyLimit();
   let hasModifiedFiles = false;
   const readFiles = new Map<string, number>();
   let conversationalNudges = 0;
@@ -96,6 +94,11 @@ export async function runAgent(
   while (stepCount < maxSteps) {
     if (options.abortSignal?.aborted) {
       wasAborted = true;
+      break;
+    }
+
+    /* Context safety ceiling guard: halt tool loop if active context window approaches provider limit */
+    if (currentPromptTokens >= tokenSafetyCeiling) {
       break;
     }
 
@@ -139,6 +142,10 @@ export async function runAgent(
         } else if (event.type === "tool_call" && event.toolCall) {
           toolCalls.push(event.toolCall);
         } else if (event.type === "usage" && event.usage) {
+          currentPromptTokens = event.usage.promptTokens;
+          if (currentPromptTokens > peakContextTokens) {
+            peakContextTokens = currentPromptTokens;
+          }
           promptTokens += event.usage.promptTokens;
           completionTokens += event.usage.completionTokens;
         }
@@ -162,6 +169,21 @@ export async function runAgent(
     }
 
     if (toolCalls.length === 0) {
+      if (!assistantContent.trim()) {
+        /* Model emitted thinking or empty output, but no user-facing response text.
+         * Nudge the model to output its answer, or fall through to final synthesis. */
+        if (conversationalNudges < 2) {
+          conversationalNudges++;
+          workingMessages.push({
+            role: "user",
+            content:
+              "[System Notice: You provided thinking or empty output, but no final response text. Provide your concise, direct answer to the user now.]",
+          });
+          continue;
+        }
+        break;
+      }
+
       if (isConversationalStall(assistantContent, stepCount, maxSteps, conversationalNudges)) {
         conversationalNudges++;
         workingMessages.push({
@@ -219,33 +241,17 @@ export async function runAgent(
           outputStr = `[Notice: '${parsedArgs.filePath}' was just read in Step ${prevStep}. The contents are already present in your immediate context above.]`;
           isError = false;
         } else {
-          try {
-            const res = await targetTool.execute(parsedArgs, cwd);
-            outputStr = typeof res === "string" ? res : res.output;
-            isError = isToolError(
-              outputStr,
-              typeof res === "object" ? (res.metadata?.isError as boolean) : undefined
-            );
-            if (!isError) {
-              readFiles.set(readKey, stepCount);
-            }
-          } catch (err: unknown) {
-            outputStr = `Error: ${formatError(err)}`;
-            isError = true;
+          const executed = await executeToolSafely(targetTool, parsedArgs, cwd);
+          outputStr = executed.output;
+          isError = executed.isError;
+          if (!isError) {
+            readFiles.set(readKey, stepCount);
           }
         }
       } else {
-        try {
-          const res = await targetTool.execute(parsedArgs, cwd);
-          outputStr = typeof res === "string" ? res : res.output;
-          isError = isToolError(
-            outputStr,
-            typeof res === "object" ? (res.metadata?.isError as boolean) : undefined
-          );
-        } catch (err: unknown) {
-          outputStr = `Error: ${formatError(err)}`;
-          isError = true;
-        }
+        const executed = await executeToolSafely(targetTool, parsedArgs, cwd);
+        outputStr = executed.output;
+        isError = executed.isError;
       }
 
       options.onToolResult?.(toolName, { output: outputStr, metadata: { isError } });
@@ -282,20 +288,22 @@ export async function runAgent(
       });
     }
 
-    /* Dynamic step extension: if files were modified and model needs runway to test,
-     * allow extending up to hardMaxSteps as long as token usage is within budget */
     if (
-      !userSpecifiedMaxSteps &&
-      hasModifiedFiles &&
-      stepCount >= maxSteps - 1 &&
-      maxSteps < hardMaxSteps &&
-      promptTokens + completionTokens < tokenSafetyCeiling
+      shouldExtendStepBudget({
+        userSpecifiedMaxSteps,
+        hasModifiedFiles,
+        stepCount,
+        maxSteps,
+        hardMaxSteps,
+        totalTokens: currentPromptTokens,
+        tokenSafetyCeiling,
+      })
     ) {
-      maxSteps = Math.min(hardMaxSteps, maxSteps + 3);
+      maxSteps = Math.min(hardMaxSteps, maxSteps + 5);
     }
   }
 
-  if (!wasAborted && !completedCleanly) {
+  if (!wasAborted && (!completedCleanly || !fullResponse.trim())) {
     stepCount++;
     options.onStepStart?.(stepCount);
     await logger.logStep(stepCount);
@@ -340,6 +348,10 @@ export async function runAgent(
           options.onReasoningDelta?.(event.reasoning);
           await logger.logReasoning(event.reasoning);
         } else if (event.type === "usage" && event.usage) {
+          currentPromptTokens = event.usage.promptTokens;
+          if (currentPromptTokens > peakContextTokens) {
+            peakContextTokens = currentPromptTokens;
+          }
           promptTokens += event.usage.promptTokens;
           completionTokens += event.usage.completionTokens;
         }
@@ -362,6 +374,8 @@ export async function runAgent(
     promptTokens,
     completionTokens,
     totalTokens: promptTokens + completionTokens,
+    peakContextTokens,
+    contextLimit: operator.getNumCtx(),
   };
 
   options.onUsage?.(usage);

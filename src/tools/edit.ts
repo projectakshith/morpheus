@@ -2,7 +2,8 @@ import fs from "node:fs/promises";
 import { createPatch } from "diff";
 import { resolvePathWithFallbacks, exists, detectLineEnding, normalizeLineEndings } from "../utils/filesystem";
 import { similarity } from "../utils/levenshtein";
-import type { ToolResult } from "../core/types";
+import type { ToolDefinition, ToolResult } from "../core/types";
+import { formatError } from "../utils/errors";
 
 export interface EditFileParams {
   filePath: string;
@@ -113,5 +114,42 @@ export async function editFile(
 
   return {
     output: `Successfully applied edits to ${params.filePath}.\n\n${patchLines}`,
+  };
+}
+
+export function createEditTool(cwd: string = process.cwd()): ToolDefinition {
+  return {
+    name: "edit_file",
+    description:
+      "Perform exact string replacement in an existing file. Must have read the file before editing.",
+    parameters: {
+      type: "object",
+      properties: {
+        filePath: {
+          type: "string",
+          description: "Path to the file to edit",
+        },
+        oldString: {
+          type: "string",
+          description: "The exact text to replace",
+        },
+        newString: {
+          type: "string",
+          description: "The new text to replace it with",
+        },
+        replaceAll: {
+          type: "boolean",
+          description: "Replace all occurrences (defaults to false)",
+        },
+      },
+      required: ["filePath", "oldString", "newString"],
+    },
+    execute: async (params: Record<string, any>) => {
+      try {
+        return await editFile(params as unknown as EditFileParams, cwd);
+      } catch (err: unknown) {
+        return `Error: ${formatError(err)}`;
+      }
+    },
   };
 }

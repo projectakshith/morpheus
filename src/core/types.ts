@@ -42,6 +42,8 @@ export interface TokenUsage {
   promptTokens: number;
   completionTokens: number;
   totalTokens: number;
+  peakContextTokens?: number;
+  contextLimit?: number;
 }
 
 export interface Finding {

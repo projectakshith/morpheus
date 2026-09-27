@@ -1,5 +1,5 @@
 import { truncateOutput } from "./construct";
-import type { ToolResult } from "../core/types";
+import type { ToolDefinition, ToolResult } from "../core/types";
 import { formatError } from "../utils/errors";
 
 export interface HttpRequestParams {
@@ -105,4 +105,47 @@ export async function executeHttpRequest(
     }
     throw new Error(`HTTP request failed: ${message}`);
   }
+}
+
+export function createHttpTool(): ToolDefinition {
+  return {
+    name: "http_request",
+    description:
+      "Send a native HTTP/HTTPS request (GET, POST, PUT, DELETE, PATCH, HEAD) and inspect status code, headers, and response body. Use for API testing, health checks, and curl-like network requests.",
+    parameters: {
+      type: "object",
+      properties: {
+        url: {
+          type: "string",
+          description: "Target URL starting with http:// or https://",
+        },
+        method: {
+          type: "string",
+          description:
+            "HTTP method: GET, POST, PUT, DELETE, PATCH, HEAD (defaults to GET)",
+          enum: ["GET", "POST", "PUT", "DELETE", "PATCH", "HEAD"],
+        },
+        headers: {
+          type: "object",
+          description: "Optional key-value object of request headers",
+        },
+        body: {
+          type: "string",
+          description: "Optional request body string or JSON",
+        },
+        timeoutMs: {
+          type: "number",
+          description: "Request timeout in milliseconds (defaults to 15000)",
+        },
+      },
+      required: ["url"],
+    },
+    execute: async (params: Record<string, any>) => {
+      try {
+        return await executeHttpRequest(params as unknown as HttpRequestParams);
+      } catch (err: unknown) {
+        return `Error: ${formatError(err)}`;
+      }
+    },
+  };
 }

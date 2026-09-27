@@ -147,7 +147,11 @@ export class UI {
     const inStr = pc.cyan(`${usage.promptTokens.toLocaleString()} in`);
     const outStr = pc.cyan(`${usage.completionTokens.toLocaleString()} out`);
     const totalStr = pc.dim(`(${usage.totalTokens.toLocaleString()} total API roundtrips)`);
-    console.log(`\n  ${pc.dim("⚡ Tokens:")} ${inStr} ${pc.dim("·")} ${outStr} ${totalStr}`);
+    const contextStr =
+      usage.peakContextTokens !== undefined && usage.contextLimit !== undefined
+        ? pc.dim(` · peak context: ${pc.cyan(usage.peakContextTokens.toLocaleString())}/${pc.dim(usage.contextLimit.toLocaleString())}`)
+        : "";
+    console.log(`\n  ${pc.dim("⚡ Tokens:")} ${inStr} ${pc.dim("·")} ${outStr} ${totalStr}${contextStr}`);
   }
 
   showLog(logPath: string) {
