@@ -161,8 +161,8 @@ export function DiffColumn({
 
       {/* Git branch metadata */}
       {branch && (
-        <Box marginTop={1}>
-          <Text color="gray">{"─".repeat(contentWidth)}</Text>
+        <Box flexDirection="column" marginTop={1}>
+          <Text color="gray">{"─".repeat(Math.max(10, contentWidth - 2))}</Text>
           <Box justifyContent="space-between">
             <Text color="gray">git: {branch}</Text>
             <Text color={gitStatus && gitStatus !== "clean" ? "yellow" : "gray"}>

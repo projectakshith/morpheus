@@ -14,18 +14,18 @@ export interface StatusBarProps {
   scrollOffset?: number;
 }
 
-/* Minimalist Vercel-style telemetry status bar with thin divider */
+/* Minimalist telemetry status bar with non-wrapping layout and thin divider */
 export function StatusBar({
   status,
   stepCount,
   maxSteps = 25,
   usage,
   elapsedSeconds,
-  isThinkingExpanded = false,
   width: customWidth,
   scrollOffset = 0,
 }: StatusBarProps) {
   const width = customWidth ?? Math.max(40, process.stdout.columns ? process.stdout.columns - 2 : 76);
+  const lineWidth = Math.max(10, width - 2);
 
   /* Format elapsed time as mm:ss */
   const mins = Math.floor(elapsedSeconds / 60)
@@ -46,7 +46,7 @@ export function StatusBar({
 
   return (
     <Box flexDirection="column">
-      <Text color="gray">{"─".repeat(width)}</Text>
+      <Text color="gray">{"─".repeat(lineWidth)}</Text>
       <Box justifyContent="space-between">
         <Box>
           {status === "running" ? (
@@ -61,28 +61,20 @@ export function StatusBar({
             <Text color="gray">● READY</Text>
           )}
 
-          <Text color="gray"> · </Text>
-          <Text color="white">{timeStr}</Text>
-          <Text color="gray"> · step </Text>
-          <Text color="white">
-            {stepCount}/{maxSteps}
+          <Text color="gray">
+            {" "}· {timeStr} · step {stepCount}/{maxSteps} · ctx {peakCtx}/{limitCtx} · api {totalTokens}
           </Text>
-          <Text color="gray"> · ctx </Text>
-          <Text color="cyan">{peakCtx}</Text>
-          <Text color="gray">/{limitCtx}</Text>
-          <Text color="gray"> · api </Text>
-          <Text color="white">{totalTokens}</Text>
 
           {scrollOffset > 0 && (
             <Text color="yellow" bold>
-              {" "}· ▲ +{scrollOffset} [end to reset]
+              {" "}· ▲ +{scrollOffset}
             </Text>
           )}
         </Box>
 
         <Box>
           <Text color="gray">
-            [esc] stop · [tab] steps · [pgup/dn] scroll · [ctrl+c] exit
+            [esc] stop · [ctrl+c] exit
           </Text>
         </Box>
       </Box>

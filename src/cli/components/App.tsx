@@ -118,7 +118,7 @@ function extractDiffRecord(
   return null;
 }
 
-/* Root interactive full-screen application with mouse scrolling, click-to-expand, and static bottom bar */
+/* Root interactive full-screen application with mouse click-to-expand, scrolling, and static bottom bar */
 export function App({
   model,
   isLocal = false,
@@ -161,21 +161,68 @@ export function App({
   const inputBoxHeight = 1;
   const feedHeight = Math.max(4, terminalHeight - headerHeight - statusBarHeight - inputBoxHeight);
 
-  /* Ensure terminal mouse capture is completely disabled so clicks never leak escape characters into input */
+  /* Enable SGR mouse reporting for clicking on threads and wheel scrolling */
   useEffect(() => {
     try {
-      process.stdout.write("\x1b[?1000l\x1b[?1002l\x1b[?1006l");
+      process.stdout.write("\x1b[?1000h\x1b[?1006h");
     } catch {}
+
+    const onData = (chunk: Buffer | string) => {
+      const str = typeof chunk === "string" ? chunk : chunk.toString("utf-8");
+      const mouseMatches = str.matchAll(/\x1b\[<(\d+);(\d+);(\d+)([Mm])/g);
+
+      for (const match of mouseMatches) {
+        const button = parseInt(match[1], 10);
+        const col = parseInt(match[2], 10);
+        const row = parseInt(match[3], 10);
+        const isRelease = match[4] === "m";
+
+        if (button === 64) {
+          /* Mouse wheel up: scroll view up */
+          setScrollOffset((prev) => {
+            isUserScrolledRef.current = true;
+            return prev + 3;
+          });
+        } else if (button === 65) {
+          /* Mouse wheel down: scroll view down */
+          setScrollOffset((prev) => {
+            const next = Math.max(0, prev - 3);
+            if (next === 0) {
+              isUserScrolledRef.current = false;
+            }
+            return next;
+          });
+        } else if (button === 0 && !isRelease) {
+          /* Left click: toggle clicked thread */
+          if (col <= leftWidth) {
+            const clickedLineIndex = row - 3;
+            if (clickedLineIndex >= 0 && clickedLineIndex < visibleLinesRef.current.length) {
+              const target = visibleLinesRef.current[clickedLineIndex];
+              if (target && target.threadId) {
+                setThreads((prev) =>
+                  prev.map((t) =>
+                    t.id === target.threadId ? { ...t, isExpanded: !t.isExpanded } : t
+                  )
+                );
+              }
+            }
+          }
+        }
+      }
+    };
+
+    process.stdin.on("data", onData);
 
     const cleanup = () => {
       try {
         process.stdout.write("\x1b[?1000l\x1b[?1002l\x1b[?1006l");
       } catch {}
+      process.stdin.off("data", onData);
     };
 
     process.on("exit", cleanup);
     return cleanup;
-  }, []);
+  }, [leftWidth]);
 
   /* Handle keyboard shortcuts */
   useInput((input, key) => {
@@ -185,16 +232,20 @@ export function App({
       return;
     }
 
-    /* Toggle thread step expansion / thinking preview */
+    /* Toggle thread step expansion via Tab */
     if (key.tab) {
       if (status === "running") {
         setIsThinkingExpanded((prev) => !prev);
       } else {
         setThreads((prev) => {
           if (prev.length === 0) return prev;
+          const anyExpanded = prev.some((t) => t.isExpanded);
+          if (anyExpanded) {
+            return prev.map((t) => ({ ...t, isExpanded: false }));
+          }
           const targetIndex = prev.length - 1;
           return prev.map((t, idx) =>
-            idx === targetIndex ? { ...t, isExpanded: !t.isExpanded } : t
+            idx === targetIndex ? { ...t, isExpanded: true } : t
           );
         });
       }
@@ -560,8 +611,8 @@ export function App({
             isStepToggle: true,
             node: (
               <Text color="gray">
-                │ <Text color="cyan">↳ {thread.stepCount} {thread.stepCount === 1 ? "step" : "steps"}</Text> ({toolsSummary}) · {sec}s ·{" "}
-                <Text color="cyan">[tab to expand]</Text>
+                {"  "}<Text color="cyan">▾ {thread.stepCount} {thread.stepCount === 1 ? "step" : "steps"}</Text> ({toolsSummary}) · {sec}s ·{" "}
+                <Text color="cyan">[click to expand]</Text>
               </Text>
             ),
           });
@@ -572,8 +623,8 @@ export function App({
             isStepToggle: true,
             node: (
               <Text color="gray">
-                ┌ <Text color="cyan" bold>{thread.stepCount} {thread.stepCount === 1 ? "step" : "steps"}</Text> ({toolsSummary}) · {sec}s ·{" "}
-                <Text color="cyan">[tab to collapse]</Text>
+                {"  "}┌ <Text color="cyan" bold>{thread.stepCount} {thread.stepCount === 1 ? "step" : "steps"}</Text> ({toolsSummary}) · {sec}s ·{" "}
+                <Text color="cyan">[click to collapse]</Text>
               </Text>
             ),
           });
@@ -586,7 +637,7 @@ export function App({
                 threadId: thread.id,
                 node: (
                   <Text color="gray">
-                    │ ● thinking ({sSec}s)
+                    {"  "}│ ● thinking ({sSec}s)
                   </Text>
                 ),
               });
@@ -598,13 +649,13 @@ export function App({
                 threadId: thread.id,
                 node: step.isError ? (
                   <Text color="red">
-                    │ ✖ <Text color="white" bold>{step.name}</Text>
+                    {"  "}│ ✖ <Text color="white" bold>{step.name}</Text>
                     {primaryArgStr ? <Text color="cyan"> {primaryArgStr}</Text> : null}
                     {step.outputSummary ? <Text color="red"> · {step.outputSummary}</Text> : null}
                   </Text>
                 ) : (
                   <Text color="green">
-                    │ ✔ <Text color="white" bold>{step.name}</Text>
+                    {"  "}│ ✔ <Text color="white" bold>{step.name}</Text>
                     {primaryArgStr ? <Text color="cyan"> {primaryArgStr}</Text> : null}
                     {step.outputSummary ? <Text color="gray"> · {step.outputSummary}</Text> : null}
                   </Text>
@@ -616,7 +667,7 @@ export function App({
           lines.push({
             id: `${thread.id}_steps_exp_ftr`,
             threadId: thread.id,
-            node: <Text color="gray">└</Text>,
+            node: <Text color="gray">  └</Text>,
           });
         }
       }
@@ -650,10 +701,15 @@ export function App({
         });
       }
 
-      /* Spacer between turns */
+      /* Divider between turns */
       if (tIdx < threads.length - 1) {
         lines.push({
-          id: `${thread.id}_spacer`,
+          id: `${thread.id}_spacer_1`,
+          threadId: thread.id,
+          node: <Text color="gray">  {"· ".repeat(Math.min(16, Math.max(4, Math.floor(leftWidth / 6))))}</Text>,
+        });
+        lines.push({
+          id: `${thread.id}_spacer_2`,
           threadId: thread.id,
           node: <Text> </Text>,
         });
@@ -661,7 +717,7 @@ export function App({
     });
 
     return lines;
-  }, [threads]);
+  }, [threads, leftWidth]);
 
   /* Calculate exact visible lines window respecting clamped scrollOffset */
   const visibleLines = useMemo(() => {
