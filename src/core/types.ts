@@ -1,14 +1,52 @@
-import type { CoreMessage } from "ai";
+export type MessageRole = "system" | "user" | "assistant" | "tool";
+
+export interface ToolCallFunction {
+  name: string;
+  arguments: string;
+}
+
+export interface ToolCall {
+  id: string;
+  type: "function";
+  function: ToolCallFunction;
+}
+
+export interface ChatMessage {
+  role: MessageRole;
+  content: string | any;
+  name?: string;
+  tool_call_id?: string;
+  tool_calls?: ToolCall[];
+  isError?: boolean;
+}
+
+export type CoreMessage = ChatMessage;
 
 export interface ToolResult<TMetadata = Record<string, unknown>> {
   output: string;
   metadata?: TMetadata;
 }
 
+export interface ToolDefinition {
+  name: string;
+  description: string;
+  parameters: {
+    type: "object";
+    properties: Record<string, { type: string; description: string; enum?: string[] }>;
+    required?: string[];
+  };
+  execute: (args: Record<string, any>, cwd?: string) => Promise<ToolResult | string>;
+}
+
 export interface TokenUsage {
   promptTokens: number;
   completionTokens: number;
   totalTokens: number;
+}
+
+export interface Finding {
+  topic: string;
+  takeaway: string;
 }
 
 export interface AgentContext {
@@ -19,14 +57,19 @@ export interface AgentContext {
   platform: string;
   date: string;
   repoMap?: string;
+  siblings?: string[];
+  findings?: Finding[];
 }
 
 export interface AgentOptions {
   cwd?: string;
   model?: string;
   apiKey?: string;
+  baseURL?: string;
+  isLocal?: boolean;
   maxSteps?: number;
   abortSignal?: AbortSignal;
+  onStepStart?: (stepNumber: number) => void;
   onTextDelta?: (delta: string) => void;
   onReasoningDelta?: (delta: string) => void;
   onToolCall?: (toolName: string, args: Record<string, unknown>) => void;
@@ -38,7 +81,7 @@ export interface AgentOptions {
 export interface AgentRunResult {
   text: string;
   steps: number;
-  messages: CoreMessage[];
+  messages: ChatMessage[];
   usage: TokenUsage;
   aborted?: boolean;
   logPath?: string;
