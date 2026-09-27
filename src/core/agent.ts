@@ -27,30 +27,47 @@ export async function runAgent(
 
   let consecutiveErrors = 0;
   let lastErrorSignature = "";
+  let fullResponse = "";
+  let stepCount = 0;
 
-  const stream = streamText({
+  const result = streamText({
     model,
     system: systemPrompt,
     messages,
     tools,
     maxSteps: options.maxSteps ?? 25,
-    onStepFinish: async (step) => {
-      // Monitor tool calls and outputs for doom-loops
-      for (const toolCall of step.toolCalls) {
-        options.onToolCall?.(toolCall.toolName, toolCall.args as Record<string, unknown>);
-      }
+  });
 
-      for (const toolResult of step.toolResults) {
-        const outputStr = typeof toolResult.result === "string"
-          ? toolResult.result
-          : JSON.stringify(toolResult.result);
+  for await (const part of result.fullStream) {
+    switch (part.type) {
+      case "step-start":
+        stepCount++;
+        break;
 
-        options.onToolResult?.(toolResult.toolName, { output: outputStr });
+      case "text-delta":
+        fullResponse += part.textDelta;
+        options.onTextDelta?.(part.textDelta);
+        break;
+
+      case "reasoning":
+        options.onReasoningDelta?.(part.textDelta);
+        break;
+
+      case "tool-call":
+        options.onToolCall?.(part.toolName, part.args as Record<string, unknown>);
+        break;
+
+      case "tool-result": {
+        const outputStr = typeof part.result === "string"
+          ? part.result
+          : JSON.stringify(part.result);
+
+        options.onToolResult?.(part.toolName, { output: outputStr });
 
         const isError = outputStr.toLowerCase().includes("error") || outputStr.toLowerCase().includes("failed");
 
         if (isError) {
-          const signature = `${toolResult.toolName}:${outputStr.slice(0, 100)}`;
+          const signature = `${part.toolName}:${outputStr.slice(0, 100)}`;
           if (signature === lastErrorSignature) {
             consecutiveErrors++;
           } else {
@@ -60,28 +77,23 @@ export async function runAgent(
 
           if (consecutiveErrors >= DOOM_LOOP_THRESHOLD) {
             throw new Error(
-              `[Morpheus Doom-Loop Guard] Tool '${toolResult.toolName}' failed ${DOOM_LOOP_THRESHOLD} times consecutively with identical error. Halting loop to prevent token burn.`
+              `[Morpheus Doom-Loop Guard] Tool '${part.toolName}' failed ${DOOM_LOOP_THRESHOLD} times consecutively with identical error. Halting loop to prevent token burn.`
             );
           }
         } else {
           consecutiveErrors = 0;
         }
+        break;
       }
-    },
-  });
 
-  let fullResponse = "";
-
-  for await (const chunk of stream.textStream) {
-    fullResponse += chunk;
-    options.onTextDelta?.(chunk);
+      case "error":
+        throw part.error;
+    }
   }
-
-  const finalMessages = await stream.response;
 
   return {
     text: fullResponse,
-    steps: stream.steps ? (await stream.steps).length : 1,
-    messages: [...messages, ...finalMessages.messages],
+    steps: stepCount,
+    messages: [...messages, { role: "assistant" as const, content: fullResponse }],
   };
 }

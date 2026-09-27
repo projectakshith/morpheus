@@ -6,18 +6,48 @@ import type { LanguageModel } from "ai";
 export interface ProviderConfig {
   model?: string;
   apiKey?: string;
+  baseURL?: string;
 }
 
 /**
  * Resolves the appropriate LanguageModel based on model ID or environment variables.
- * Automatically falls back across Anthropic, Google, and OpenAI keys.
+ * Automatically handles Groq, NVIDIA NIM, Anthropic, Google Gemini, and OpenAI.
  */
 export function resolveModel(config: ProviderConfig = {}): {
   model: LanguageModel;
   modelId: string;
   provider: string;
 } {
-  const modelId = config.model || process.env.MORPHEUS_MODEL || "claude-3-7-sonnet-latest";
+  const modelId =
+    config.model ||
+    process.env.MORPHEUS_MODEL ||
+    (process.env.GROQ_API_KEY ? "openai/gpt-oss-120b" : "claude-3-7-sonnet-latest");
+
+  // Groq (Ultra-fast LPU inference)
+  if (process.env.GROQ_API_KEY) {
+    const groq = createOpenAI({
+      apiKey: config.apiKey || process.env.GROQ_API_KEY,
+      baseURL: config.baseURL || process.env.GROQ_BASE_URL || "https://api.groq.com/openai/v1",
+    });
+    return {
+      model: groq(modelId),
+      modelId,
+      provider: "groq",
+    };
+  }
+
+  // NVIDIA NIM
+  if (process.env.NVIDIA_API_KEY || modelId.startsWith("deepseek-ai/") || modelId.startsWith("nvidia/")) {
+    const nvidia = createOpenAI({
+      apiKey: config.apiKey || process.env.NVIDIA_API_KEY,
+      baseURL: config.baseURL || process.env.NVIDIA_BASE_URL || "https://integrate.api.nvidia.com/v1",
+    });
+    return {
+      model: nvidia(modelId),
+      modelId,
+      provider: "nvidia",
+    };
+  }
 
   // Anthropic
   if (modelId.startsWith("claude") || process.env.ANTHROPIC_API_KEY) {
