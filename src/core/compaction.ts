@@ -40,7 +40,7 @@ export interface CompactionOptions {
  */
 export function extractFileOutline(rawContent: string): string {
   const lines = rawContent.split("\n");
-  if (lines.length <= 60) {
+  if (lines.length <= 160) {
     return rawContent;
   }
 
@@ -103,6 +103,19 @@ export function extractGrepSummary(content: string, maxMatchesPerFile = 2): stri
     }
   }
   return result.join("\n");
+}
+
+/* Preserves the head (command context) and tail (exit code / test count summary)
+ * of bash execution outputs so models retain test verification outcomes without amnesia. */
+export function extractBashSummary(rawContent: string): string {
+  const lines = rawContent.split("\n");
+  if (lines.length <= 10) {
+    return rawContent;
+  }
+  const head = lines.slice(0, 2);
+  const tail = lines.slice(-6);
+  const omitted = lines.length - 8;
+  return `${head.join("\n")}\n... [${omitted} intermediate output lines omitted] ...\n${tail.join("\n")}`;
 }
 
 export function compactHistory(
@@ -184,6 +197,13 @@ export function compactHistory(
         };
       }
 
+      if (toolName === "bash" && !isColdTurn) {
+        return {
+          ...msg,
+          content: extractBashSummary(msg.content),
+        };
+      }
+
       const rawResult = msg.content;
       const lines = rawResult.split("\n");
 
@@ -238,6 +258,13 @@ export function compactHistory(
           return {
             ...part,
             result: extractGrepSummary(rawResult),
+          };
+        }
+
+        if (toolName === "bash" && !isColdTurn) {
+          return {
+            ...part,
+            result: extractBashSummary(rawResult),
           };
         }
 

@@ -65,7 +65,7 @@ export async function readFile(
   const lines = raw.split("\n");
 
   const offset = Math.max(1, params.offset ?? 1);
-  const limit = Math.max(1, Math.min(params.limit ?? 120, 500));
+  const limit = Math.max(1, Math.min(params.limit ?? 250, 1000));
   const startIndex = offset - 1;
   const slice = lines.slice(startIndex, startIndex + limit);
 
