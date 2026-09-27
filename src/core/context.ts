@@ -74,6 +74,7 @@ export function buildSystemPrompt(ctx: AgentContext): string {
     "3. Use the bash tool to run builds, tests, git queries, and linters. Verify your changes.",
     "4. If a tool output is truncated, inspect specific sections using offset and limit in read_file or run grep via bash.",
     "5. Be direct, concise, and professional. Avoid filler, buzzwords, or unnecessary chatter.",
+    "6. Keep terminal output clean, well-structured, and easy to read.",
     "",
     envBlock,
   ].join("\n");

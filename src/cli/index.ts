@@ -20,18 +20,18 @@ export async function runCLI(args: string[] = process.argv.slice(2)) {
       console.log(`${theme.brightGreen("▶")} ${initialTask}\n`);
 
       await runAgent(initialTask, [], {
-        onTextDelta: (chunk) => process.stdout.write(chunk),
+        onTextDelta: (chunk) => ui.streamChunk(chunk),
         onToolCall: (name, toolArgs) => {
-          const detail = (toolArgs.filePath as string) || (toolArgs.command as string) || "";
-          ui.startTool(name, detail);
+          ui.startTool(name, toolArgs);
         },
-        onToolResult: (_, result) => {
-          const isError = result.output.toLowerCase().includes("error");
-          ui.finishTool(!isError);
+        onToolResult: (name, result) => {
+          const isError = result.output.toLowerCase().includes("error") || result.output.toLowerCase().includes("failed");
+          ui.finishTool(name, result.output, isError);
         },
       });
 
-      console.log("\n\n" + theme.dim("Task finished."));
+      ui.flushStream();
+      console.log("\n" + theme.dim("Task finished."));
       process.exit(0);
     } catch (err: unknown) {
       ui.error(err instanceof Error ? err.message : String(err));
@@ -62,17 +62,17 @@ export async function runCLI(args: string[] = process.argv.slice(2)) {
 
     try {
       const result = await runAgent(task, history, {
-        onTextDelta: (chunk) => process.stdout.write(chunk),
+        onTextDelta: (chunk) => ui.streamChunk(chunk),
         onToolCall: (name, toolArgs) => {
-          const detail = (toolArgs.filePath as string) || (toolArgs.command as string) || "";
-          ui.startTool(name, detail);
+          ui.startTool(name, toolArgs);
         },
-        onToolResult: (_, toolResult) => {
-          const isError = toolResult.output.toLowerCase().includes("error");
-          ui.finishTool(!isError);
+        onToolResult: (name, toolResult) => {
+          const isError = toolResult.output.toLowerCase().includes("error") || toolResult.output.toLowerCase().includes("failed");
+          ui.finishTool(name, toolResult.output, isError);
         },
       });
 
+      ui.flushStream();
       history = result.messages;
       console.log("\n");
     } catch (err: unknown) {
