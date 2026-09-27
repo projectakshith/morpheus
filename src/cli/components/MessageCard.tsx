@@ -1,5 +1,6 @@
-import React from "react";
+import React, { useMemo } from "react";
 import { Box, Text } from "ink";
+import { MarkdownFormatter } from "../format";
 
 export interface MessageCardProps {
   role: "user" | "assistant";
@@ -7,14 +8,28 @@ export interface MessageCardProps {
   isStreaming?: boolean;
 }
 
-/* Minimalist message card formatting for dialogue turns */
+/* Minimalist message card formatting with full ANSI markdown rendering */
 export function MessageCard({ role, content, isStreaming = false }: MessageCardProps) {
   if (!content.trim() && !isStreaming) {
     return null;
   }
 
   const isUser = role === "user";
-  const lines = content.split("\n");
+
+  /* Process assistant markdown into rich ANSI terminal lines */
+  const formattedLines = useMemo(() => {
+    if (isUser) {
+      return content.split("\n");
+    }
+    const formatter = new MarkdownFormatter();
+    const result: string[] = [];
+    const rawLines = content.split("\n");
+    for (const rawLine of rawLines) {
+      result.push(...formatter.processLine(rawLine));
+    }
+    result.push(...formatter.flush());
+    return result;
+  }, [content, isUser]);
 
   return (
     <Box flexDirection="column" marginY={1}>
@@ -24,36 +39,9 @@ export function MessageCard({ role, content, isStreaming = false }: MessageCardP
         </Text>
       </Box>
       <Box flexDirection="column" marginLeft={2} marginTop={0}>
-        {lines.map((line, idx) => {
-          /* Format bullet points with subtle dimmed bullets */
-          if (line.trim().startsWith("- ") || line.trim().startsWith("* ")) {
-            const body = line.trim().slice(2);
-            return (
-              <Box key={idx}>
-                <Text color="gray">  · </Text>
-                <Text color="white">{body}</Text>
-              </Box>
-            );
-          }
-
-          /* Format markdown headers with bold high-contrast white */
-          if (line.trim().startsWith("#")) {
-            const headerText = line.trim().replace(/^#+\s*/, "");
-            return (
-              <Box key={idx} marginTop={1} marginBottom={0}>
-                <Text color="white" bold>
-                  {headerText}
-                </Text>
-              </Box>
-            );
-          }
-
-          return (
-            <Text key={idx} color="white">
-              {line}
-            </Text>
-          );
-        })}
+        {formattedLines.map((line, idx) => (
+          <Text key={idx}>{line}</Text>
+        ))}
       </Box>
     </Box>
   );
