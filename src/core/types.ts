@@ -71,6 +71,7 @@ export interface AgentOptions {
   isLocal?: boolean;
   maxSteps?: number;
   abortSignal?: AbortSignal;
+  findings?: Finding[];
   onStepStart?: (stepNumber: number) => void;
   onTextDelta?: (delta: string) => void;
   onReasoningDelta?: (delta: string) => void;
@@ -85,6 +86,7 @@ export interface AgentRunResult {
   steps: number;
   messages: ChatMessage[];
   usage: TokenUsage;
+  findings?: Finding[];
   aborted?: boolean;
   logPath?: string;
 }

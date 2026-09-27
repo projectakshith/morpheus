@@ -54,7 +54,7 @@ export async function runAgent(
   options: AgentOptions = {}
 ): Promise<AgentRunResult> {
   const cwd = options.cwd ?? process.cwd();
-  const findings: Finding[] = [];
+  const findings: Finding[] = options.findings ? [...options.findings] : [];
   const baseContext = gatherContext(cwd);
   const tools = createTools(cwd, (f) => findings.push(f));
 
@@ -387,6 +387,7 @@ export async function runAgent(
     steps: stepCount,
     messages: workingMessages,
     usage,
+    findings,
     aborted: wasAborted,
     logPath: logger.getLogPath(),
   };

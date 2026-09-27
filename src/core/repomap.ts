@@ -47,6 +47,7 @@ function extractSymbols(code: string): string[] {
   for (const match of code.matchAll(funcRegex)) {
     const fnName = match[1];
     const rawArgs = match[2]
+      .replace(/\s+/g, " ")
       .split(",")
       .map((a) => a.trim().split(/[:=]/)[0].trim())
       .filter(Boolean);
@@ -57,6 +58,7 @@ function extractSymbols(code: string): string[] {
   for (const match of code.matchAll(constFnRegex)) {
     const fnName = match[1];
     const rawArgs = match[2]
+      .replace(/\s+/g, " ")
       .split(",")
       .map((a) => a.trim().split(/[:=]/)[0].trim())
       .filter(Boolean);
@@ -106,6 +108,7 @@ function scanDirectory(
   if (depth >= maxDepth) return [];
 
   const lines: string[] = [];
+  const subdirs: string[] = [];
   let entries: fs.Dirent[] = [];
 
   try {
@@ -121,7 +124,7 @@ function scanDirectory(
 
     if (entry.isDirectory()) {
       if (IGNORED_DIRS.has(entry.name)) continue;
-      lines.push(...scanDirectory(baseDir, fullPath, maxDepth, depth + 1));
+      subdirs.push(fullPath);
     } else if (entry.isFile()) {
       const ext = path.extname(entry.name);
       if (!SUPPORTED_EXTS.has(ext)) continue;
@@ -140,6 +143,10 @@ function scanDirectory(
     }
   }
 
+  for (const subdir of subdirs) {
+    lines.push(...scanDirectory(baseDir, subdir, maxDepth, depth + 1));
+  }
+
   return lines;
 }
 
@@ -147,7 +154,7 @@ export function generateRepoMap(
   cwd: string,
   options: RepoMapOptions = {}
 ): string {
-  const maxFiles = options.maxFiles ?? 25;
+  const maxFiles = options.maxFiles ?? 30;
   const maxDepth = options.maxDepth ?? 3;
 
   const candidateDirs = ["src", "lib", "app", "bin"];
