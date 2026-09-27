@@ -1,5 +1,5 @@
-import React, { useState, useEffect, useRef } from "react";
-import { Box, useInput, useApp, useWindowSize } from "ink";
+import React, { useState, useEffect, useRef, useMemo } from "react";
+import { Box, useInput, useWindowSize } from "ink";
 import { Header } from "./Header";
 import { StatusBar } from "./StatusBar";
 import { ThreadCard, type Thread, type ThreadStep } from "./ThreadCard";
@@ -63,7 +63,7 @@ function extractDiffRecord(
   return null;
 }
 
-/* Root interactive Ink application with split-column layout and Trinity-inspired thread hierarchy */
+/* Root interactive full-screen Ink application with dedicated split inspector and Trinity thread hierarchy */
 export function App({
   model,
   isLocal = false,
@@ -72,8 +72,7 @@ export function App({
   initialTask,
   maxSteps,
 }: AppProps) {
-  const { exit } = useApp();
-  const { columns } = useWindowSize();
+  const { columns, rows } = useWindowSize();
 
   const [status, setStatus] = useState<"idle" | "running" | "aborted" | "error">(
     initialTask ? "running" : "idle"
@@ -82,6 +81,7 @@ export function App({
   const [elapsedSeconds, setElapsedSeconds] = useState(0);
   const [usage, setUsage] = useState<TokenUsage | undefined>();
   const [isThinkingExpanded, setIsThinkingExpanded] = useState(false);
+  const [scrollOffset, setScrollOffset] = useState(0);
   const [threads, setThreads] = useState<Thread[]>([]);
   const [fileEdits, setFileEdits] = useState<FileEditRecord[]>([]);
   const [history, setHistory] = useState<ChatMessage[]>([]);
@@ -93,11 +93,15 @@ export function App({
   const baseContext = useRef(gatherContext(process.cwd()));
   const initialTaskFired = useRef(false);
 
-  /* Compute dynamic column partition based on terminal width */
+  /* Compute full-screen dimensions and dedicated side column partition */
   const terminalWidth = columns || process.stdout.columns || 80;
+  const terminalHeight = rows || process.stdout.rows || 24;
   const isSplitLayout = terminalWidth >= 90;
-  const leftWidth = isSplitLayout ? Math.floor(terminalWidth * 0.60) : Math.max(40, terminalWidth - 2);
-  const rightWidth = isSplitLayout ? terminalWidth - leftWidth - 3 : 0;
+  const leftWidth = isSplitLayout ? Math.floor(terminalWidth * 0.58) : terminalWidth;
+  const rightWidth = isSplitLayout ? terminalWidth - leftWidth - 2 : 0;
+  const headerHeight = 2;
+  const footerHeight = 3;
+  const workspaceHeight = Math.max(6, terminalHeight - headerHeight - footerHeight);
 
   /* Handle global shortcut keys */
   useInput((input, key) => {
@@ -122,6 +126,30 @@ export function App({
       }
       return;
     }
+
+    /* Scroll history up */
+    if (key.pageUp || (key.ctrl && input === "u")) {
+      setScrollOffset((prev) => prev + 1);
+      return;
+    }
+
+    /* Scroll history down */
+    if (key.pageDown || (key.ctrl && input === "d")) {
+      setScrollOffset((prev) => Math.max(0, prev - 1));
+      return;
+    }
+
+    /* Jump to earliest thread */
+    if (key.home) {
+      setScrollOffset(Math.max(0, threads.length - 1));
+      return;
+    }
+
+    /* Jump to latest thread / bottom */
+    if (key.end) {
+      setScrollOffset(0);
+      return;
+    }
   });
 
   const executeTask = async (taskText: string) => {
@@ -130,6 +158,7 @@ export function App({
     setStatus("running");
     setStepCount(0);
     setElapsedSeconds(0);
+    setScrollOffset(0);
     setPromptHistory((prev) => [...prev, taskText]);
 
     const abortController = new AbortController();
@@ -335,10 +364,6 @@ export function App({
       }
       setUsage(result.usage);
       setStatus(result.aborted ? "aborted" : "idle");
-
-      if (initialTask) {
-        setTimeout(() => exit(), 500);
-      }
     } catch (err: unknown) {
       setStatus("error");
       setThreads((prev) =>
@@ -354,9 +379,6 @@ export function App({
             : t
         )
       );
-      if (initialTask) {
-        setTimeout(() => exit(), 500);
-      }
     } finally {
       if (timerRef.current) {
         clearInterval(timerRef.current);
@@ -373,20 +395,43 @@ export function App({
     }
   }, []);
 
+  /* Compute slice of threads to display in the visible window */
+  const visibleThreads = useMemo(() => {
+    if (threads.length === 0) return [];
+    const endIndex = Math.max(1, threads.length - scrollOffset);
+    const maxVisible = Math.max(1, Math.floor(workspaceHeight / 4));
+    const startIndex = Math.max(0, endIndex - maxVisible);
+    return threads.slice(startIndex, endIndex);
+  }, [threads, scrollOffset, workspaceHeight]);
+
   return (
-    <Box flexDirection="column" paddingX={1} paddingY={0}>
+    <Box
+      flexDirection="column"
+      width={terminalWidth}
+      height={terminalHeight}
+      overflow="hidden"
+    >
+      {/* Full-width header spanning the top of the terminal */}
       <Header
         version={MORPHEUS_VERSION}
         model={model}
         branch={baseContext.current.branch}
         gitStatus={baseContext.current.gitStatus}
+        width={terminalWidth}
       />
 
-      {/* Two-column split layout: Left conversation threads, Right diff inspector */}
-      <Box flexDirection="row">
-        <Box flexDirection="column" width={leftWidth} paddingRight={isSplitLayout ? 1 : 0}>
-          <Box flexDirection="column">
-            {threads.map((thread) => (
+      {/* Full-height workspace: Left conversation threads, Right dedicated inspector */}
+      <Box flexDirection="row" flexGrow={1} height={workspaceHeight} overflow="hidden">
+        {/* Left Column: Thread workspace, Status bar, Input box */}
+        <Box
+          flexDirection="column"
+          width={leftWidth}
+          height="100%"
+          paddingRight={isSplitLayout ? 1 : 0}
+        >
+          {/* Scrollable feed of conversation threads */}
+          <Box flexDirection="column" flexGrow={1} overflow="hidden">
+            {visibleThreads.map((thread) => (
               <ThreadCard
                 key={thread.id}
                 thread={thread}
@@ -395,6 +440,7 @@ export function App({
             ))}
           </Box>
 
+          {/* Telemetry status bar pinned directly above input */}
           <StatusBar
             status={status}
             stepCount={stepCount}
@@ -403,20 +449,22 @@ export function App({
             elapsedSeconds={elapsedSeconds}
             isThinkingExpanded={isThinkingExpanded}
             width={leftWidth}
+            scrollOffset={scrollOffset}
           />
 
-          {!initialTask && (
-            <InputBox
-              onSubmit={executeTask}
-              isDisabled={status === "running"}
-              history={promptHistory}
-            />
-          )}
+          {/* Interactive prompt input pinned to the bottom */}
+          <InputBox
+            onSubmit={executeTask}
+            isDisabled={status === "running"}
+            history={promptHistory}
+          />
         </Box>
 
+        {/* Right Dedicated Column: Full-height diff & inspector pane */}
         {isSplitLayout && (
           <DiffColumn
             width={rightWidth}
+            height="100%"
             edits={fileEdits}
             findings={findings}
             branch={baseContext.current.branch}

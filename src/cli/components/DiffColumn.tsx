@@ -13,6 +13,7 @@ export interface FileEditRecord {
 
 export interface DiffColumnProps {
   width: number;
+  height?: number | string;
   edits: FileEditRecord[];
   findings: Finding[];
   branch?: string;
@@ -22,6 +23,7 @@ export interface DiffColumnProps {
 /* Minimalist Vercel-style sidebar inspector for live code diffs and pinned findings */
 export function DiffColumn({
   width,
+  height,
   edits,
   findings,
   branch,
@@ -34,6 +36,8 @@ export function DiffColumn({
     <Box
       flexDirection="column"
       width={width}
+      height={height ?? "100%"}
+      overflow="hidden"
       borderStyle="single"
       borderLeft={true}
       borderRight={false}

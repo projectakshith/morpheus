@@ -32,7 +32,8 @@ export async function runCLI(args: string[] = process.argv.slice(2)): Promise<vo
       isVerbose,
       initialTask,
       maxSteps: parsed.maxSteps,
-    })
+    }),
+    { alternateScreen: true }
   );
 
   await waitUntilExit();

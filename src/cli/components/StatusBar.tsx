@@ -11,6 +11,7 @@ export interface StatusBarProps {
   elapsedSeconds: number;
   isThinkingExpanded?: boolean;
   width?: number;
+  scrollOffset?: number;
 }
 
 /* Minimalist Vercel-style telemetry status bar with thin divider */
@@ -22,6 +23,7 @@ export function StatusBar({
   elapsedSeconds,
   isThinkingExpanded = false,
   width: customWidth,
+  scrollOffset = 0,
 }: StatusBarProps) {
   const width = customWidth ?? Math.max(40, process.stdout.columns ? process.stdout.columns - 2 : 76);
 
@@ -43,7 +45,7 @@ export function StatusBar({
     : "0k";
 
   return (
-    <Box flexDirection="column" marginTop={1}>
+    <Box flexDirection="column">
       <Text color="gray">{"─".repeat(width)}</Text>
       <Box justifyContent="space-between">
         <Box>
@@ -70,11 +72,17 @@ export function StatusBar({
           <Text color="gray">/{limitCtx}</Text>
           <Text color="gray"> · api </Text>
           <Text color="white">{totalTokens}</Text>
+
+          {scrollOffset > 0 && (
+            <Text color="yellow" bold>
+              {" "}· ▲ +{scrollOffset} [end to reset]
+            </Text>
+          )}
         </Box>
 
         <Box>
           <Text color="gray">
-            [esc] stop · [tab] steps · [ctrl+c] exit
+            [esc] stop · [tab] steps · [pgup/dn] scroll · [ctrl+c] exit
           </Text>
         </Box>
       </Box>

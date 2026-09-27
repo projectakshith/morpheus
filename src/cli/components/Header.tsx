@@ -7,14 +7,15 @@ export interface HeaderProps {
   branch?: string;
   gitStatus?: string;
   cwd?: string;
+  width?: number;
 }
 
 /* Minimalist Vercel-inspired monochrome header with emerald accent */
-export function Header({ version, model, branch, gitStatus }: HeaderProps) {
-  const width = Math.max(40, process.stdout.columns ? process.stdout.columns - 2 : 76);
+export function Header({ version, model, branch, gitStatus, width: customWidth }: HeaderProps) {
+  const width = customWidth ?? Math.max(40, process.stdout.columns ? process.stdout.columns - 2 : 76);
 
   return (
-    <Box flexDirection="column" marginBottom={1}>
+    <Box flexDirection="column">
       <Box justifyContent="space-between">
         <Box>
           <Text color="greenBright" bold>

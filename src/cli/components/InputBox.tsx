@@ -35,13 +35,16 @@ export function InputBox({ onSubmit, isDisabled = false, history = [] }: InputBo
   const handleSubmit = (submitted: string) => {
     const trimmed = submitted.trim();
     if (!trimmed || isDisabled) return;
+    if (trimmed === "exit" || trimmed === "/exit" || trimmed === ":q" || trimmed === "quit") {
+      process.exit(0);
+    }
     setValue("");
     setHistoryIndex(-1);
     onSubmit(trimmed);
   };
 
   return (
-    <Box marginTop={1}>
+    <Box marginY={0}>
       <Text color="greenBright" bold>
         ▲{" "}
       </Text>

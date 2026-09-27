@@ -64,7 +64,7 @@ export function ThreadCard({ thread, isThinkingExpanded = false }: ThreadCardPro
     : ((Date.now() - thread.startTime) / 1000).toFixed(1);
 
   return (
-    <Box flexDirection="column" marginY={1}>
+    <Box flexDirection="column" marginBottom={1}>
       {/* Thread Header */}
       <Box justifyContent="space-between">
         <Box>
