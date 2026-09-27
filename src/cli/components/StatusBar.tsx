@@ -74,7 +74,7 @@ export function StatusBar({
 
         <Box>
           <Text color="gray">
-            [esc] stop · [ctrl+c] exit
+            {scrollOffset > 0 ? "[end] bottom · [esc] stop" : "[esc] stop · [ctrl+c] exit"}
           </Text>
         </Box>
       </Box>

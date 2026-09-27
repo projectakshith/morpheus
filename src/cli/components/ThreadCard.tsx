@@ -16,6 +16,8 @@ export interface ThreadStep {
   durationMs?: number;
   outputSummary?: string;
   outputPreview?: string[];
+  output?: string;
+  isOutputExpanded?: boolean;
 }
 
 export interface Thread {
@@ -148,7 +150,11 @@ export function ThreadCard({ thread, isThinkingExpanded = false }: ThreadCardPro
                       isRunning={false}
                       isError={step.isError}
                       outputSummary={step.outputSummary}
-                      outputPreview={step.outputPreview}
+                      outputPreview={
+                        step.output
+                          ? step.output.trim().split("\n").slice(0, 8)
+                          : step.outputPreview
+                      }
                     />
                   );
                 }

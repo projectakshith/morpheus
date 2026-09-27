@@ -23,6 +23,8 @@ export interface ThreadStep {
   durationMs?: number;
   outputSummary?: string;
   outputPreview?: string[];
+  output?: string;
+  isOutputExpanded?: boolean;
 }
 
 export interface Thread {
@@ -53,6 +55,7 @@ interface FeedLine {
   threadId: string;
   node: React.ReactNode;
   isStepToggle?: boolean;
+  toolStepId?: string;
 }
 
 /* Helper to summarize tool steps into a compact readable string */
@@ -73,6 +76,49 @@ function summarizeStepTools(steps: ThreadStep[]): string {
     parts.push(count > 1 ? `${name} x${count}` : name);
   }
   return parts.join(", ");
+}
+
+/* Helper to format tool arguments concisely for developer inspection */
+function formatToolArgs(name?: string, args?: Record<string, unknown>): string {
+  if (!args || Object.keys(args).length === 0) return "";
+
+  if (name === "read_file" && typeof args.filePath === "string") {
+    const range = args.offset ? `:${args.offset}` : "";
+    return `${args.filePath}${range}`;
+  }
+  if ((name === "edit_file" || name === "write_file") && typeof args.filePath === "string") {
+    return args.filePath;
+  }
+  if (name === "bash" && typeof args.command === "string") {
+    return args.command;
+  }
+  if ((name === "grep_code" || name === "grepCode") && typeof args.pattern === "string") {
+    const targetPath = typeof args.path === "string" ? ` in ${args.path}` : "";
+    return `"${args.pattern}"${targetPath}`;
+  }
+  if ((name === "list_dir" || name === "listDir") && typeof args.dirPath === "string") {
+    return args.dirPath;
+  }
+  if ((name === "outline_code" || name === "outlineCode") && typeof args.filePath === "string") {
+    return args.filePath;
+  }
+  if (name === "http_request" && typeof args.url === "string") {
+    const method = typeof args.method === "string" ? `${args.method.toUpperCase()} ` : "";
+    return `${method}${args.url}`;
+  }
+  if (name === "record_finding" && typeof args.topic === "string") {
+    return args.topic;
+  }
+
+  const primary =
+    args.filePath ?? args.command ?? args.url ?? args.dirPath ?? args.pattern ?? args.topic;
+  if (typeof primary === "string") return primary;
+  try {
+    const str = JSON.stringify(args);
+    return str.length > 50 ? `${str.slice(0, 47)}...` : str;
+  } catch {
+    return "";
+  }
 }
 
 /* Helper to extract structured diff records from tool execution results */
@@ -149,6 +195,59 @@ export function App({
   const initialTaskFired = useRef(false);
   const isUserScrolledRef = useRef(false);
 
+  /* Momentum smooth scrolling refs */
+  const targetScrollRef = useRef(0);
+  const currentScrollRef = useRef(0);
+  const animTimerRef = useRef<NodeJS.Timeout | null>(null);
+  const maxScrollRef = useRef(0);
+  const activeToolArgsRef = useRef<Record<string, unknown>>({});
+
+  /* Snap viewport instantly to bottom and stop momentum animation */
+  const snapToBottom = () => {
+    if (animTimerRef.current !== null) {
+      clearInterval(animTimerRef.current);
+      animTimerRef.current = null;
+    }
+    targetScrollRef.current = 0;
+    currentScrollRef.current = 0;
+    isUserScrolledRef.current = false;
+    setScrollOffset(0);
+  };
+
+  /* Lenis-style momentum smooth scrolling loop (damped lerp interpolation) */
+  const triggerSmoothScroll = (delta: number) => {
+    isUserScrolledRef.current = true;
+    const newTarget = Math.max(0, Math.min(maxScrollRef.current, targetScrollRef.current + delta));
+    targetScrollRef.current = newTarget;
+
+    if (animTimerRef.current !== null) return;
+
+    animTimerRef.current = setInterval(() => {
+      const target = targetScrollRef.current;
+      const current = currentScrollRef.current;
+      const diff = target - current;
+
+      if (Math.abs(diff) < 0.15) {
+        currentScrollRef.current = target;
+        const finalInt = Math.round(target);
+        setScrollOffset(finalInt);
+        if (finalInt === 0) {
+          isUserScrolledRef.current = false;
+        }
+        if (animTimerRef.current !== null) {
+          clearInterval(animTimerRef.current);
+          animTimerRef.current = null;
+        }
+      } else {
+        /* Smooth lerp interpolation step (factor 0.35) */
+        const next = current + diff * 0.35;
+        currentScrollRef.current = next;
+        const nextInt = Math.round(next);
+        setScrollOffset((prev) => (prev !== nextInt ? nextInt : prev));
+      }
+    }, 16);
+  };
+
   /* Compute full-screen dimensions and dedicated side column partition */
   const terminalWidth = columns || process.stdout.columns || 80;
   const terminalHeight = rows || process.stdout.rows || 24;
@@ -161,7 +260,7 @@ export function App({
   const inputBoxHeight = 1;
   const feedHeight = Math.max(4, terminalHeight - headerHeight - statusBarHeight - inputBoxHeight);
 
-  /* Enable SGR mouse reporting for clicking on threads and wheel scrolling */
+  /* Enable SGR mouse reporting for clicking on threads/tools and wheel scrolling */
   useEffect(() => {
     try {
       process.stdout.write("\x1b[?1000h\x1b[?1006h");
@@ -178,32 +277,41 @@ export function App({
         const isRelease = match[4] === "m";
 
         if (button === 64) {
-          /* Mouse wheel up: scroll view up */
-          setScrollOffset((prev) => {
-            isUserScrolledRef.current = true;
-            return prev + 3;
-          });
+          /* Mouse wheel up: smooth scroll towards top */
+          triggerSmoothScroll(3);
         } else if (button === 65) {
-          /* Mouse wheel down: scroll view down */
-          setScrollOffset((prev) => {
-            const next = Math.max(0, prev - 3);
-            if (next === 0) {
-              isUserScrolledRef.current = false;
-            }
-            return next;
-          });
+          /* Mouse wheel down: smooth scroll towards bottom */
+          triggerSmoothScroll(-3);
         } else if (button === 0 && !isRelease) {
-          /* Left click: toggle clicked thread */
+          /* Left click: toggle clicked element */
           if (col <= leftWidth) {
             const clickedLineIndex = row - 3;
             if (clickedLineIndex >= 0 && clickedLineIndex < visibleLinesRef.current.length) {
               const target = visibleLinesRef.current[clickedLineIndex];
-              if (target && target.threadId) {
-                setThreads((prev) =>
-                  prev.map((t) =>
-                    t.id === target.threadId ? { ...t, isExpanded: !t.isExpanded } : t
-                  )
-                );
+              if (target) {
+                if (target.isStepToggle && target.threadId) {
+                  /* Toggle step expansion of thread */
+                  setThreads((prev) =>
+                    prev.map((t) =>
+                      t.id === target.threadId ? { ...t, isExpanded: !t.isExpanded } : t
+                    )
+                  );
+                } else if (target.toolStepId && target.threadId) {
+                  /* Toggle full tool output expansion */
+                  setThreads((prev) =>
+                    prev.map((t) => {
+                      if (t.id !== target.threadId) return t;
+                      return {
+                        ...t,
+                        steps: t.steps.map((s) =>
+                          s.id === target.toolStepId
+                            ? { ...s, isOutputExpanded: !s.isOutputExpanded }
+                            : s
+                        ),
+                      };
+                    })
+                  );
+                }
               }
             }
           }
@@ -218,6 +326,10 @@ export function App({
         process.stdout.write("\x1b[?1000l\x1b[?1002l\x1b[?1006l");
       } catch {}
       process.stdin.off("data", onData);
+      if (animTimerRef.current !== null) {
+        clearInterval(animTimerRef.current);
+        animTimerRef.current = null;
+      }
     };
 
     process.on("exit", cleanup);
@@ -252,29 +364,21 @@ export function App({
       return;
     }
 
-    /* Scroll history up */
+    /* Scroll history up with momentum */
     if (key.pageUp || (key.ctrl && input === "u")) {
-      isUserScrolledRef.current = true;
-      setScrollOffset((prev) => prev + 4);
+      triggerSmoothScroll(6);
       return;
     }
 
-    /* Scroll history down */
+    /* Scroll history down with momentum */
     if (key.pageDown || (key.ctrl && input === "d")) {
-      setScrollOffset((prev) => {
-        const next = Math.max(0, prev - 4);
-        if (next === 0) {
-          isUserScrolledRef.current = false;
-        }
-        return next;
-      });
+      triggerSmoothScroll(-6);
       return;
     }
 
     /* Jump to bottom */
     if (key.end) {
-      isUserScrolledRef.current = false;
-      setScrollOffset(0);
+      snapToBottom();
       return;
     }
   });
@@ -285,8 +389,7 @@ export function App({
     setStatus("running");
     setStepCount(0);
     setElapsedSeconds(0);
-    isUserScrolledRef.current = false;
-    setScrollOffset(0);
+    snapToBottom();
     setPromptHistory((prev) => [...prev, taskText]);
 
     const abortController = new AbortController();
@@ -329,7 +432,7 @@ export function App({
         onStepStart: (step) => {
           setStepCount(step);
           if (!isUserScrolledRef.current) {
-            setScrollOffset(0);
+            snapToBottom();
           }
           setThreads((prev) =>
             prev.map((t) =>
@@ -339,7 +442,7 @@ export function App({
         },
         onReasoningDelta: (chunk) => {
           if (!isUserScrolledRef.current) {
-            setScrollOffset(0);
+            snapToBottom();
           }
           if (!activeThinkingId) {
             activeThinkingId = `think_${Date.now()}`;
@@ -379,8 +482,9 @@ export function App({
         },
         onToolCall: (name, toolArgs) => {
           if (!isUserScrolledRef.current) {
-            setScrollOffset(0);
+            snapToBottom();
           }
+          activeToolArgsRef.current = toolArgs;
           if (activeThinkingId) {
             const curThinkId = activeThinkingId;
             setThreads((prev) =>
@@ -413,7 +517,7 @@ export function App({
         },
         onToolResult: (name, res) => {
           if (!isUserScrolledRef.current) {
-            setScrollOffset(0);
+            snapToBottom();
           }
           const isError = isToolError(res.output, res.metadata?.isError as boolean | undefined);
           const lines = res.output.trim().split("\n").filter(Boolean);
@@ -432,7 +536,8 @@ export function App({
                         isRunning: false,
                         isError,
                         outputSummary,
-                        outputPreview: lines.slice(0, 4),
+                        outputPreview: lines.slice(0, 8),
+                        output: res.output,
                       }
                     : s
                 ),
@@ -443,7 +548,7 @@ export function App({
 
           const editRecord = extractDiffRecord(
             name,
-            (newThread.steps.find((s) => s.id === curToolId)?.args as Record<string, unknown>) || {},
+            activeToolArgsRef.current || {},
             res.output
           );
           if (editRecord) {
@@ -452,7 +557,7 @@ export function App({
         },
         onTextDelta: (chunk) => {
           if (!isUserScrolledRef.current) {
-            setScrollOffset(0);
+            snapToBottom();
           }
           if (activeThinkingId) {
             const curThinkId = activeThinkingId;
@@ -574,26 +679,25 @@ export function App({
               ),
             });
           } else if (step.type === "tool") {
-            const primaryArg = step.args?.filePath ?? step.args?.command ?? step.args?.url ?? "";
-            const primaryArgStr = typeof primaryArg === "string" ? primaryArg : "";
+            const argStr = formatToolArgs(step.name, step.args);
             lines.push({
               id: `${step.id}_tool_live`,
               threadId: thread.id,
               node: step.isRunning ? (
                 <Text color="yellow">
                   │ <Spinner type="dots" /> <Text color="white" bold>{step.name}</Text>
-                  {primaryArgStr ? <Text color="cyan"> {primaryArgStr}</Text> : null}
+                  {argStr ? <Text color="cyan"> {argStr}</Text> : null}
                 </Text>
               ) : step.isError ? (
                 <Text color="red">
                   │ ✖ <Text color="white" bold>{step.name}</Text>
-                  {primaryArgStr ? <Text color="cyan"> {primaryArgStr}</Text> : null}
+                  {argStr ? <Text color="cyan"> {argStr}</Text> : null}
                   {step.outputSummary ? <Text color="red"> · {step.outputSummary}</Text> : null}
                 </Text>
               ) : (
                 <Text color="green">
                   │ ✔ <Text color="white" bold>{step.name}</Text>
-                  {primaryArgStr ? <Text color="cyan"> {primaryArgStr}</Text> : null}
+                  {argStr ? <Text color="cyan"> {argStr}</Text> : null}
                   {step.outputSummary ? <Text color="gray"> · {step.outputSummary}</Text> : null}
                 </Text>
               ),
@@ -635,39 +739,145 @@ export function App({
               lines.push({
                 id: `${step.id}_think_done`,
                 threadId: thread.id,
+                toolStepId: step.id,
                 node: (
                   <Text color="gray">
                     {"  "}│ ● thinking ({sSec}s)
+                    {step.content && !step.isOutputExpanded ? (
+                      <Text color="gray"> · <Text color="cyan">[click to view thoughts]</Text></Text>
+                    ) : null}
                   </Text>
                 ),
               });
+              if (step.content && step.isOutputExpanded) {
+                const thinkLines = step.content.trim().split("\n");
+                const maxLineLen = Math.max(20, leftWidth - 10);
+                thinkLines.slice(0, 25).forEach((tLine, thIdx) => {
+                  const trimmed = tLine.length > maxLineLen ? `${tLine.slice(0, maxLineLen - 1)}…` : tLine;
+                  lines.push({
+                    id: `${step.id}_think_line_${thIdx}`,
+                    threadId: thread.id,
+                    toolStepId: step.id,
+                    node: (
+                      <Text color="gray">
+                        {"  "}│   <Text color="gray" italic>{trimmed}</Text>
+                      </Text>
+                    ),
+                  });
+                });
+              }
             } else if (step.type === "tool") {
-              const primaryArg = step.args?.filePath ?? step.args?.command ?? step.args?.url ?? "";
-              const primaryArgStr = typeof primaryArg === "string" ? primaryArg : "";
+              const argStr = formatToolArgs(step.name, step.args);
               lines.push({
                 id: `${step.id}_tool_done`,
                 threadId: thread.id,
+                toolStepId: step.id,
                 node: step.isError ? (
                   <Text color="red">
                     {"  "}│ ✖ <Text color="white" bold>{step.name}</Text>
-                    {primaryArgStr ? <Text color="cyan"> {primaryArgStr}</Text> : null}
+                    {argStr ? <Text color="cyan"> {argStr}</Text> : null}
                     {step.outputSummary ? <Text color="red"> · {step.outputSummary}</Text> : null}
                   </Text>
                 ) : (
                   <Text color="green">
                     {"  "}│ ✔ <Text color="white" bold>{step.name}</Text>
-                    {primaryArgStr ? <Text color="cyan"> {primaryArgStr}</Text> : null}
+                    {argStr ? <Text color="cyan"> {argStr}</Text> : null}
                     {step.outputSummary ? <Text color="gray"> · {step.outputSummary}</Text> : null}
                   </Text>
                 ),
               });
+
+              /* Render what the agent saw: tool output lines */
+              const rawOutput = step.output ?? (step.outputPreview ? step.outputPreview.join("\n") : "");
+              const outputLines = rawOutput ? rawOutput.replace(/\r\n/g, "\n").split("\n") : [];
+              const maxLines = step.isOutputExpanded ? 60 : 8;
+              const displaySlice = outputLines.slice(0, maxLines);
+              const remaining = outputLines.length - displaySlice.length;
+              const maxLineLen = Math.max(20, leftWidth - 10);
+
+              if (outputLines.length === 0) {
+                lines.push({
+                  id: `${step.id}_out_empty`,
+                  threadId: thread.id,
+                  toolStepId: step.id,
+                  node: (
+                    <Text color="gray">
+                      {"  "}│   <Text color="gray" italic>(no output returned)</Text>
+                    </Text>
+                  ),
+                });
+              } else {
+                displaySlice.forEach((rawLine, oIdx) => {
+                  const trimmed =
+                    rawLine.length > maxLineLen ? `${rawLine.slice(0, maxLineLen - 1)}…` : rawLine;
+                  let color: "gray" | "green" | "red" | "cyan" | "white" = "gray";
+                  if (step.isError) {
+                    color = "red";
+                  } else if (trimmed.startsWith("+") && !trimmed.startsWith("+++")) {
+                    color = "green";
+                  } else if (trimmed.startsWith("-") && !trimmed.startsWith("---")) {
+                    color = "red";
+                  } else if (trimmed.startsWith("@@")) {
+                    color = "cyan";
+                  } else if (
+                    trimmed.includes("✔") ||
+                    trimmed.includes("PASS") ||
+                    trimmed.includes("passed")
+                  ) {
+                    color = "green";
+                  } else if (
+                    trimmed.includes("✖") ||
+                    trimmed.includes("FAIL") ||
+                    trimmed.includes("failed") ||
+                    trimmed.includes("Error:")
+                  ) {
+                    color = "red";
+                  }
+
+                  lines.push({
+                    id: `${step.id}_out_${oIdx}`,
+                    threadId: thread.id,
+                    toolStepId: step.id,
+                    node: (
+                      <Text color="gray">
+                        {"  "}│   <Text color={color}>{trimmed}</Text>
+                      </Text>
+                    ),
+                  });
+                });
+
+                if (remaining > 0) {
+                  lines.push({
+                    id: `${step.id}_out_more`,
+                    threadId: thread.id,
+                    toolStepId: step.id,
+                    node: (
+                      <Text color="gray">
+                        {"  "}│   <Text color="cyan">↳ ... +{remaining} lines [click to expand full output]</Text>
+                      </Text>
+                    ),
+                  });
+                } else if (outputLines.length > 8 && step.isOutputExpanded) {
+                  lines.push({
+                    id: `${step.id}_out_collapse`,
+                    threadId: thread.id,
+                    toolStepId: step.id,
+                    node: (
+                      <Text color="gray">
+                        {"  "}│   <Text color="cyan">↳ [click to collapse output]</Text>
+                      </Text>
+                    ),
+                  });
+                }
+              }
             }
           });
 
           lines.push({
             id: `${thread.id}_steps_exp_ftr`,
             threadId: thread.id,
-            node: <Text color="gray">  └</Text>,
+            isStepToggle: true,
+            node: <Text color="gray">  └ [click to collapse]</Text>,
           });
         }
       }
@@ -720,16 +930,18 @@ export function App({
   }, [threads, leftWidth]);
 
   /* Calculate exact visible lines window respecting clamped scrollOffset */
+  const maxScroll = Math.max(0, allFeedLines.length - feedHeight);
+  maxScrollRef.current = maxScroll;
+
   const visibleLines = useMemo(() => {
     const total = allFeedLines.length;
     if (total <= feedHeight) {
       return allFeedLines;
     }
-    const maxScroll = total - feedHeight;
     const clampedOffset = Math.min(scrollOffset, maxScroll);
     const startIndex = Math.max(0, total - feedHeight - clampedOffset);
     return allFeedLines.slice(startIndex, startIndex + feedHeight);
-  }, [allFeedLines, scrollOffset, feedHeight]);
+  }, [allFeedLines, scrollOffset, feedHeight, maxScroll]);
 
   const visibleLinesRef = useRef(visibleLines);
   visibleLinesRef.current = visibleLines;
