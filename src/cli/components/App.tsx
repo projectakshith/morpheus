@@ -150,15 +150,16 @@ export function App({
 
   const terminalWidth = columns || process.stdout.columns || 80;
   const terminalHeight = rows || process.stdout.rows || 24;
-  const isSplitLayout = terminalWidth >= 90;
+  const isSplitLayout = terminalWidth >= 72;
   const leftWidth = isSplitLayout ? Math.floor(terminalWidth * 0.58) : terminalWidth;
-  const rightWidth = isSplitLayout ? terminalWidth - leftWidth - 2 : 0;
+  const rightWidth = isSplitLayout ? terminalWidth - leftWidth : 0;
 
   const headerHeight = 2;
   const statusBarHeight = 2;
   const inputBoxHeight = 1;
-  const feedHeight = Math.max(4, terminalHeight - headerHeight - statusBarHeight - inputBoxHeight);
-  const maxLineWidth = Math.max(20, leftWidth - 6);
+  const workspaceHeight = Math.max(4, terminalHeight - headerHeight - statusBarHeight - inputBoxHeight);
+  const feedHeight = workspaceHeight;
+  const maxLineWidth = Math.max(20, leftWidth - 4);
 
   useEffect(() => {
     try {
@@ -657,11 +658,11 @@ export function App({
         width={terminalWidth}
       />
 
-      <Box flexDirection="row" flexGrow={1} height={terminalHeight - headerHeight} overflow="hidden">
+      <Box flexDirection="row" width={terminalWidth} height={workspaceHeight} overflow="hidden">
         <Box
           flexDirection="column"
           width={leftWidth}
-          height="100%"
+          height={workspaceHeight}
           paddingRight={isSplitLayout ? 1 : 0}
         >
           <Box flexDirection="column" height={feedHeight} overflow="hidden">
@@ -671,28 +672,12 @@ export function App({
               </Box>
             ))}
           </Box>
-
-          <StatusBar
-            status={status}
-            stepCount={stepCount}
-            maxSteps={maxSteps}
-            usage={usage}
-            elapsedSeconds={elapsedSeconds}
-            width={leftWidth}
-            scrollOffset={scrollOffset}
-          />
-
-          <InputBox
-            onSubmit={executeTask}
-            isDisabled={status === "running"}
-            history={promptHistory}
-          />
         </Box>
 
         {isSplitLayout && (
           <DiffColumn
             width={rightWidth}
-            height={terminalHeight - headerHeight}
+            height={workspaceHeight}
             edits={fileEdits}
             findings={findings}
             branch={baseContext.current.branch}
@@ -702,6 +687,22 @@ export function App({
           />
         )}
       </Box>
+
+      <StatusBar
+        status={status}
+        stepCount={stepCount}
+        maxSteps={maxSteps}
+        usage={usage}
+        elapsedSeconds={elapsedSeconds}
+        width={terminalWidth}
+        scrollOffset={scrollOffset}
+      />
+
+      <InputBox
+        onSubmit={executeTask}
+        isDisabled={status === "running"}
+        history={promptHistory}
+      />
     </Box>
   );
 }

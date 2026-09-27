@@ -84,9 +84,10 @@ export function DiffColumn({
   activeToolStep,
   toolSteps = [],
 }: DiffColumnProps) {
-  const contentWidth = Math.max(20, width - 3);
+  const contentWidth = Math.max(16, width - 3);
   const latestEdit = edits.length > 0 ? edits[edits.length - 1] : undefined;
-  const recentTools = toolSteps.slice(-4);
+  const completedTools = toolSteps.filter((s) => !s.isRunning);
+  const recentCompleted = completedTools.slice(-4);
 
   return (
     <Box
@@ -102,17 +103,17 @@ export function DiffColumn({
       borderColor="gray"
       paddingLeft={1}
     >
-      <Box justifyContent="space-between" marginBottom={1}>
+      <Box justifyContent="space-between" marginBottom={0}>
         <Text bold color="white">
-          INSPECTOR
+          TOOL CALLS
         </Text>
         <Text color="gray">
-          {toolSteps.length} tools · {edits.length} files
+          {toolSteps.length} {toolSteps.length === 1 ? "call" : "calls"} · {edits.length} {edits.length === 1 ? "file" : "files"}
         </Text>
       </Box>
 
       {activeToolStep && (
-        <Box flexDirection="column" marginBottom={1}>
+        <Box flexDirection="column" marginTop={1} marginBottom={1}>
           <Text color="gray">{"─".repeat(contentWidth)}</Text>
           <Box justifyContent="space-between">
             <Text color="yellow" bold>
@@ -131,20 +132,20 @@ export function DiffColumn({
         </Box>
       )}
 
-      {recentTools.length > 0 ? (
-        <Box flexDirection="column" marginBottom={1}>
+      {recentCompleted.length > 0 ? (
+        <Box flexDirection="column" marginTop={activeToolStep ? 0 : 1}>
           <Text color="gray">{"─".repeat(contentWidth)}</Text>
-          <Box justifyContent="space-between">
+          <Box justifyContent="space-between" marginBottom={1}>
             <Text color="white" bold>
-              TOOL CALLS
+              HISTORY
             </Text>
-            <Text color="gray">{toolSteps.length}</Text>
+            <Text color="gray">{completedTools.length}</Text>
           </Box>
-          {recentTools.map((step) => {
+          {recentCompleted.map((step) => {
             const argStr = formatToolArgs(step.name, step.args);
             const lines = step.outputPreview || (step.output ? step.output.trim().split("\n").slice(0, 3) : []);
             return (
-              <Box key={step.id} flexDirection="column" marginTop={0}>
+              <Box key={step.id} flexDirection="column" marginBottom={1}>
                 <Box>
                   <Text color={step.isError ? "red" : "green"}>
                     {step.isError ? "✖ " : "✔ "}
@@ -181,7 +182,7 @@ export function DiffColumn({
             </Text>
             <Text color="gray">{edits.length}</Text>
           </Box>
-          {edits.slice(-4).map((edit, idx) => (
+          {edits.slice(-3).map((edit, idx) => (
             <Box key={idx} justifyContent="space-between">
               <Box>
                 <Text color={edit.type === "edit" ? "yellow" : "greenBright"}>
@@ -203,7 +204,7 @@ export function DiffColumn({
       )}
 
       {latestEdit && latestEdit.diffLines.length > 0 && (
-        <Box flexDirection="column" marginTop={0}>
+        <Box flexDirection="column" marginBottom={1}>
           <Text color="gray">{"─".repeat(contentWidth)}</Text>
           <Box justifyContent="space-between">
             <Text color="cyan" bold>
@@ -212,7 +213,7 @@ export function DiffColumn({
             <Text color="gray">{latestEdit.type}</Text>
           </Box>
           <Box flexDirection="column" marginTop={0}>
-            {latestEdit.diffLines.slice(0, 10).map((line, idx) => {
+            {latestEdit.diffLines.slice(0, 8).map((line, idx) => {
               if (line.startsWith("+") && !line.startsWith("+++")) {
                 return (
                   <Text key={idx} color="green" wrap="truncate-end">
@@ -240,17 +241,12 @@ export function DiffColumn({
                 </Text>
               );
             })}
-            {latestEdit.diffLines.length > 10 && (
-              <Text color="gray">
-                ... [{latestEdit.diffLines.length - 10} more lines]
-              </Text>
-            )}
           </Box>
         </Box>
       )}
 
       {findings.length > 0 && (
-        <Box flexDirection="column" marginTop={1}>
+        <Box flexDirection="column" marginBottom={1}>
           <Text color="gray">{"─".repeat(contentWidth)}</Text>
           <Box justifyContent="space-between">
             <Text bold color="white">
@@ -259,7 +255,7 @@ export function DiffColumn({
             <Text color="cyan">{findings.length}</Text>
           </Box>
           <Box flexDirection="column" marginTop={0}>
-            {findings.slice(-3).map((f, idx) => (
+            {findings.slice(-2).map((f, idx) => (
               <Box key={idx} flexDirection="column" marginY={0}>
                 <Text color="white" bold>
                   ● {f.topic}
@@ -274,7 +270,7 @@ export function DiffColumn({
       )}
 
       {branch && (
-        <Box flexDirection="column" marginTop={1}>
+        <Box flexDirection="column" marginTop={0}>
           <Text color="gray">{"─".repeat(Math.max(10, contentWidth - 2))}</Text>
           <Box justifyContent="space-between">
             <Text color="gray">git: {branch}</Text>
