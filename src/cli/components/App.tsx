@@ -1,4 +1,8 @@
 import React, { useState, useEffect, useRef, useMemo } from "react";
+import fs from "node:fs/promises";
+import path from "node:path";
+import os from "node:os";
+import { execSync } from "node:child_process";
 import { Box, Text, useInput, useWindowSize } from "ink";
 import Spinner from "ink-spinner";
 import { Header } from "./Header";
@@ -21,6 +25,7 @@ export interface ThreadStep {
   args?: Record<string, unknown>;
   isRunning?: boolean;
   isError?: boolean;
+  startTime?: number;
   durationMs?: number;
   outputSummary?: string;
   outputPreview?: string[];
@@ -54,6 +59,7 @@ export interface AppProps {
 interface FeedLine {
   id: string;
   threadId: string;
+  stepId?: string;
   node: React.ReactNode;
 }
 
@@ -446,6 +452,9 @@ export function App({
   const [findings, setFindings] = useState<Finding[]>([]);
   const [promptHistory, setPromptHistory] = useState<string[]>([]);
   const [expandedToolIds, setExpandedToolIds] = useState<Set<string>>(new Set());
+  const [collapsedThinkingIds, setCollapsedThinkingIds] = useState<Set<string>>(new Set());
+  const [collapsedThreadIds, setCollapsedThreadIds] = useState<Set<string>>(new Set());
+  const [expandedFileEdits, setExpandedFileEdits] = useState<Set<string>>(new Set());
   const [rightScrollTop, setRightScrollTop] = useState(0);
 
   const abortControllerRef = useRef<AbortController | null>(null);
@@ -454,6 +463,7 @@ export function App({
   const initialTaskFired = useRef(false);
   const isUserScrolledRef = useRef(false);
   const maxScrollRef = useRef(0);
+  const visibleLinesRef = useRef<FeedLine[]>([]);
   const activeToolArgsRef = useRef<Record<string, unknown>>({});
   const isRightUserScrolledRef = useRef(false);
   const maxRightScrollRef = useRef(0);
@@ -509,7 +519,33 @@ export function App({
             const workspaceRow = row - 3;
             if (workspaceRow >= 0 && workspaceRow < visibleRightLinesRef.current.length) {
               const clickedLine = visibleRightLinesRef.current[workspaceRow];
-              if (clickedLine?.toolId) {
+              if (clickedLine?.threadId) {
+                const tId = clickedLine.threadId;
+                setRightScrollTop(currentRightScrollRef.current);
+                isRightUserScrolledRef.current = true;
+                setCollapsedThreadIds((prev) => {
+                  const next = new Set(prev);
+                  if (next.has(tId)) {
+                    next.delete(tId);
+                  } else {
+                    next.add(tId);
+                  }
+                  return next;
+                });
+              } else if (clickedLine?.editFilePath) {
+                const fp = clickedLine.editFilePath;
+                setRightScrollTop(currentRightScrollRef.current);
+                isRightUserScrolledRef.current = true;
+                setExpandedFileEdits((prev) => {
+                  const next = new Set(prev);
+                  if (next.has(fp)) {
+                    next.delete(fp);
+                  } else {
+                    next.add(fp);
+                  }
+                  return next;
+                });
+              } else if (clickedLine?.toolId) {
                 const clickedId = clickedLine.toolId;
                 setRightScrollTop(currentRightScrollRef.current);
                 isRightUserScrolledRef.current = true;
@@ -537,6 +573,23 @@ export function App({
               }
               return next;
             });
+          } else if (button === 0 && !isRelease) {
+            const workspaceRow = row - 3;
+            if (workspaceRow >= 0 && workspaceRow < visibleLinesRef.current.length) {
+              const clickedLine = visibleLinesRef.current[workspaceRow];
+              if (clickedLine?.stepId) {
+                const sId = clickedLine.stepId;
+                setCollapsedThinkingIds((prev) => {
+                  const next = new Set(prev);
+                  if (next.has(sId)) {
+                    next.delete(sId);
+                  } else {
+                    next.add(sId);
+                  }
+                  return next;
+                });
+              }
+            }
           }
         }
       }
@@ -592,6 +645,63 @@ export function App({
   const executeTask = async (taskText: string) => {
     if (status === "running") return;
 
+    const trimmed = taskText.trim();
+    if (trimmed === "/log" || trimmed === "/logs" || trimmed === "/session") {
+      let logContent = "";
+      try {
+        const latestPath = path.join(os.homedir(), ".morpheus", "logs", "latest.log");
+        const raw = await fs.readFile(latestPath, "utf-8");
+        const lines = raw.trim().split("\n");
+        logContent = lines.slice(-40).join("\n");
+      } catch {
+        logContent = "No previous session log found at ~/.morpheus/logs/latest.log";
+      }
+      const logThread: Thread = {
+        id: `thread_${Date.now()}`,
+        index: threads.length + 1,
+        prompt: taskText,
+        response: `Latest session log (~/.morpheus/logs/latest.log):\n\`\`\`\n${logContent}\n\`\`\``,
+        isStreaming: false,
+        steps: [],
+        isExpanded: false,
+        status: "completed",
+        stepCount: 0,
+        startTime: Date.now(),
+        durationMs: 0,
+      };
+      setPromptHistory((prev) => [...prev, taskText]);
+      setThreads((prev) => [...prev, logThread]);
+      return;
+    }
+
+    if (trimmed === "/diff") {
+      let diffOut = "";
+      try {
+        diffOut = execSync("git diff HEAD", { encoding: "utf-8", stdio: ["ignore", "pipe", "pipe"] });
+        if (!diffOut.trim()) {
+          diffOut = "No unstaged or staged git changes against HEAD.";
+        }
+      } catch (e: unknown) {
+        diffOut = `Error reading git diff: ${e instanceof Error ? e.message : String(e)}`;
+      }
+      const diffThread: Thread = {
+        id: `thread_${Date.now()}`,
+        index: threads.length + 1,
+        prompt: taskText,
+        response: `Git diff (HEAD):\n\`\`\`diff\n${diffOut}\n\`\`\``,
+        isStreaming: false,
+        steps: [],
+        isExpanded: false,
+        status: "completed",
+        stepCount: 0,
+        startTime: Date.now(),
+        durationMs: 0,
+      };
+      setPromptHistory((prev) => [...prev, taskText]);
+      setThreads((prev) => [...prev, diffThread]);
+      return;
+    }
+
     setStatus("running");
     setStepCount(0);
     setElapsedSeconds(0);
@@ -607,7 +717,7 @@ export function App({
     const startTime = Date.now();
     timerRef.current = setInterval(() => {
       setElapsedSeconds(Math.floor((Date.now() - startTime) / 1000));
-    }, 1000);
+    }, 200);
 
     const threadId = `thread_${Date.now()}`;
     const newThread: Thread = {
@@ -627,6 +737,7 @@ export function App({
     let activeThinkingId: string | null = null;
     let activeToolId: string | null = null;
     let thinkingStartTime = 0;
+    let activeToolStartTime = 0;
 
     try {
       const result = await runAgent(taskText, history, {
@@ -660,6 +771,7 @@ export function App({
               type: "thinking",
               content: chunk,
               isRunning: true,
+              startTime: thinkingStartTime,
               durationMs: 0,
             };
             setThreads((prev) =>
@@ -669,6 +781,7 @@ export function App({
             );
           } else {
             const curThinkId = activeThinkingId;
+            const curDur = Date.now() - thinkingStartTime;
             setThreads((prev) =>
               prev.map((t) => {
                 if (t.id !== threadId) return t;
@@ -679,7 +792,7 @@ export function App({
                       ? {
                           ...s,
                           content: (s.content || "") + chunk,
-                          durationMs: Date.now() - thinkingStartTime,
+                          durationMs: curDur,
                         }
                       : s
                   ),
@@ -695,13 +808,14 @@ export function App({
           activeToolArgsRef.current = toolArgs;
           if (activeThinkingId) {
             const curThinkId = activeThinkingId;
+            const thinkDur = thinkingStartTime ? Date.now() - thinkingStartTime : 0;
             setThreads((prev) =>
               prev.map((t) => {
                 if (t.id !== threadId) return t;
                 return {
                   ...t,
                   steps: t.steps.map((s) =>
-                    s.id === curThinkId ? { ...s, isRunning: false } : s
+                    s.id === curThinkId ? { ...s, isRunning: false, durationMs: thinkDur } : s
                   ),
                 };
               })
@@ -709,13 +823,16 @@ export function App({
             activeThinkingId = null;
           }
 
-          activeToolId = `tool_${Date.now()}_${name}`;
+          const toolStartTime = Date.now();
+          activeToolStartTime = toolStartTime;
+          activeToolId = `tool_${toolStartTime}_${name}`;
           const newStep: ThreadStep = {
             id: activeToolId,
             type: "tool",
             name,
             args: toolArgs,
             isRunning: true,
+            startTime: toolStartTime,
           };
           setThreads((prev) =>
             prev.map((t) =>
@@ -731,6 +848,7 @@ export function App({
           const lines = res.output.trim().split("\n").filter(Boolean);
           const outputSummary = `${lines.length} lines output`;
           const curToolId = activeToolId;
+          const toolDur = activeToolStartTime ? Date.now() - activeToolStartTime : undefined;
 
           setThreads((prev) =>
             prev.map((t) => {
@@ -743,6 +861,7 @@ export function App({
                         ...s,
                         isRunning: false,
                         isError,
+                        durationMs: toolDur,
                         outputSummary,
                         outputPreview: lines.slice(0, 4),
                         output: res.output,
@@ -769,13 +888,14 @@ export function App({
           }
           if (activeThinkingId) {
             const curThinkId = activeThinkingId;
+            const thinkDur = thinkingStartTime ? Date.now() - thinkingStartTime : 0;
             setThreads((prev) =>
               prev.map((t) => {
                 if (t.id !== threadId) return t;
                 return {
                   ...t,
                   steps: t.steps.map((s) =>
-                    s.id === curThinkId ? { ...s, isRunning: false } : s
+                    s.id === curThinkId ? { ...s, isRunning: false, durationMs: thinkDur } : s
                   ),
                 };
               })
@@ -796,6 +916,23 @@ export function App({
           );
         },
       });
+
+      if (activeThinkingId) {
+        const curThinkId = activeThinkingId;
+        const thinkDur = thinkingStartTime ? Date.now() - thinkingStartTime : 0;
+        setThreads((prev) =>
+          prev.map((t) => {
+            if (t.id !== threadId) return t;
+            return {
+              ...t,
+              steps: t.steps.map((s) =>
+                s.id === curThinkId ? { ...s, isRunning: false, durationMs: thinkDur } : s
+              ),
+            };
+          })
+        );
+        activeThinkingId = null;
+      }
 
       setThreads((prev) =>
         prev.map((t) =>
@@ -899,13 +1036,20 @@ export function App({
 
       const thinkingSteps = thread.steps.filter((s) => s.type === "thinking");
       thinkingSteps.forEach((tStep) => {
-        const sec = ((tStep.durationMs || 0) / 1000).toFixed(1);
-        const hdrText = `▲ reasoning (${sec}s)`;
+        const isCollapsed = collapsedThinkingIds.has(tStep.id);
+        const rawMs = tStep.isRunning
+          ? (tStep.startTime ? Date.now() - tStep.startTime : (tStep.durationMs || 0))
+          : (tStep.durationMs || 0);
+        const sec = (rawMs / 1000).toFixed(1);
+        const arrow = isCollapsed ? "▶" : "▼";
+        const toggle = isCollapsed ? " · [+]" : " · [-]";
+        const hdrText = `${arrow} reasoning (${sec}s)${toggle}`;
         const visLen = tStep.isRunning ? hdrText.length + 3 : hdrText.length;
         const pad = Math.max(0, leftWidth - visLen);
         lines.push({
           id: `${tStep.id}_think_hdr`,
           threadId: thread.id,
+          stepId: tStep.id,
           node: (
             <Text backgroundColor={theme.bg} wrap="truncate-end">
               {tStep.isRunning ? (
@@ -921,7 +1065,7 @@ export function App({
           ),
         });
 
-        if (tStep.content) {
+        if (!isCollapsed && tStep.content) {
           const rawThinkLines = tStep.content.trim().split("\n");
           rawThinkLines.forEach((rLine) => {
             const wrapped = wrapLine(rLine, maxLineWidth);
@@ -931,6 +1075,7 @@ export function App({
               lines.push({
                 id: `${tStep.id}_think_${lines.length}`,
                 threadId: thread.id,
+                stepId: tStep.id,
                 node: (
                   <Text backgroundColor={theme.bg} wrap="truncate-end">
                     <Text color={theme.border}>  │ </Text>
@@ -1016,7 +1161,7 @@ export function App({
     });
 
     return lines;
-  }, [threads, leftWidth, maxLineWidth, feedHeight]);
+  }, [threads, leftWidth, maxLineWidth, feedHeight, collapsedThinkingIds]);
 
   const maxScroll = Math.max(0, allFeedLines.length - feedHeight);
   maxScrollRef.current = maxScroll;
@@ -1031,6 +1176,8 @@ export function App({
     return allFeedLines.slice(startIndex, startIndex + feedHeight);
   }, [allFeedLines, scrollOffset, feedHeight, maxScroll]);
 
+  visibleLinesRef.current = visibleLines;
+
   const rightContentWidth = Math.max(16, rightWidth - 1);
 
   const allRightLines = useMemo<RightLine[]>(() => {
@@ -1041,9 +1188,11 @@ export function App({
       baseContext.current.branch,
       baseContext.current.gitStatus,
       expandedToolIds,
+      collapsedThreadIds,
+      expandedFileEdits,
       rightContentWidth
     );
-  }, [threads, fileEdits, findings, expandedToolIds, rightContentWidth]);
+  }, [threads, fileEdits, findings, expandedToolIds, collapsedThreadIds, expandedFileEdits, rightContentWidth]);
 
   const maxRightScroll = Math.max(0, allRightLines.length - workspaceHeight);
   maxRightScrollRef.current = maxRightScroll;

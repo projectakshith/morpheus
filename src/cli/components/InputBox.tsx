@@ -50,6 +50,32 @@ export function InputBox({
       return;
     }
 
+    if (key.ctrl && input === "a") {
+      setCursorPos(0);
+      return;
+    }
+
+    if (key.ctrl && input === "e") {
+      setCursorPos(value.length);
+      return;
+    }
+
+    if (key.ctrl && input === "u") {
+      setValue("");
+      setCursorPos(0);
+      return;
+    }
+
+    if (key.ctrl && input === "w") {
+      const before = value.slice(0, cursorPos);
+      const trimmed = before.trimEnd();
+      const lastSpace = trimmed.lastIndexOf(" ");
+      const newPos = lastSpace === -1 ? 0 : lastSpace + 1;
+      setValue(value.slice(0, newPos) + value.slice(cursorPos));
+      setCursorPos(newPos);
+      return;
+    }
+
     if (key.upArrow && history.length > 0) {
       const nextIndex = historyIndex === -1 ? history.length - 1 : Math.max(0, historyIndex - 1);
       setHistoryIndex(nextIndex);
@@ -105,41 +131,67 @@ export function InputBox({
   });
 
   const promptPrefix = "▲ > ";
-  let contentLen = promptPrefix.length;
+  const availWidth = Math.max(10, width - promptPrefix.length - 2);
+
   if (isDisabled) {
-    contentLen += "processing task... (press [esc] to stop)".length;
-  } else if (value.length === 0) {
-    contentLen += 1 + "ask a question or describe a task...".length;
-  } else {
-    contentLen += Math.max(value.length, cursorPos + 1);
+    const disabledMsg = "processing task... (press [esc] to stop)";
+    const pad = Math.max(0, width - promptPrefix.length - disabledMsg.length);
+    return (
+      <Box height={1} width={width} overflow="hidden">
+        <Text backgroundColor={theme.bg} wrap="truncate-end">
+          <Text color={theme.accent} bold>
+            {promptPrefix.slice(0, 2)}
+          </Text>
+          <Text color={theme.muted}>{promptPrefix.slice(2)}</Text>
+          <Text color={theme.muted}>{disabledMsg}</Text>
+          {" ".repeat(pad)}
+        </Text>
+      </Box>
+    );
   }
-  const pad = Math.max(0, width - contentLen);
+
+  if (value.length === 0) {
+    const placeholder = " ask a question or describe a task...";
+    const pad = Math.max(0, width - promptPrefix.length - 1 - placeholder.length);
+    return (
+      <Box height={1} width={width} overflow="hidden">
+        <Text backgroundColor={theme.bg} wrap="truncate-end">
+          <Text color={theme.accent} bold>
+            {promptPrefix.slice(0, 2)}
+          </Text>
+          <Text color={theme.muted}>{promptPrefix.slice(2)}</Text>
+          <Text backgroundColor={theme.text} color={theme.bg}>
+            {" "}
+          </Text>
+          <Text color={theme.muted}>{placeholder}</Text>
+          {" ".repeat(pad)}
+        </Text>
+      </Box>
+    );
+  }
+
+  const viewStart = Math.max(0, cursorPos - availWidth + 1);
+  const visibleText = value.slice(viewStart, viewStart + availWidth);
+  const relCursor = cursorPos - viewStart;
+  const beforeCursor = visibleText.slice(0, relCursor);
+  const cursorChar = visibleText[relCursor] || " ";
+  const afterCursor = visibleText.slice(relCursor + 1);
+
+  const renderedLen = promptPrefix.length + beforeCursor.length + 1 + afterCursor.length;
+  const pad = Math.max(0, width - renderedLen);
 
   return (
     <Box height={1} width={width} overflow="hidden">
       <Text backgroundColor={theme.bg} wrap="truncate-end">
         <Text color={theme.accent} bold>
-          ▲{" "}
+          {promptPrefix.slice(0, 2)}
         </Text>
-        <Text color={theme.muted}>&gt; </Text>
-        {isDisabled ? (
-          <Text color={theme.muted}>processing task... (press [esc] to stop)</Text>
-        ) : value.length === 0 ? (
-          <Text>
-            <Text backgroundColor={theme.text} color={theme.bg}>
-              {" "}
-            </Text>
-            <Text color={theme.muted}> ask a question or describe a task...</Text>
-          </Text>
-        ) : (
-          <Text>
-            <Text color={theme.text}>{value.slice(0, cursorPos)}</Text>
-            <Text backgroundColor={theme.text} color={theme.bg}>
-              {value[cursorPos] || " "}
-            </Text>
-            <Text color={theme.text}>{value.slice(cursorPos + 1)}</Text>
-          </Text>
-        )}
+        <Text color={theme.muted}>{promptPrefix.slice(2)}</Text>
+        <Text color={theme.text}>{beforeCursor}</Text>
+        <Text backgroundColor={theme.text} color={theme.bg}>
+          {cursorChar}
+        </Text>
+        <Text color={theme.text}>{afterCursor}</Text>
         {" ".repeat(pad)}
       </Text>
     </Box>

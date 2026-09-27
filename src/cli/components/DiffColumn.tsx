@@ -21,6 +21,8 @@ export interface ToolStepRecord {
   args?: Record<string, unknown>;
   isRunning?: boolean;
   isError?: boolean;
+  startTime?: number;
+  durationMs?: number;
   outputSummary?: string;
   outputPreview?: string[];
   output?: string;
@@ -29,6 +31,8 @@ export interface ToolStepRecord {
 export interface RightLine {
   id: string;
   toolId?: string;
+  threadId?: string;
+  editFilePath?: string;
   node: React.ReactNode;
 }
 
@@ -103,6 +107,8 @@ export function buildRightLines(
   branch?: string,
   gitStatus?: string,
   expandedToolIds: Set<string> = new Set(),
+  collapsedThreadIds: Set<string> = new Set(),
+  expandedFileEdits: Set<string> = new Set(),
   contentWidth: number = 36
 ): RightLine[] {
   const lines: RightLine[] = [];
@@ -150,31 +156,47 @@ export function buildRightLines(
     if (toolSteps.length === 0 && thread.status !== "running") return;
 
     hasAnyTools = true;
-    const pfx = `  ▲ #${thread.index} `;
-    const pAvail = Math.max(0, contentWidth - pfx.length - 2);
+    const isThreadCollapsed = collapsedThreadIds.has(thread.id);
+    const pfx = isThreadCollapsed ? `  ▶ #${thread.index} ` : `  ▼ #${thread.index} `;
+    const suffix = isThreadCollapsed
+      ? ` · ${toolSteps.length} tools [+]`
+      : ` · [-]`;
+
+    const pAvail = Math.max(0, contentWidth - pfx.length - suffix.length - 2);
     const pText =
       thread.prompt.length > pAvail
         ? `${thread.prompt.slice(0, Math.max(0, pAvail - 1))}…`
         : thread.prompt;
-    const pPad = Math.max(0, contentWidth - pfx.length - pText.length - 2);
+    const pPad = Math.max(0, contentWidth - pfx.length - pText.length - 2 - suffix.length);
 
     lines.push({
       id: `${thread.id}_prompt_hdr`,
+      threadId: thread.id,
       node: (
         <Text backgroundColor={bg} wrap="truncate-end">
           <Text color={theme.accent} bold>
             {pfx}
           </Text>
           <Text color={theme.text}>"{pText}"</Text>
+          <Text color={theme.muted}>{suffix}</Text>
           {" ".repeat(pPad)}
         </Text>
       ),
     });
 
+    if (isThreadCollapsed) {
+      return;
+    }
+
     toolSteps.forEach((step) => {
       const argStr = cleanToolArg(step.name, step.args, cwd);
       const isExpanded = expandedToolIds.has(step.id);
       const name = step.name || "";
+
+      const rawMs = step.isRunning
+        ? (step.startTime ? Date.now() - step.startTime : 0)
+        : (step.durationMs || 0);
+      const durStr = rawMs > 0 ? ` (${(rawMs / 1000).toFixed(1)}s)` : "";
 
       const rawOutput =
         step.output || (step.outputPreview ? step.outputPreview.join("\n") : "");
@@ -187,7 +209,7 @@ export function buildRightLines(
       const fixedLen = 4;
       const avail = Math.max(0, contentWidth - fixedLen - toggleLen);
 
-      let rest = argStr ? ` ${argStr}` : "";
+      let rest = `${argStr ? ` ${argStr}` : ""}${durStr}`;
       const availRest = Math.max(0, avail - name.length);
       if (rest.length > availRest) {
         rest = `${rest.slice(0, Math.max(0, availRest - 1))}…`;
@@ -222,7 +244,7 @@ export function buildRightLines(
 
       if (step.isRunning) {
         const runPfx = "    └ ";
-        const runText = "executing...";
+        const runText = `executing${durStr}...`;
         const rPad = Math.max(0, contentWidth - runPfx.length - runText.length);
         lines.push({
           id: `${step.id}_executing`,
@@ -287,15 +309,15 @@ export function buildRightLines(
         let closeColor = theme.muted;
 
         if (allOutLines.length === 0) {
-          closeText = "(done)";
+          closeText = `(done${durStr})`;
         } else if (isExpanded) {
-          closeText = `${allOutLines.length} lines · [click to collapse]`;
+          closeText = `${allOutLines.length} lines${durStr} · [click to collapse]`;
           closeColor = theme.secondary;
         } else if (allOutLines.length > 2) {
-          closeText = `${allOutLines.length} lines · [click to expand]`;
+          closeText = `${allOutLines.length} lines${durStr} · [click to expand]`;
           closeColor = theme.muted;
         } else {
-          closeText = step.outputSummary || `${allOutLines.length} lines`;
+          closeText = `${step.outputSummary || `${allOutLines.length} lines`}${durStr}`;
         }
 
         const cAvail = Math.max(0, contentWidth - closePfx.length);
@@ -382,9 +404,11 @@ export function buildRightLines(
       ),
     });
 
-    edits.slice(-3).forEach((edit, idx) => {
+    edits.slice(-4).forEach((edit, idx) => {
+      const isExpanded = expandedFileEdits.has(edit.filePath);
       const tag = edit.type === "edit" ? "M " : "+ ";
-      const stats = ` +${edit.linesAdded} -${edit.linesRemoved}`;
+      const toggle = isExpanded ? " [-]" : " [+]";
+      const stats = ` +${edit.linesAdded} -${edit.linesRemoved}${toggle}`;
       const availFile = Math.max(0, contentWidth - 4 - stats.length);
       const fRel = toRel(edit.filePath, cwd);
       const fTrimmed =
@@ -393,6 +417,7 @@ export function buildRightLines(
 
       lines.push({
         id: `edit_${idx}`,
+        editFilePath: edit.filePath,
         node: (
           <Text backgroundColor={bg} wrap="truncate-end">
             <Text>  </Text>
@@ -400,10 +425,50 @@ export function buildRightLines(
             <Text color={theme.text}>{fTrimmed}</Text>
             <Text color={theme.diffAdd}> +{edit.linesAdded}</Text>
             <Text color={theme.diffRemove}> -{edit.linesRemoved}</Text>
+            <Text color={theme.muted}>{toggle}</Text>
             {" ".repeat(ePad)}
           </Text>
         ),
       });
+
+      if (isExpanded && edit.diffLines && edit.diffLines.length > 0) {
+        edit.diffLines.slice(0, 12).forEach((dLine, dIdx) => {
+          const prefix = "    │ ";
+          const dAvail = Math.max(0, contentWidth - prefix.length);
+          const trimmed = dLine.length > dAvail ? `${dLine.slice(0, Math.max(0, dAvail - 1))}…` : dLine;
+          let c: string = theme.muted;
+          if (trimmed.startsWith("+") && !trimmed.startsWith("+++")) c = theme.diffAdd;
+          else if (trimmed.startsWith("-") && !trimmed.startsWith("---")) c = theme.diffRemove;
+          else if (trimmed.startsWith("@@")) c = theme.diffHunk;
+
+          const dPad = Math.max(0, contentWidth - prefix.length - trimmed.length);
+          lines.push({
+            id: `edit_${idx}_diff_${dIdx}`,
+            editFilePath: edit.filePath,
+            node: (
+              <Text backgroundColor={bg} wrap="truncate-end">
+                <Text color={theme.border}>{prefix}</Text>
+                <Text color={c}>{trimmed}</Text>
+                {" ".repeat(dPad)}
+              </Text>
+            ),
+          });
+        });
+
+        const closeText = "    └ [click to collapse · prompt to edit]";
+        const cTrimmed = closeText.length > contentWidth ? closeText.slice(0, contentWidth) : closeText;
+        const cPad = Math.max(0, contentWidth - cTrimmed.length);
+        lines.push({
+          id: `edit_${idx}_close`,
+          editFilePath: edit.filePath,
+          node: (
+            <Text backgroundColor={bg} wrap="truncate-end">
+              <Text color={theme.secondary}>{cTrimmed}</Text>
+              {" ".repeat(cPad)}
+            </Text>
+          ),
+        });
+      }
     });
   }
 
@@ -485,6 +550,31 @@ export function buildRightLines(
       ),
     });
   }
+
+  lines.push({
+    id: "log_div",
+    node: (
+      <Text backgroundColor={bg} color={theme.border}>
+        {"  " + "─".repeat(Math.max(0, contentWidth - 2))}
+      </Text>
+    ),
+  });
+
+  const logPfx = "  logs: ";
+  const logHint = "~/.morpheus/logs (type /log)";
+  const logAvail = Math.max(0, contentWidth - logPfx.length);
+  const logTrimmed = logHint.length > logAvail ? `${logHint.slice(0, Math.max(0, logAvail - 1))}…` : logHint;
+  const lPad = Math.max(0, contentWidth - logPfx.length - logTrimmed.length);
+  lines.push({
+    id: "log_info",
+    node: (
+      <Text backgroundColor={bg} wrap="truncate-end">
+        <Text color={theme.muted}>{logPfx}</Text>
+        <Text color={theme.secondary}>{logTrimmed}</Text>
+        {" ".repeat(lPad)}
+      </Text>
+    ),
+  });
 
   return lines;
 }
