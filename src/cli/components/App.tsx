@@ -118,6 +118,135 @@ function extractDiffRecord(
   return null;
 }
 
+const HERO_STOPS: Array<[number, [number, number, number]]> = [
+  [0.00, [250, 232, 188]],
+  [0.15, [250, 195, 125]],
+  [0.35, [235, 125,  35]],
+  [0.55, [167,  52,   6]],
+  [0.75, [ 50,  18,  12]],
+  [0.90, [ 28,  22,  23]],
+  [1.00, [ 22,  20,  21]],
+];
+
+function clampColor(v: number, lo = 0, hi = 255): number {
+  return Math.max(lo, Math.min(hi, Math.floor(v)));
+}
+
+function getHeroColor(t: number): [number, number, number] {
+  const ct = Math.max(0, Math.min(1, t));
+  for (let i = 0; i < HERO_STOPS.length - 1; i++) {
+    const [t0, c0] = HERO_STOPS[i];
+    const [t1, c1] = HERO_STOPS[i + 1];
+    if (ct >= t0 && ct <= t1) {
+      const f = (ct - t0) / (t1 - t0);
+      const r = c0[0] + (c1[0] - c0[0]) * f;
+      const g = c0[1] + (c1[1] - c0[1]) * f;
+      const b = c0[2] + (c1[2] - c0[2]) * f;
+      return [r, g, b];
+    }
+  }
+  return HERO_STOPS[HERO_STOPS.length - 1][1];
+}
+
+function heroNoise(x: number, y: number): number {
+  const n = Math.sin(x * 12.9898 + y * 78.233) * 43758.5453;
+  return n - Math.floor(n);
+}
+
+const HERO_DITHERS = [" ", " ", "░", "▒", "░", " ", "·"];
+
+function buildHeroFeedLines(width: number, totalLines: number): FeedLine[] {
+  const safeWidth = Math.max(20, width);
+  const safeLines = Math.max(6, totalLines);
+
+  const title = safeWidth >= 40 ? "M  O  R  P  H  E  U  S" : "MORPHEUS";
+  const sub1 =
+    safeWidth >= 50
+      ? "AUTONOMOUS CODING AGENT"
+      : safeWidth >= 30
+      ? "AI CODING AGENT"
+      : "";
+  const sub2 =
+    safeWidth >= 62
+      ? "DEEP REASONING · REAL-TIME DIFF STREAM · CONTEXT SAFETY"
+      : safeWidth >= 38
+      ? "REASONING · DIFF STREAM · SAFETY"
+      : "";
+  const hint =
+    safeWidth >= 45
+      ? "ask a question or describe a task below"
+      : "enter a prompt below";
+
+  const textMap: Record<number, [string, [number, number, number], boolean]> = {};
+
+  if (safeLines >= 12) {
+    textMap[1] = ["·  2 0 2 6  ·", [22, 20, 21], true];
+    textMap[safeLines - 7] = [sub1, [218, 204, 167], false];
+    textMap[safeLines - 6] = [title, [245, 212, 181], true];
+    if (sub2) textMap[safeLines - 4] = [sub2, [138, 126, 117], false];
+    textMap[safeLines - 2] = [hint, [218, 204, 167], false];
+  } else {
+    textMap[safeLines - 4] = [sub1, [218, 204, 167], false];
+    textMap[safeLines - 3] = [title, [245, 212, 181], true];
+    textMap[safeLines - 1] = [hint, [218, 204, 167], false];
+  }
+
+  const lines: FeedLine[] = [];
+
+  for (let y = 0; y < safeLines; y++) {
+    let line = "";
+    const t = y / Math.max(1, safeLines - 1);
+    const entry = textMap[y];
+    let rawText = entry ? entry[0] : "";
+    const fgCol = entry ? entry[1] : null;
+    const isBold = entry ? entry[2] : false;
+
+    if (rawText && rawText.length > safeWidth) {
+      rawText = rawText.slice(0, safeWidth);
+    }
+    const startX = rawText ? Math.floor((safeWidth - rawText.length) / 2) : 999;
+    const endX = rawText ? startX + rawText.length : -1;
+
+    for (let x = 0; x < safeWidth; x++) {
+      const wave =
+        Math.sin(x * 0.42) * 0.08 +
+        Math.sin(x * 0.19 + 0.8) * 0.05 +
+        Math.sin(x * 0.85) * 0.03;
+      const grain = heroNoise(x, y) - 0.5;
+      const localT = Math.max(0, Math.min(1, t + wave));
+      const [r, g, b] = getHeroColor(localT);
+
+      const noiseAmp = 18 * Math.max(0, 1 - t * 0.9);
+      const gr = clampColor(r + grain * noiseAmp);
+      const gg = clampColor(g + grain * noiseAmp);
+      const gb = clampColor(b + grain * noiseAmp);
+
+      if (startX <= x && x < endX && fgCol) {
+        const ch = rawText[x - startX];
+        const [fgr, fgg, fgb] = fgCol;
+        const boldCode = isBold ? ";1" : "";
+        line += `\x1b[48;2;${gr};${gg};${gb}m\x1b[38;2;${fgr};${fgg};${fgb}${boldCode}m${ch}`;
+      } else {
+        const fgR = clampColor(gr + 32);
+        const fgG = clampColor(gg + 24);
+        const fgB = clampColor(gb + 16);
+        const charIdx = Math.floor(Math.abs(grain) * HERO_DITHERS.length) % HERO_DITHERS.length;
+        const ch = t < 0.65 ? HERO_DITHERS[charIdx] : " ";
+        line += `\x1b[48;2;${gr};${gg};${gb}m\x1b[38;2;${fgR};${fgG};${fgB}m${ch}`;
+      }
+    }
+    line += "\x1b[0m";
+
+    lines.push({
+      id: `hero_intro_${y}`,
+      threadId: "intro",
+      node: <Text wrap="truncate-end">{line}</Text>,
+    });
+  }
+
+  return lines;
+}
+
 export function App({
   model,
   isLocal = false,
@@ -544,6 +673,21 @@ export function App({
   const allFeedLines = useMemo<FeedLine[]>(() => {
     const lines: FeedLine[] = [];
 
+    const heroHeight = Math.min(14, feedHeight);
+    lines.push(...buildHeroFeedLines(leftWidth, heroHeight));
+
+    if (threads.length > 0) {
+      lines.push({
+        id: "hero_divider",
+        threadId: "intro",
+        node: (
+          <Text backgroundColor={theme.bg}>
+            {" ".repeat(leftWidth)}
+          </Text>
+        ),
+      });
+    }
+
     threads.forEach((thread, tIdx) => {
       lines.push({
         id: `${thread.id}_user_hdr`,
@@ -696,7 +840,7 @@ export function App({
     });
 
     return lines;
-  }, [threads, leftWidth, maxLineWidth]);
+  }, [threads, leftWidth, maxLineWidth, feedHeight]);
 
   const maxScroll = Math.max(0, allFeedLines.length - feedHeight);
   maxScrollRef.current = maxScroll;
