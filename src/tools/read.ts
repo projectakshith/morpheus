@@ -1,6 +1,6 @@
 import fs from "node:fs/promises";
 import path from "node:path";
-import { resolvePath, exists } from "../utils/filesystem";
+import { resolvePathWithFallbacks, exists } from "../utils/filesystem";
 import { similarity } from "../utils/levenshtein";
 import { truncateOutput } from "./construct";
 import type { ToolResult } from "../core/types";
@@ -38,13 +38,14 @@ export async function readFile(
   params: ReadFileParams,
   cwd: string = process.cwd()
 ): Promise<ToolResult> {
-  const fullPath = resolvePath(params.filePath, cwd);
+  const fullPath = await resolvePathWithFallbacks(params.filePath, cwd);
 
   if (!(await exists(fullPath))) {
     const suggestions = await suggestFiles(fullPath);
-    const hint = suggestions.length > 0
-      ? `\nDid you mean one of these?\n${suggestions.map((s) => `  - ${s}`).join("\n")}`
-      : "";
+    const hint =
+      suggestions.length > 0
+        ? `\nDid you mean one of these?\n${suggestions.map((s) => `  - ${s}`).join("\n")}`
+        : "";
     throw new Error(`File not found: ${params.filePath}${hint}`);
   }
 
@@ -64,7 +65,7 @@ export async function readFile(
   const lines = raw.split("\n");
 
   const offset = Math.max(1, params.offset ?? 1);
-  const limit = Math.max(1, params.limit ?? 2000);
+  const limit = Math.max(1, Math.min(params.limit ?? 120, 500));
   const startIndex = offset - 1;
   const slice = lines.slice(startIndex, startIndex + limit);
 
@@ -72,6 +73,11 @@ export async function readFile(
     .map((line, idx) => `${startIndex + idx + 1}: ${line}`)
     .join("\n");
 
-  const result = await truncateOutput(numbered);
+  const pagination =
+    startIndex + limit < lines.length
+      ? `\n\n[Lines ${offset}-${Math.min(offset + limit - 1, lines.length)} of ${lines.length} shown. Use offset=${offset + limit} to read more]`
+      : "";
+
+  const result = await truncateOutput(`${numbered}${pagination}`);
   return { output: result.content };
 }

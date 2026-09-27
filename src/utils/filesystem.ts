@@ -12,6 +12,42 @@ export function resolvePath(targetPath: string, baseDir: string = process.cwd())
 }
 
 /**
+ * Resolves relative or absolute path against a base directory (defaults to cwd),
+ * with fallbacks for parent directories and sibling workspaces.
+ */
+export async function resolvePathWithFallbacks(
+  targetPath: string,
+  baseDir: string = process.cwd()
+): Promise<string> {
+  const direct = resolvePath(targetPath, baseDir);
+  if (await exists(direct)) {
+    return direct;
+  }
+
+  const parent = path.dirname(baseDir);
+  const parentFallback = path.resolve(parent, targetPath);
+  if (await exists(parentFallback)) {
+    return parentFallback;
+  }
+
+  /* Check sibling workspaces (e.g. ../ratio-d/<targetPath>) */
+  try {
+    const entries = await fs.readdir(parent, { withFileTypes: true });
+    for (const e of entries) {
+      if (e.isDirectory() && !e.name.startsWith(".") && e.name !== path.basename(baseDir)) {
+        const candidate = path.resolve(parent, e.name, targetPath);
+        if (await exists(candidate)) {
+          return candidate;
+        }
+      }
+    }
+  } catch {
+  }
+
+  return direct;
+}
+
+/**
  * Checks if a file or directory exists without throwing.
  */
 export async function exists(targetPath: string): Promise<boolean> {
