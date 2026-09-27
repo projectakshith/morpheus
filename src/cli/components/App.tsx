@@ -119,12 +119,12 @@ function extractDiffRecord(
 }
 
 const HERO_STOPS: Array<[number, [number, number, number]]> = [
-  [0.00, [238, 242, 226]],
-  [0.15, [152, 217, 118]],
-  [0.35, [115, 158,  90]],
-  [0.55, [ 67,  96,  52]],
-  [0.75, [ 45,  64,  36]],
-  [0.90, [ 26,  32,  25]],
+  [0.00, [ 24,  28,  22]],
+  [0.18, [ 36,  48,  30]],
+  [0.38, [ 68, 102,  52]],
+  [0.58, [115, 158,  90]],
+  [0.78, [152, 217, 118]],
+  [0.90, [ 67,  96,  52]],
   [1.00, [ 22,  20,  21]],
 ];
 
@@ -155,23 +155,200 @@ function heroNoise(x: number, y: number): number {
 
 const HERO_DITHERS = [" ", " ", "░", "▒", "░", " ", "·"];
 
+function buildFullScreenIntro(width: number, height: number): FeedLine[] {
+  const W = Math.max(40, width);
+  const H = Math.max(12, height);
+  const hasInnerGrid = W >= 68;
+  const colL = Math.max(4, Math.floor(W * 0.16));
+  const colR = Math.min(W - 5, Math.floor(W * 0.84));
+
+  const borderCol: [number, number, number] = [70, 95, 60];
+  const gridCol: [number, number, number] = [48, 65, 42];
+  const honeyBeige: [number, number, number] = [245, 212, 181];
+  const eggLiqueur: [number, number, number] = [218, 204, 167];
+  const sapBright: [number, number, number] = [152, 217, 118];
+  const sapMuted: [number, number, number] = [115, 158, 90];
+  const mutedText: [number, number, number] = [135, 148, 125];
+
+  const textOverlays: Array<{ y: number; x: number; text: string; fg: [number, number, number]; bold?: boolean }> = [];
+
+  textOverlays.push({ y: 0, x: 4, text: " 2K26 ", fg: eggLiqueur, bold: true });
+  const sysTag = " [SYS.01 // MORPHEUS] ";
+  textOverlays.push({ y: 0, x: W - sysTag.length - 4, text: sysTag, fg: sapBright, bold: false });
+
+  if (H >= 14) {
+    textOverlays.push({ y: 1, x: 3, text: "CREATIVE HARNESS · ID 01", fg: eggLiqueur, bold: false });
+    const right1 = "82% ENG RETURN · C03/S4/0028";
+    if (W > 70) {
+      textOverlays.push({ y: 1, x: W - right1.length - 3, text: right1, fg: mutedText, bold: false });
+    }
+
+    textOverlays.push({ y: 2, x: 3, text: "ATMOSPHERE: SAP GREEN · 46°02'N 14°30'E", fg: mutedText, bold: false });
+    const pill = "( FIELD TESTED )";
+    if (W > 60) {
+      textOverlays.push({ y: 2, x: W - pill.length - 3, text: pill, fg: sapBright, bold: true });
+    }
+  }
+
+  const midY1 = Math.floor(H * 0.42);
+  const disc = "· · ·   D I S C O V E R Y   · · ·";
+  if (midY1 > 4 && midY1 < H - 7) {
+    const dX = Math.floor((W - disc.length) / 2);
+    textOverlays.push({ y: midY1, x: dX, text: disc, fg: eggLiqueur, bold: false });
+    if (W >= 60) {
+      textOverlays.push({ y: midY1, x: 4, text: "<<<<<", fg: sapMuted, bold: false });
+      textOverlays.push({ y: midY1, x: W - 9, text: ">>>>>", fg: sapMuted, bold: false });
+    }
+  }
+
+  const midY2 = Math.floor(H * 0.54);
+  if (midY2 > midY1 && midY2 < H - 7 && W >= 60) {
+    textOverlays.push({ y: midY2, x: colL + 3, text: "[ 14.8 ]", fg: sapBright, bold: true });
+    const hud = "00  □  00";
+    textOverlays.push({ y: midY2, x: Math.floor((W - hud.length) / 2), text: hud, fg: mutedText, bold: false });
+    const spec = "TRX-7 / A21-MX22";
+    if (W > 75) {
+      textOverlays.push({ y: midY2, x: colR - spec.length - 3, text: spec, fg: mutedText, bold: false });
+    }
+  }
+
+  const titleY = H - 5;
+  const title = W >= 60 ? "M   O   R   P   H   E   U   S" : "M O R P H E U S";
+  textOverlays.push({ y: titleY, x: Math.floor((W - title.length) / 2), text: title, fg: honeyBeige, bold: true });
+
+  const subY = H - 4;
+  const sub = "a g e n t i c   h a r n e s s";
+  textOverlays.push({ y: subY, x: Math.floor((W - sub.length) / 2), text: sub, fg: sapBright, bold: false });
+
+  const capY = H - 3;
+  const cap = W >= 70
+    ? "DEEP REASONING · REAL-TIME DIFF STREAM · CONTEXT SAFETY"
+    : "REASONING · DIFF STREAM · SAFETY";
+  textOverlays.push({ y: capY, x: Math.floor((W - cap.length) / 2), text: cap, fg: mutedText, bold: false });
+
+  const hintY = H - 2;
+  const hint = "[ READY ]  ask a question or describe a task below  ·  [esc] stop";
+  const hintShort = "[ READY ]  ask a question or describe a task below";
+  const hintText = W >= hint.length + 6 ? hint : hintShort;
+  textOverlays.push({ y: hintY, x: Math.floor((W - hintText.length) / 2), text: hintText, fg: eggLiqueur, bold: false });
+
+  const botTag = " archive // morpheus ";
+  textOverlays.push({ y: H - 1, x: 4, text: " C03/S4/0028 ", fg: mutedText, bold: false });
+  textOverlays.push({ y: H - 1, x: W - botTag.length - 4, text: botTag, fg: mutedText, bold: false });
+
+  const lines: FeedLine[] = [];
+
+  for (let y = 0; y < H; y++) {
+    const t = y / Math.max(1, H - 1);
+    const lineChars: Array<{ ch: string; fg: [number, number, number]; bold?: boolean; isLocked?: boolean }> = [];
+
+    for (let x = 0; x < W; x++) {
+      let ch = " ";
+      let fg: [number, number, number] = borderCol;
+      let bold = false;
+
+      if (y === 0) {
+        if (x === 0) ch = "┌";
+        else if (x === W - 1) ch = "┐";
+        else if (hasInnerGrid && (x === colL || x === colR)) ch = "┬";
+        else ch = "─";
+        fg = borderCol;
+      } else if (y === H - 1) {
+        if (x === 0) ch = "└";
+        else if (x === W - 1) ch = "┘";
+        else if (hasInnerGrid && (x === colL || x === colR)) ch = "┴";
+        else ch = "─";
+        fg = borderCol;
+      } else if ((H >= 14 && y === 3) || y === H - 6) {
+        if (x === 0) ch = "├";
+        else if (x === W - 1) ch = "┤";
+        else if (hasInnerGrid && (x === colL || x === colR)) ch = "┼";
+        else ch = "─";
+        fg = borderCol;
+      } else if (x === 0 || x === W - 1) {
+        ch = "│";
+        fg = borderCol;
+      } else if (hasInnerGrid && y < H - 6 && (x === colL || x === colR)) {
+        ch = "│";
+        fg = gridCol;
+      }
+
+      lineChars.push({ ch, fg, bold });
+    }
+
+    const onLine = textOverlays.filter((o) => o.y === y);
+    for (const item of onLine) {
+      let text = item.text;
+      const isFrame = y === 0 || y === H - 1;
+      const minX = isFrame ? 1 : 2;
+      const maxX = isFrame ? W - 2 : W - 3;
+      const maxLen = maxX - minX + 1;
+      if (text.length > maxLen) {
+        text = text.slice(0, maxLen);
+      }
+      const actualX = Math.max(minX, Math.min(maxX - text.length + 1, item.x));
+      for (let i = 0; i < text.length; i++) {
+        const targetX = actualX + i;
+        if (targetX >= minX && targetX <= maxX) {
+          lineChars[targetX] = {
+            ch: text[i],
+            fg: item.fg,
+            bold: item.bold,
+            isLocked: true,
+          };
+        }
+      }
+    }
+
+    let line = "";
+    for (let x = 0; x < W; x++) {
+      const wave =
+        Math.sin(x * 0.28 + y * 0.2) * 0.05 +
+        Math.sin(x * 0.11 - y * 0.15) * 0.04;
+      const grain = heroNoise(x, y) - 0.5;
+      const localT = Math.max(0, Math.min(1, t + wave));
+      const [r, g, b] = getHeroColor(localT);
+
+      const noiseAmp = 12 * Math.sin(t * Math.PI);
+      const gr = clampColor(r + grain * noiseAmp);
+      const gg = clampColor(g + grain * noiseAmp);
+      const gb = clampColor(b + grain * noiseAmp);
+
+      const item = lineChars[x];
+      let ch = item.ch;
+      let fgr = item.fg[0];
+      let fgg = item.fg[1];
+      let fgb = item.fg[2];
+
+      if (ch === " " && !item.isLocked) {
+        const charIdx = Math.floor(Math.abs(grain) * HERO_DITHERS.length) % HERO_DITHERS.length;
+        ch = (t > 0.12 && y < H - 6) ? HERO_DITHERS[charIdx] : " ";
+        fgr = clampColor(gr + 26);
+        fgg = clampColor(gg + 20);
+        fgb = clampColor(gb + 14);
+      }
+
+      const boldCode = item.bold ? ";1" : "";
+      line += `\x1b[48;2;${gr};${gg};${gb}m\x1b[38;2;${fgr};${fgg};${fgb}${boldCode}m${ch}`;
+    }
+    line += "\x1b[0m";
+
+    lines.push({
+      id: `full_intro_${y}`,
+      threadId: "intro",
+      node: <Text wrap="truncate-end">{line}</Text>,
+    });
+  }
+
+  return lines;
+}
+
 function buildHeroFeedLines(width: number, totalLines: number): FeedLine[] {
   const safeWidth = Math.max(20, width - 2);
   const safeLines = Math.max(6, totalLines);
 
   const title = safeWidth >= 40 ? "M  O  R  P  H  E  U  S" : "MORPHEUS";
-  const sub1 =
-    safeWidth >= 50
-      ? "AUTONOMOUS CODING AGENT"
-      : safeWidth >= 30
-      ? "AI CODING AGENT"
-      : "";
-  const sub2 =
-    safeWidth >= 62
-      ? "DEEP REASONING · REAL-TIME DIFF STREAM · CONTEXT SAFETY"
-      : safeWidth >= 38
-      ? "REASONING · DIFF STREAM · SAFETY"
-      : "";
+  const sub = "a g e n t i c   h a r n e s s";
   const hint =
     safeWidth >= 45
       ? "ask a question or describe a task below"
@@ -179,15 +356,14 @@ function buildHeroFeedLines(width: number, totalLines: number): FeedLine[] {
 
   const textMap: Record<number, [string, [number, number, number], boolean]> = {};
 
-  if (safeLines >= 12) {
+  if (safeLines >= 10) {
     textMap[1] = ["·  2 0 2 6  ·", [22, 20, 21], true];
-    textMap[safeLines - 7] = [sub1, [218, 204, 167], false];
-    textMap[safeLines - 6] = [title, [245, 212, 181], true];
-    if (sub2) textMap[safeLines - 4] = [sub2, [152, 217, 118], false];
+    textMap[safeLines - 5] = [title, [245, 212, 181], true];
+    textMap[safeLines - 4] = [sub, [152, 217, 118], false];
     textMap[safeLines - 2] = [hint, [218, 204, 167], false];
   } else {
-    textMap[safeLines - 4] = [sub1, [218, 204, 167], false];
-    textMap[safeLines - 3] = [title, [245, 212, 181], true];
+    textMap[safeLines - 4] = [title, [245, 212, 181], true];
+    textMap[safeLines - 3] = [sub, [152, 217, 118], false];
     textMap[safeLines - 1] = [hint, [218, 204, 167], false];
   }
 
@@ -883,6 +1059,12 @@ export function App({
 
   visibleRightLinesRef.current = visibleRightLines;
 
+  const isIntroMode = threads.length === 0;
+
+  const introLines = useMemo(() => {
+    return buildFullScreenIntro(terminalWidth, workspaceHeight);
+  }, [terminalWidth, workspaceHeight]);
+
   return (
     <Box
       flexDirection="column"
@@ -898,34 +1080,49 @@ export function App({
         width={terminalWidth}
       />
 
-      <Box flexDirection="row" width={terminalWidth} height={workspaceHeight} overflow="hidden">
+      {isIntroMode ? (
         <Box
           flexDirection="column"
-          width={leftWidth}
+          width={terminalWidth}
           height={workspaceHeight}
+          overflow="hidden"
         >
-          <Box flexDirection="column" height={feedHeight} overflow="hidden">
-            {visibleLines.map((line) => (
-              <Box key={line.id} height={1} overflow="hidden">
-                {line.node}
-              </Box>
-            ))}
-            {Array.from({ length: Math.max(0, feedHeight - visibleLines.length) }).map((_, idx) => (
-              <Box key={`feed_pad_${idx}`} height={1} overflow="hidden">
-                <Text backgroundColor={theme.bg}>{" ".repeat(leftWidth)}</Text>
-              </Box>
-            ))}
-          </Box>
+          {introLines.map((line) => (
+            <Box key={line.id} height={1} overflow="hidden">
+              {line.node}
+            </Box>
+          ))}
         </Box>
-
-        {isSplitLayout && (
-          <DiffColumn
-            width={rightWidth}
+      ) : (
+        <Box flexDirection="row" width={terminalWidth} height={workspaceHeight} overflow="hidden">
+          <Box
+            flexDirection="column"
+            width={leftWidth}
             height={workspaceHeight}
-            lines={visibleRightLines}
-          />
-        )}
-      </Box>
+          >
+            <Box flexDirection="column" height={feedHeight} overflow="hidden">
+              {visibleLines.map((line) => (
+                <Box key={line.id} height={1} overflow="hidden">
+                  {line.node}
+                </Box>
+              ))}
+              {Array.from({ length: Math.max(0, feedHeight - visibleLines.length) }).map((_, idx) => (
+                <Box key={`feed_pad_${idx}`} height={1} overflow="hidden">
+                  <Text backgroundColor={theme.bg}>{" ".repeat(leftWidth)}</Text>
+                </Box>
+              ))}
+            </Box>
+          </Box>
+
+          {isSplitLayout && (
+            <DiffColumn
+              width={rightWidth}
+              height={workspaceHeight}
+              lines={visibleRightLines}
+            />
+          )}
+        </Box>
+      )}
 
       <StatusBar
         status={status}
