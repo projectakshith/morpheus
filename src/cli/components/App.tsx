@@ -173,32 +173,6 @@ function fastNoise(x: number, y: number): number {
   return ((n ^ (n >> 16)) & 0x7fffffff) / 0x7fffffff;
 }
 
-function buildShellMockLines(width: number, height: number): string[] {
-  const user = process.env.USER || "user";
-  const cwd = process.cwd();
-  const folder = path.basename(cwd) || "morpheus";
-  const prompt = `${user}@mac ${folder} %`;
-
-  const raw: string[] = [
-    `Last login: ${new Date().toLocaleDateString("en-US", { weekday: "short", month: "short", day: "numeric" })} on ttys002`,
-    `${prompt} git status -s`,
-    ` M src/cli/components/App.tsx`,
-    ` M src/cli/components/DiffColumn.tsx`,
-    `${prompt} morpheus`,
-    `[boot] morpheus engine v${MORPHEUS_VERSION} (darwin-arm64)`,
-    `[core] mounting tty session (${width}x${height})...`,
-    `[sys] initializing agentic runtime and context safety...`,
-    `[ready] listening on stdio`,
-    `${prompt} _`,
-  ];
-
-  const lines: string[] = [];
-  for (let y = 0; y < height; y++) {
-    lines.push(raw[y] || "");
-  }
-  return lines;
-}
-
 function buildFullScreenIntro(
   width: number,
   height: number,
@@ -212,8 +186,8 @@ function buildFullScreenIntro(
   const honeyBeige: [number, number, number] = [245, 212, 181];
   const sapBright: [number, number, number] = [152, 217, 118];
 
-  const topText = W >= 45 ? "· 0 1 · M A T R I X · 2 K 2 6 ·" : "[ 01 // MATRIX ]";
-  const titleText = W >= 50 ? "M   O   R   P   H   E   U   S" : "M O R P H E U S";
+  const topText = W >= 35 ? "· wake up, neo... ·" : "wake up, neo";
+  const titleText = W >= 45 ? "M   O   R   P   H   E   U   S" : "M O R P H E U S";
   const subText = "a g e n t i c   h a r n e s s";
 
   const topY = Math.max(1, Math.min(2, Math.floor(H * 0.08)));
@@ -224,27 +198,20 @@ function buildFullScreenIntro(
   const titleX = Math.floor((W - titleText.length) / 2);
   const subX = Math.floor((W - subText.length) / 2);
 
-  const shellLines = buildShellMockLines(W, H);
-  const user = process.env.USER || "user";
-
   const lines: FeedLine[] = [];
 
   for (let y = 0; y < H; y++) {
     const t = y / Math.max(1, H - 1);
-    const shellLine = shellLines[y] || "";
-    const isPromptLine = shellLine.startsWith(user);
-    const isGitStatus = shellLine.startsWith(" M ") || shellLine.startsWith("?? ");
-
     let line = "";
     let lastBg = "";
     let lastFg = "";
 
     for (let x = 0; x < W; x++) {
       const seed = colHash(x);
-      const delay = seed * 0.25;
-      const speed = 0.8 + colHash(x * 5 + 19) * 0.45;
-      const effP = Math.max(0, (progress - delay) / Math.max(0.01, 1 - delay));
-      const frontier = effP * (H + 8) * speed;
+      const delay = seed * 0.15;
+      const speed = 0.9 + colHash(x * 5 + 19) * 0.25;
+      const rainP = Math.min(1, Math.max(0, (progress - delay) / 0.42));
+      const frontier = rainP * (H + 6) * speed;
       const dist = frontier - y;
 
       let ch = " ";
@@ -322,19 +289,8 @@ function buildFullScreenIntro(
         }
       } else {
         bgCode = "\x1b[48;2;22;20;21m";
-        const rawCh = x < shellLine.length ? shellLine[x] : " ";
-        ch = rawCh;
-        if (rawCh === " ") {
-          fgCode = "\x1b[38;2;22;20;21m";
-        } else if (rawCh === "_") {
-          fgCode = tick % 16 < 8 ? "\x1b[38;2;245;212;181;1m" : "\x1b[38;2;22;20;21m";
-        } else if (isPromptLine) {
-          fgCode = "\x1b[38;2;152;217;118m";
-        } else if (isGitStatus) {
-          fgCode = "\x1b[38;2;218;204;167m";
-        } else {
-          fgCode = "\x1b[38;2;180;185;175m";
-        }
+        fgCode = "\x1b[38;2;22;20;21m";
+        ch = " ";
       }
 
       if (bgCode !== lastBg) {
@@ -374,7 +330,7 @@ function buildHeroFeedLines(width: number, totalLines: number): FeedLine[] {
   const textMap: Record<number, [string, [number, number, number], boolean]> = {};
 
   if (safeLines >= 10) {
-    textMap[1] = ["· 0 1 · MATRIX ·", [22, 20, 21], true];
+    textMap[1] = ["· wake up, neo ·", [22, 20, 21], true];
     textMap[safeLines - 5] = [title, [245, 212, 181], true];
     textMap[safeLines - 4] = [sub, [152, 217, 118], false];
     textMap[safeLines - 2] = [hint, [218, 204, 167], false];
@@ -500,12 +456,11 @@ export function App({
   useEffect(() => {
     if (!isIntroActive) return;
     const startTime = Date.now();
-    const duration = 2600;
+    const duration = 3200;
     const interval = setInterval(() => {
       const elapsed = Date.now() - startTime;
       const rawP = Math.min(1, elapsed / duration);
-      const easedP = rawP * rawP * (3 - 2 * rawP);
-      setIntroProgress(easedP);
+      setIntroProgress(rawP);
       setIntroTick((prev) => prev + 1);
       if (rawP >= 1) {
         clearInterval(interval);
