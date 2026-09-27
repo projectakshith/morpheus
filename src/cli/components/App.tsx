@@ -173,11 +173,30 @@ function fastNoise(x: number, y: number): number {
   return ((n ^ (n >> 16)) & 0x7fffffff) / 0x7fffffff;
 }
 
+const MATRIX_QUOTES = [
+  "There is no spoon.",
+  "Follow the white rabbit.",
+  "I know kung fu.",
+  "Free your mind.",
+  "What is real?",
+  "Welcome to the desert of the real.",
+  "The Matrix has you.",
+  "Knock, knock, Neo.",
+  "Choice. The problem is choice.",
+  "Wake up, Neo...",
+  "The answer is out there, Neo.",
+  "I can only show you the door.",
+  "You take the red pill...",
+  "Dodge this.",
+  "Ignorance is bliss.",
+];
+
 function buildFullScreenIntro(
   width: number,
   height: number,
   progress: number,
-  tick: number
+  tick: number,
+  quote?: string
 ): FeedLine[] {
   const W = Math.max(20, width);
   const H = Math.max(8, height);
@@ -186,7 +205,9 @@ function buildFullScreenIntro(
   const honeyBeige: [number, number, number] = [245, 212, 181];
   const sapBright: [number, number, number] = [152, 217, 118];
 
-  const topText = W >= 35 ? "· wake up, neo... ·" : "wake up, neo";
+  const rawQuote = quote || MATRIX_QUOTES[0];
+  const fullQuote = `· ${rawQuote} ·`;
+  const topText = fullQuote.length <= W - 4 ? fullQuote : rawQuote.length <= W - 2 ? rawQuote : "· wake up, neo ·";
   const titleText = W >= 45 ? "M   O   R   P   H   E   U   S" : "M O R P H E U S";
   const subText = "a g e n t i c   h a r n e s s";
 
@@ -316,7 +337,7 @@ function buildFullScreenIntro(
   return lines;
 }
 
-function buildHeroFeedLines(width: number, totalLines: number): FeedLine[] {
+function buildHeroFeedLines(width: number, totalLines: number, quote?: string): FeedLine[] {
   const safeWidth = Math.max(20, width - 2);
   const safeLines = Math.max(6, totalLines);
 
@@ -327,10 +348,14 @@ function buildHeroFeedLines(width: number, totalLines: number): FeedLine[] {
       ? "ask a question or describe a task below"
       : "enter a prompt below";
 
+  const rawQuote = quote || MATRIX_QUOTES[0];
+  const fullQuote = `· ${rawQuote} ·`;
+  const heroQuote = fullQuote.length <= safeWidth ? fullQuote : rawQuote.length <= safeWidth ? rawQuote : "· wake up, neo ·";
+
   const textMap: Record<number, [string, [number, number, number], boolean]> = {};
 
   if (safeLines >= 10) {
-    textMap[1] = ["· wake up, neo ·", [22, 20, 21], true];
+    textMap[1] = [heroQuote, [22, 20, 21], true];
     textMap[safeLines - 5] = [title, [245, 212, 181], true];
     textMap[safeLines - 4] = [sub, [152, 217, 118], false];
     textMap[safeLines - 2] = [hint, [218, 204, 167], false];
@@ -426,6 +451,7 @@ export function App({
   const [isIntroActive, setIsIntroActive] = useState(!initialTask);
   const [introProgress, setIntroProgress] = useState(0);
   const [introTick, setIntroTick] = useState(0);
+  const [matrixQuote] = useState(() => MATRIX_QUOTES[Math.floor(Math.random() * MATRIX_QUOTES.length)]);
 
   const abortControllerRef = useRef<AbortController | null>(null);
   const timerRef = useRef<NodeJS.Timeout | null>(null);
@@ -987,7 +1013,7 @@ export function App({
     const lines: FeedLine[] = [];
 
     const heroHeight = Math.min(14, feedHeight);
-    lines.push(...buildHeroFeedLines(leftWidth, heroHeight));
+    lines.push(...buildHeroFeedLines(leftWidth, heroHeight, matrixQuote));
 
     if (threads.length > 0) {
       lines.push({
@@ -1210,8 +1236,8 @@ export function App({
 
   const fullIntroLines = useMemo(() => {
     if (!isIntroActive) return [];
-    return buildFullScreenIntro(terminalWidth, terminalHeight, introProgress, introTick);
-  }, [isIntroActive, terminalWidth, terminalHeight, introProgress, introTick]);
+    return buildFullScreenIntro(terminalWidth, terminalHeight, introProgress, introTick, matrixQuote);
+  }, [isIntroActive, terminalWidth, terminalHeight, introProgress, introTick, matrixQuote]);
 
   if (isIntroActive) {
     return (
