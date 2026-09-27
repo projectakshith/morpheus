@@ -6,6 +6,7 @@ import { executeBash, type BashParams } from "./bash";
 import { listDir, type ListDirParams } from "./list";
 import { grepCode, type GrepParams } from "./grep";
 import { outlineCode, type OutlineParams } from "./outline";
+import { executeHttpRequest, type HttpRequestParams } from "./http";
 import { formatError } from "../utils/errors";
 
 export function createTools(
@@ -183,6 +184,34 @@ export function createTools(
         }
         onRecordFinding?.({ topic, takeaway });
         return `Recorded finding [${topic}]: ${takeaway}`;
+      },
+    },
+
+    http_request: {
+      name: "http_request",
+      description: "Send a native HTTP/HTTPS request (GET, POST, PUT, DELETE, PATCH, HEAD) and inspect status code, headers, and response body. Use for API testing, health checks, and curl-like network requests.",
+      parameters: {
+        type: "object",
+        properties: {
+          url: { type: "string", description: "Target URL starting with http:// or https://" },
+          method: {
+            type: "string",
+            description: "HTTP method: GET, POST, PUT, DELETE, PATCH, HEAD (defaults to GET)",
+            enum: ["GET", "POST", "PUT", "DELETE", "PATCH", "HEAD"],
+          },
+          headers: { type: "object", description: "Optional key-value object of request headers" },
+          body: { type: "string", description: "Optional request body string or JSON" },
+          timeoutMs: { type: "number", description: "Request timeout in milliseconds (defaults to 15000)" },
+        },
+        required: ["url"],
+      },
+      execute: async (params: Record<string, any>) => {
+        try {
+          const result = await executeHttpRequest(params as unknown as HttpRequestParams);
+          return result;
+        } catch (err: unknown) {
+          return `Error: ${formatError(err)}`;
+        }
       },
     },
   };
