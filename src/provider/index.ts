@@ -11,7 +11,7 @@ export interface ProviderConfig {
 
 /**
  * Resolves the appropriate LanguageModel based on model ID or environment variables.
- * Automatically handles Groq, NVIDIA NIM, Anthropic, Google Gemini, and OpenAI.
+ * Automatically handles OpenRouter, Groq, NVIDIA NIM, Anthropic, Google Gemini, and OpenAI.
  */
 export function resolveModel(config: ProviderConfig = {}): {
   model: LanguageModel;
@@ -21,10 +21,26 @@ export function resolveModel(config: ProviderConfig = {}): {
   const modelId =
     config.model ||
     process.env.MORPHEUS_MODEL ||
-    (process.env.GROQ_API_KEY ? "openai/gpt-oss-120b" : "claude-3-7-sonnet-latest");
+    (process.env.OPENROUTER_API_KEY ? "stealth/space-bunny-alpha" : "claude-3-7-sonnet-latest");
+
+  // OpenRouter (Prioritized if OPENROUTER_API_KEY set or model is openrouter-specific)
+  if (
+    process.env.OPENROUTER_API_KEY &&
+    (modelId.startsWith("stealth/") || !process.env.GROQ_API_KEY)
+  ) {
+    const openrouter = createOpenAI({
+      apiKey: config.apiKey || process.env.OPENROUTER_API_KEY,
+      baseURL: config.baseURL || "https://openrouter.ai/api/v1",
+    });
+    return {
+      model: openrouter(modelId),
+      modelId,
+      provider: "openrouter",
+    };
+  }
 
   // Groq (Ultra-fast LPU inference)
-  if (process.env.GROQ_API_KEY) {
+  if (process.env.GROQ_API_KEY && !modelId.startsWith("stealth/")) {
     const groq = createOpenAI({
       apiKey: config.apiKey || process.env.GROQ_API_KEY,
       baseURL: config.baseURL || process.env.GROQ_BASE_URL || "https://api.groq.com/openai/v1",
@@ -73,10 +89,10 @@ export function resolveModel(config: ProviderConfig = {}): {
     };
   }
 
-  // OpenAI / OpenRouter / Fallback
+  // OpenAI / Fallback
   const openai = createOpenAI({
-    apiKey: config.apiKey || process.env.OPENAI_API_KEY || process.env.OPENROUTER_API_KEY,
-    baseURL: process.env.OPENROUTER_API_KEY ? "https://openrouter.ai/api/v1" : undefined,
+    apiKey: config.apiKey || process.env.OPENAI_API_KEY,
+    baseURL: config.baseURL,
   });
 
   return {
