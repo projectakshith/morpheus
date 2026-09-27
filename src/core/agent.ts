@@ -16,6 +16,33 @@ import type {
 
 const DOOM_LOOP_THRESHOLD = 3;
 
+/* Evaluates whether assistant content is an advisory deflection, future narrative,
+ * or permission prompt that stalls autonomous tool execution. */
+export function isConversationalStall(
+  content: string,
+  stepCount: number,
+  maxSteps: number,
+  nudges: number
+): boolean {
+  if (stepCount >= maxSteps || nudges >= 3) {
+    return false;
+  }
+
+  const matchesFutureAction =
+    /(\b(let's|let us|i'll|i will|we will|we can|we should|we need to)\s+(?:try\s+(?:to\s+)?|first\s+|now\s+|also\s+|proceed\s+to\s+|go\s+ahead\s+and\s+)?(?:take\s+(?:a\s+)?(?:look|peek)|check(?:\s+out)?|dig\s+into|dive\s+into|turn\s+(?:our\s+)?attention\s+to|look(?:\s+at|\s+into)?|explore|investigate|search|inspect|scan|list|read|outline|see\s+(?:if|whether)|find\s+out|examine|start\s+(?:by|with)?|locate|head\s+over\s+to)\b|\bdoes this help\b|\bshall i\b|\bshould we\b|\bwould you like\b|\bwhat's next\b)/i.test(
+      content
+    );
+
+  const matchesAdvisory =
+    /\b(you can|you may|feel free to|you should|you might want to)\s+(?:check|read|inspect|look at|explore|see|review|find|open)\b/i.test(
+      content
+    );
+
+  const endsWithColon = /:[\s\n]*$/.test(content);
+
+  return matchesFutureAction || matchesAdvisory || endsWithColon;
+}
+
 /**
  * Runs the Morpheus ReAct loop for a given prompt and message history.
  * Driven natively by the Operator client with intra-step micro-compaction.
@@ -53,7 +80,16 @@ export async function runAgent(
   let promptTokens = 0;
   let completionTokens = 0;
   let wasAborted = false;
-  const maxSteps = options.maxSteps ?? 6;
+  const userSpecifiedMaxSteps = options.maxSteps;
+  /* Dynamic step budgeting:
+   * Tasks requiring modifications (add, fix, implement, test, etc.) start with 12 steps
+   * so they have adequate runway to edit code, write test cases, and verify.
+   * Inquiry or exploration queries start with 8 steps to keep tokens frugal. */
+  const isCodingTask = /\b(add|fix|create|implement|update|refactor|test|write|build|solve|patch)\b/i.test(prompt);
+  let maxSteps = userSpecifiedMaxSteps ?? (isCodingTask ? 12 : 8);
+  const hardMaxSteps = userSpecifiedMaxSteps ?? 16;
+  const tokenSafetyCeiling = 85_000;
+  let hasModifiedFiles = false;
   const readFiles = new Map<string, number>();
   let conversationalNudges = 0;
 
@@ -69,7 +105,7 @@ export async function runAgent(
 
     const compactedMessages = compactHistory(workingMessages, {
       recentTurnsToProtect: 2,
-      recentStepsToProtect: 1,
+      recentStepsToProtect: 2,
     });
 
     let assistantContent = "";
@@ -126,15 +162,7 @@ export async function runAgent(
     }
 
     if (toolCalls.length === 0) {
-      /* Guard against conversational stalls where model narrates plans or asks permission without invoking tools */
-      const isConversationalStall =
-        stepCount < maxSteps - 1 &&
-        conversationalNudges < 2 &&
-        /(\b(let's|let us|i'll|i will|we can|we should|we will)\s+(?:try\s+(?:to\s+)?|first\s+)?(check|explore|look|investigate|search|inspect|scan|list|read|outline|see|find|examine|start|locate)|\bdoes this help\b|\bshall i\b|\bshould we\b|\bwould you like\b|\bwhat's next\b)/i.test(
-          assistantContent
-        );
-
-      if (isConversationalStall) {
+      if (isConversationalStall(assistantContent, stepCount, maxSteps, conversationalNudges)) {
         conversationalNudges++;
         workingMessages.push({
           role: "assistant",
@@ -143,7 +171,7 @@ export async function runAgent(
         workingMessages.push({
           role: "user",
           content:
-            "[System Notice: You are an autonomous coding assistant. Do not ask for user permission or narrate future intentions in text. Directly invoke the appropriate tool (list_dir, grep_code, outline_code, read_file) right now to proceed.]",
+            "[System Notice: You are an autonomous coding assistant, NOT an advisory chatbot. Do not ask for user permission, narrate future plans, or tell the user to check/read files. Directly invoke the appropriate tool (list_dir, grep_code, outline_code, read_file) right now to inspect the code and answer the question completely.]",
         });
         continue;
       }
@@ -223,6 +251,10 @@ export async function runAgent(
       options.onToolResult?.(toolName, { output: outputStr, metadata: { isError } });
       await logger.logToolResult(stepCount, toolName, outputStr, isError);
 
+      if (!isError && (toolName === "edit_file" || toolName === "write_file")) {
+        hasModifiedFiles = true;
+      }
+
       if (isError) {
         const signature = `${toolName}:${outputStr.slice(0, 100)}`;
         if (signature === lastErrorSignature) {
@@ -249,6 +281,18 @@ export async function runAgent(
         isError,
       });
     }
+
+    /* Dynamic step extension: if files were modified and model needs runway to test,
+     * allow extending up to hardMaxSteps as long as token usage is within budget */
+    if (
+      !userSpecifiedMaxSteps &&
+      hasModifiedFiles &&
+      stepCount >= maxSteps - 1 &&
+      maxSteps < hardMaxSteps &&
+      promptTokens + completionTokens < tokenSafetyCeiling
+    ) {
+      maxSteps = Math.min(hardMaxSteps, maxSteps + 3);
+    }
   }
 
   if (!wasAborted && !completedCleanly) {
@@ -264,7 +308,7 @@ export async function runAgent(
       {
         role: "user",
         content:
-          "You have completed your code exploration. Synthesize all findings, architecture, and evidence from the inspected files above and provide your direct, comprehensive final answer to the user now.",
+          "Provide your concise, direct final answer to the user now based on your findings above.",
       },
     ];
 
