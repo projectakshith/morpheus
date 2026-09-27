@@ -160,183 +160,117 @@ function heroNoise(x: number, y: number): number {
 }
 
 const HERO_DITHERS = [" ", " ", "░", "▒", "░", " ", "·"];
+const MATRIX_CHARS = "0101XYZ0123456789ABCDEF01$#@%&*<>+=-/:;~";
 
-function buildFullScreenIntro(width: number, height: number): FeedLine[] {
-  const W = Math.max(40, width);
-  const H = Math.max(12, height);
-  const hasInnerGrid = W >= 68;
-  const colL = Math.max(4, Math.floor(W * 0.16));
-  const colR = Math.min(W - 5, Math.floor(W * 0.84));
+function colHash(x: number): number {
+  const v = Math.sin(x * 127.1 + 311.7) * 43758.5453;
+  return v - Math.floor(v);
+}
 
-  const borderCol: [number, number, number] = [70, 95, 60];
-  const gridCol: [number, number, number] = [48, 65, 42];
-  const honeyBeige: [number, number, number] = [245, 212, 181];
+function buildFullScreenIntro(
+  width: number,
+  height: number,
+  progress: number,
+  tick: number
+): FeedLine[] {
+  const W = Math.max(20, width);
+  const H = Math.max(8, height);
+
   const eggLiqueur: [number, number, number] = [218, 204, 167];
+  const honeyBeige: [number, number, number] = [245, 212, 181];
   const sapBright: [number, number, number] = [152, 217, 118];
-  const sapMuted: [number, number, number] = [115, 158, 90];
-  const mutedText: [number, number, number] = [135, 148, 125];
 
-  const textOverlays: Array<{ y: number; x: number; text: string; fg: [number, number, number]; bold?: boolean }> = [];
+  const topText = W >= 45 ? "· 0 1 · M A T R I X · 2 K 2 6 ·" : "[ 01 // MATRIX ]";
+  const titleText = W >= 50 ? "M   O   R   P   H   E   U   S" : "M O R P H E U S";
+  const subText = "a g e n t i c   h a r n e s s";
 
-  textOverlays.push({ y: 0, x: 4, text: " 2K26 ", fg: eggLiqueur, bold: true });
-  const sysTag = " [SYS.01 // MORPHEUS] ";
-  textOverlays.push({ y: 0, x: W - sysTag.length - 4, text: sysTag, fg: sapBright, bold: false });
+  const topY = Math.max(1, Math.min(3, Math.floor(H * 0.14)));
+  const titleY = Math.max(topY + 3, H - 4);
+  const subY = titleY + 1;
 
-  if (H >= 14) {
-    textOverlays.push({ y: 1, x: 3, text: "CREATIVE HARNESS · ID 01", fg: eggLiqueur, bold: false });
-    const right1 = "82% ENG RETURN · C03/S4/0028";
-    if (W > 70) {
-      textOverlays.push({ y: 1, x: W - right1.length - 3, text: right1, fg: mutedText, bold: false });
-    }
-
-    textOverlays.push({ y: 2, x: 3, text: "ATMOSPHERE: SAP GREEN · 46°02'N 14°30'E", fg: mutedText, bold: false });
-    const pill = "( FIELD TESTED )";
-    if (W > 60) {
-      textOverlays.push({ y: 2, x: W - pill.length - 3, text: pill, fg: sapBright, bold: true });
-    }
-  }
-
-  const midY1 = Math.floor(H * 0.42);
-  const disc = "· · ·   D I S C O V E R Y   · · ·";
-  if (midY1 > 4 && midY1 < H - 7) {
-    const dX = Math.floor((W - disc.length) / 2);
-    textOverlays.push({ y: midY1, x: dX, text: disc, fg: eggLiqueur, bold: false });
-    if (W >= 60) {
-      textOverlays.push({ y: midY1, x: 4, text: "<<<<<", fg: sapMuted, bold: false });
-      textOverlays.push({ y: midY1, x: W - 9, text: ">>>>>", fg: sapMuted, bold: false });
-    }
-  }
-
-  const midY2 = Math.floor(H * 0.54);
-  if (midY2 > midY1 && midY2 < H - 7 && W >= 60) {
-    textOverlays.push({ y: midY2, x: colL + 3, text: "[ 14.8 ]", fg: sapBright, bold: true });
-    const hud = "00  □  00";
-    textOverlays.push({ y: midY2, x: Math.floor((W - hud.length) / 2), text: hud, fg: mutedText, bold: false });
-    const spec = "TRX-7 / A21-MX22";
-    if (W > 75) {
-      textOverlays.push({ y: midY2, x: colR - spec.length - 3, text: spec, fg: mutedText, bold: false });
-    }
-  }
-
-  const titleY = H - 5;
-  const title = W >= 60 ? "M   O   R   P   H   E   U   S" : "M O R P H E U S";
-  textOverlays.push({ y: titleY, x: Math.floor((W - title.length) / 2), text: title, fg: honeyBeige, bold: true });
-
-  const subY = H - 4;
-  const sub = "a g e n t i c   h a r n e s s";
-  textOverlays.push({ y: subY, x: Math.floor((W - sub.length) / 2), text: sub, fg: sapBright, bold: false });
-
-  const capY = H - 3;
-  const cap = W >= 70
-    ? "DEEP REASONING · REAL-TIME DIFF STREAM · CONTEXT SAFETY"
-    : "REASONING · DIFF STREAM · SAFETY";
-  textOverlays.push({ y: capY, x: Math.floor((W - cap.length) / 2), text: cap, fg: mutedText, bold: false });
-
-  const hintY = H - 2;
-  const hint = "[ READY ]  ask a question or describe a task below  ·  [esc] stop";
-  const hintShort = "[ READY ]  ask a question or describe a task below";
-  const hintText = W >= hint.length + 6 ? hint : hintShort;
-  textOverlays.push({ y: hintY, x: Math.floor((W - hintText.length) / 2), text: hintText, fg: eggLiqueur, bold: false });
-
-  const botTag = " archive // morpheus ";
-  textOverlays.push({ y: H - 1, x: 4, text: " C03/S4/0028 ", fg: mutedText, bold: false });
-  textOverlays.push({ y: H - 1, x: W - botTag.length - 4, text: botTag, fg: mutedText, bold: false });
+  const topX = Math.floor((W - topText.length) / 2);
+  const titleX = Math.floor((W - titleText.length) / 2);
+  const subX = Math.floor((W - subText.length) / 2);
 
   const lines: FeedLine[] = [];
 
   for (let y = 0; y < H; y++) {
     const t = y / Math.max(1, H - 1);
-    const lineChars: Array<{ ch: string; fg: [number, number, number]; bold?: boolean; isLocked?: boolean }> = [];
-
-    for (let x = 0; x < W; x++) {
-      let ch = " ";
-      let fg: [number, number, number] = borderCol;
-      let bold = false;
-
-      if (y === 0) {
-        if (x === 0) ch = "┌";
-        else if (x === W - 1) ch = "┐";
-        else if (hasInnerGrid && (x === colL || x === colR)) ch = "┬";
-        else ch = "─";
-        fg = borderCol;
-      } else if (y === H - 1) {
-        if (x === 0) ch = "└";
-        else if (x === W - 1) ch = "┘";
-        else if (hasInnerGrid && (x === colL || x === colR)) ch = "┴";
-        else ch = "─";
-        fg = borderCol;
-      } else if ((H >= 14 && y === 3) || y === H - 6) {
-        if (x === 0) ch = "├";
-        else if (x === W - 1) ch = "┤";
-        else if (hasInnerGrid && (x === colL || x === colR)) ch = "┼";
-        else ch = "─";
-        fg = borderCol;
-      } else if (x === 0 || x === W - 1) {
-        ch = "│";
-        fg = borderCol;
-      } else if (hasInnerGrid && y < H - 6 && (x === colL || x === colR)) {
-        ch = "│";
-        fg = gridCol;
-      }
-
-      lineChars.push({ ch, fg, bold });
-    }
-
-    const onLine = textOverlays.filter((o) => o.y === y);
-    for (const item of onLine) {
-      let text = item.text;
-      const isFrame = y === 0 || y === H - 1;
-      const minX = isFrame ? 1 : 2;
-      const maxX = isFrame ? W - 2 : W - 3;
-      const maxLen = maxX - minX + 1;
-      if (text.length > maxLen) {
-        text = text.slice(0, maxLen);
-      }
-      const actualX = Math.max(minX, Math.min(maxX - text.length + 1, item.x));
-      for (let i = 0; i < text.length; i++) {
-        const targetX = actualX + i;
-        if (targetX >= minX && targetX <= maxX) {
-          lineChars[targetX] = {
-            ch: text[i],
-            fg: item.fg,
-            bold: item.bold,
-            isLocked: true,
-          };
-        }
-      }
-    }
-
     let line = "";
+
     for (let x = 0; x < W; x++) {
-      const wave =
-        Math.sin(x * 0.28 + y * 0.2) * 0.05 +
-        Math.sin(x * 0.11 - y * 0.15) * 0.04;
-      const grain = heroNoise(x, y) - 0.5;
-      const localT = Math.max(0, Math.min(1, t + wave));
-      const [r, g, b] = getHeroColor(localT);
+      const seed = colHash(x);
+      const delay = seed * 0.22;
+      const speed = 0.8 + colHash(x * 3 + 17) * 0.45;
+      const effP = Math.max(0, (progress - delay) / Math.max(0.01, 1 - delay));
+      const frontier = effP * (H + 10) * speed;
+      const dist = frontier - y;
 
-      const noiseAmp = 12 * Math.sin(t * Math.PI);
-      const gr = clampColor(r + grain * noiseAmp);
-      const gg = clampColor(g + grain * noiseAmp);
-      const gb = clampColor(b + grain * noiseAmp);
+      if (dist >= 3) {
+        let isTextChar = false;
+        let charStr = " ";
+        let fgR = 0;
+        let fgG = 0;
+        let fgB = 0;
+        let isBold = false;
 
-      const item = lineChars[x];
-      let ch = item.ch;
-      let fgr = item.fg[0];
-      let fgg = item.fg[1];
-      let fgb = item.fg[2];
+        if (y === topY && x >= topX && x < topX + topText.length) {
+          isTextChar = true;
+          charStr = topText[x - topX];
+          [fgR, fgG, fgB] = eggLiqueur;
+          isBold = true;
+        } else if (y === titleY && x >= titleX && x < titleX + titleText.length) {
+          isTextChar = true;
+          charStr = titleText[x - titleX];
+          [fgR, fgG, fgB] = honeyBeige;
+          isBold = true;
+        } else if (y === subY && x >= subX && x < subX + subText.length) {
+          isTextChar = true;
+          charStr = subText[x - subX];
+          [fgR, fgG, fgB] = sapBright;
+          isBold = false;
+        }
 
-      if (ch === " " && !item.isLocked) {
-        const charIdx = Math.floor(Math.abs(grain) * HERO_DITHERS.length) % HERO_DITHERS.length;
-        ch = (t > 0.12 && y < H - 6) ? HERO_DITHERS[charIdx] : " ";
-        fgr = clampColor(gr + 26);
-        fgg = clampColor(gg + 20);
-        fgb = clampColor(gb + 14);
+        const wave =
+          Math.sin(x * 0.28 + y * 0.2 + tick * 0.05) * 0.05 +
+          Math.sin(x * 0.11 - y * 0.15) * 0.04;
+        const grain = heroNoise(x, y + tick * 0.01) - 0.5;
+        const localT = Math.max(0, Math.min(1, t + wave));
+        const [r, g, b] = getHeroColor(localT);
+
+        const noiseAmp = 14 * Math.sin(t * Math.PI);
+        const gr = clampColor(r + grain * noiseAmp);
+        const gg = clampColor(g + grain * noiseAmp);
+        const gb = clampColor(b + grain * noiseAmp);
+
+        if (isTextChar) {
+          const boldCode = isBold ? ";1" : "";
+          line += `\x1b[48;2;${gr};${gg};${gb}m\x1b[38;2;${fgR};${fgG};${fgB}${boldCode}m${charStr}`;
+        } else {
+          const charIdx = Math.floor(Math.abs(grain) * HERO_DITHERS.length) % HERO_DITHERS.length;
+          const ch = t < 0.72 ? HERO_DITHERS[charIdx] : " ";
+          const fgr = clampColor(gr + 26);
+          const fgg = clampColor(gg + 20);
+          const fgb = clampColor(gb + 14);
+          line += `\x1b[48;2;${gr};${gg};${gb}m\x1b[38;2;${fgr};${fgg};${fgb}m${ch}`;
+        }
+      } else if (dist >= 0) {
+        const charIdx = (x * 7 + y * 13 + tick) % MATRIX_CHARS.length;
+        const matrixChar = MATRIX_CHARS[charIdx];
+        const step = Math.floor(dist);
+
+        if (step === 0) {
+          line += `\x1b[48;2;20;30;20m\x1b[38;2;235;255;235;1m${matrixChar}`;
+        } else if (step === 1) {
+          line += `\x1b[48;2;18;26;18m\x1b[38;2;152;217;118;1m${matrixChar}`;
+        } else {
+          line += `\x1b[48;2;16;22;16m\x1b[38;2;95;145;75m${matrixChar}`;
+        }
+      } else {
+        line += "\x1b[48;2;22;20;21m\x1b[38;2;22;20;21m ";
       }
-
-      const boldCode = item.bold ? ";1" : "";
-      line += `\x1b[48;2;${gr};${gg};${gb}m\x1b[38;2;${fgr};${fgg};${fgb}${boldCode}m${ch}`;
     }
+
     line += "\x1b[0m";
 
     lines.push({
@@ -363,7 +297,7 @@ function buildHeroFeedLines(width: number, totalLines: number): FeedLine[] {
   const textMap: Record<number, [string, [number, number, number], boolean]> = {};
 
   if (safeLines >= 10) {
-    textMap[1] = ["·  2 0 2 6  ·", [22, 20, 21], true];
+    textMap[1] = ["· 0 1 · MATRIX ·", [22, 20, 21], true];
     textMap[safeLines - 5] = [title, [245, 212, 181], true];
     textMap[safeLines - 4] = [sub, [152, 217, 118], false];
     textMap[safeLines - 2] = [hint, [218, 204, 167], false];
@@ -456,6 +390,9 @@ export function App({
   const [collapsedThreadIds, setCollapsedThreadIds] = useState<Set<string>>(new Set());
   const [expandedFileEdits, setExpandedFileEdits] = useState<Set<string>>(new Set());
   const [rightScrollTop, setRightScrollTop] = useState(0);
+  const [isIntroActive, setIsIntroActive] = useState(!initialTask);
+  const [introProgress, setIntroProgress] = useState(0);
+  const [introTick, setIntroTick] = useState(0);
 
   const abortControllerRef = useRef<AbortController | null>(null);
   const timerRef = useRef<NodeJS.Timeout | null>(null);
@@ -484,6 +421,25 @@ export function App({
   const maxLineWidth = Math.max(20, leftWidth - 6);
 
   useEffect(() => {
+    if (!isIntroActive) return;
+    const startTime = Date.now();
+    const duration = 2400;
+    const interval = setInterval(() => {
+      const elapsed = Date.now() - startTime;
+      const p = Math.min(1, elapsed / duration);
+      setIntroProgress(p);
+      setIntroTick((prev) => prev + 1);
+      if (p >= 1) {
+        clearInterval(interval);
+        setTimeout(() => {
+          setIsIntroActive(false);
+        }, 150);
+      }
+    }, 40);
+    return () => clearInterval(interval);
+  }, [isIntroActive]);
+
+  useEffect(() => {
     try {
       process.stdout.write("\x1b]11;#161415\x07");
       process.stdout.write("\x1b[?1000h\x1b[?1006h");
@@ -498,6 +454,13 @@ export function App({
         const col = parseInt(match[2], 10);
         const row = parseInt(match[3], 10);
         const isRelease = match[4] === "m";
+
+        if (isIntroActive) {
+          if (button === 0 && !isRelease) {
+            setIsIntroActive(false);
+          }
+          return;
+        }
 
         if (isSplitLayout && col > leftWidth) {
           if (button === 64) {
@@ -607,9 +570,13 @@ export function App({
 
     process.on("exit", cleanup);
     return cleanup;
-  }, [leftWidth, isSplitLayout]);
+  }, [leftWidth, isSplitLayout, isIntroActive]);
 
   useInput((input, key) => {
+    if (isIntroActive) {
+      setIsIntroActive(false);
+      return;
+    }
     if (key.escape && status === "running") {
       abortControllerRef.current?.abort();
       setStatus("aborted");
@@ -1208,11 +1175,27 @@ export function App({
 
   visibleRightLinesRef.current = visibleRightLines;
 
-  const isIntroMode = threads.length === 0;
+  const fullIntroLines = useMemo(() => {
+    if (!isIntroActive) return [];
+    return buildFullScreenIntro(terminalWidth, terminalHeight, introProgress, introTick);
+  }, [isIntroActive, terminalWidth, terminalHeight, introProgress, introTick]);
 
-  const introLines = useMemo(() => {
-    return buildFullScreenIntro(terminalWidth, workspaceHeight);
-  }, [terminalWidth, workspaceHeight]);
+  if (isIntroActive) {
+    return (
+      <Box
+        flexDirection="column"
+        width={terminalWidth}
+        height={terminalHeight}
+        overflow="hidden"
+      >
+        {fullIntroLines.map((line) => (
+          <Box key={line.id} height={1} overflow="hidden">
+            {line.node}
+          </Box>
+        ))}
+      </Box>
+    );
+  }
 
   return (
     <Box
@@ -1229,49 +1212,34 @@ export function App({
         width={terminalWidth}
       />
 
-      {isIntroMode ? (
+      <Box flexDirection="row" width={terminalWidth} height={workspaceHeight} overflow="hidden">
         <Box
           flexDirection="column"
-          width={terminalWidth}
+          width={leftWidth}
           height={workspaceHeight}
-          overflow="hidden"
         >
-          {introLines.map((line) => (
-            <Box key={line.id} height={1} overflow="hidden">
-              {line.node}
-            </Box>
-          ))}
-        </Box>
-      ) : (
-        <Box flexDirection="row" width={terminalWidth} height={workspaceHeight} overflow="hidden">
-          <Box
-            flexDirection="column"
-            width={leftWidth}
-            height={workspaceHeight}
-          >
-            <Box flexDirection="column" height={feedHeight} overflow="hidden">
-              {visibleLines.map((line) => (
-                <Box key={line.id} height={1} overflow="hidden">
-                  {line.node}
-                </Box>
-              ))}
-              {Array.from({ length: Math.max(0, feedHeight - visibleLines.length) }).map((_, idx) => (
-                <Box key={`feed_pad_${idx}`} height={1} overflow="hidden">
-                  <Text backgroundColor={theme.bg}>{" ".repeat(leftWidth)}</Text>
-                </Box>
-              ))}
-            </Box>
+          <Box flexDirection="column" height={feedHeight} overflow="hidden">
+            {visibleLines.map((line) => (
+              <Box key={line.id} height={1} overflow="hidden">
+                {line.node}
+              </Box>
+            ))}
+            {Array.from({ length: Math.max(0, feedHeight - visibleLines.length) }).map((_, idx) => (
+              <Box key={`feed_pad_${idx}`} height={1} overflow="hidden">
+                <Text backgroundColor={theme.bg}>{" ".repeat(leftWidth)}</Text>
+              </Box>
+            ))}
           </Box>
-
-          {isSplitLayout && (
-            <DiffColumn
-              width={rightWidth}
-              height={workspaceHeight}
-              lines={visibleRightLines}
-            />
-          )}
         </Box>
-      )}
+
+        {isSplitLayout && (
+          <DiffColumn
+            width={rightWidth}
+            height={workspaceHeight}
+            lines={visibleRightLines}
+          />
+        )}
+      </Box>
 
       <StatusBar
         status={status}
