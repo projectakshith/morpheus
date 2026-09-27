@@ -1,0 +1,43 @@
+{
+  "name": "morpheus",
+  "version": "0.1.0",
+  "description": "Agentic coding harness inspired by The Matrix",
+  "type": "module",
+  "bin": {
+    "morpheus": "./bin/morpheus.ts"
+  },
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "scripts": {
+    "dev": "tsx bin/morpheus.ts",
+    "build": "tsc",
+    "typecheck": "tsc --noEmit"
+  },
+  "keywords": [
+    "ai",
+    "agent",
+    "morpheus",
+    "matrix",
+    "coding-agent",
+    "harness"
+  ],
+  "author": "Akshith Rajesh",
+  "license": "MIT",
+  "dependencies": {
+    "@ai-sdk/anthropic": "^1.1.9",
+    "@ai-sdk/google": "^1.1.17",
+    "@ai-sdk/openai": "^1.1.9",
+    "@clack/prompts": "^0.9.1",
+    "ai": "^4.1.45",
+    "diff": "^7.0.0",
+    "dotenv": "^16.4.7",
+    "picocolors": "^1.1.1",
+    "zod": "^3.24.2"
+  },
+  "devDependencies": {
+    "@types/diff": "^7.0.0",
+    "@types/node": "^22.13.9",
+    "tsx": "^4.19.3",
+    "typescript": "^5.7.3"
+  }
+}
