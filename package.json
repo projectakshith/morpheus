@@ -10,6 +10,7 @@
   "types": "./dist/index.d.ts",
   "scripts": {
     "dev": "tsx bin/morpheus.ts",
+    "test": "tsx --test test/tools.test.ts",
     "build": "tsc",
     "typecheck": "tsc --noEmit"
   },
