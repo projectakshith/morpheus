@@ -1,6 +1,6 @@
 import { text, isCancel } from "@clack/prompts";
 import dotenv from "dotenv";
-import type { CoreMessage } from "ai";
+import type { ChatMessage } from "../core/types";
 import { runAgent } from "../core/agent";
 import { UI } from "./ui";
 import { theme } from "./theme";
@@ -51,12 +51,42 @@ function setupEscapeListener(onAbort: () => void): () => void {
 }
 
 export async function runCLI(args: string[] = process.argv.slice(2)) {
-  const isVerbose = args.includes("-v") || args.includes("--verbose");
-  const filteredArgs = args.filter((a) => a !== "-v" && a !== "--verbose");
-  const initialTask = filteredArgs.join(" ").trim();
+  let isVerbose = false;
+  let isLocal = false;
+  let model: string | undefined;
+  let baseURL: string | undefined;
+  const remainingArgs: string[] = [];
+
+  for (let i = 0; i < args.length; i++) {
+    const arg = args[i];
+    if (arg === "-v" || arg === "--verbose") {
+      isVerbose = true;
+    } else if (arg === "--local" || arg === "--ollama") {
+      isLocal = true;
+    } else if (arg === "-m" || arg === "--model") {
+      if (i + 1 < args.length) {
+        model = args[++i];
+      }
+    } else if (arg === "--base-url") {
+      if (i + 1 < args.length) {
+        baseURL = args[++i];
+      }
+    } else {
+      remainingArgs.push(arg);
+    }
+  }
+
+  const initialTask = remainingArgs.join(" ").trim();
 
   const ui = new UI({ verbose: isVerbose });
   ui.banner(MORPHEUS_VERSION);
+
+  if (isLocal) {
+    if (!model) {
+      model = process.env.MORPHEUS_LOCAL_MODEL || "qwen2.5-coder:7b";
+    }
+    console.log(theme.dim(`Local engine: Ollama (${model})\n`));
+  }
 
   if (initialTask) {
     const abortController = new AbortController();
@@ -71,6 +101,11 @@ export async function runCLI(args: string[] = process.argv.slice(2)) {
       const result = await runAgent(initialTask, [], {
         abortSignal: abortController.signal,
         verbose: isVerbose,
+        isLocal,
+        model,
+        baseURL,
+        onStepStart: (step) => ui.startStep(step),
+        onReasoningDelta: (chunk) => ui.streamReasoning(chunk),
         onTextDelta: (chunk) => ui.streamChunk(chunk),
         onToolCall: (name, toolArgs) => {
           ui.startTool(name, toolArgs);
@@ -107,7 +142,7 @@ export async function runCLI(args: string[] = process.argv.slice(2)) {
     )
   );
 
-  let history: CoreMessage[] = [];
+  let history: ChatMessage[] = [];
 
   while (true) {
     const input = await text({
@@ -138,6 +173,11 @@ export async function runCLI(args: string[] = process.argv.slice(2)) {
       const result = await runAgent(task, history, {
         abortSignal: abortController.signal,
         verbose: isVerbose,
+        isLocal,
+        model,
+        baseURL,
+        onStepStart: (step) => ui.startStep(step),
+        onReasoningDelta: (chunk) => ui.streamReasoning(chunk),
         onTextDelta: (chunk) => ui.streamChunk(chunk),
         onToolCall: (name, toolArgs) => {
           ui.startTool(name, toolArgs);

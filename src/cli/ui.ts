@@ -8,6 +8,7 @@ export class UI {
   private lineBuffer = "";
   private formatter = new MarkdownFormatter();
   private verbose = false;
+  private isThinking = false;
 
   constructor(options: { verbose?: boolean } = {}) {
     this.verbose = Boolean(options.verbose);
@@ -24,6 +25,7 @@ export class UI {
   }
 
   streamChunk(chunk: string) {
+    this.isThinking = false;
     this.lineBuffer += chunk;
     const lines = this.lineBuffer.split("\n");
     this.lineBuffer = lines.pop() ?? "";
@@ -52,28 +54,45 @@ export class UI {
     }
   }
 
+  startStep(step: number) {
+    this.flushStream();
+    this.isThinking = false;
+    if (this.lastWasStream) {
+      console.log();
+      this.lastWasStream = false;
+    }
+    if (step > 1) {
+      console.log(pc.dim(`\n── Step ${step} ──────────────────────────────────────────────\n`));
+    }
+  }
+
+  streamReasoning(chunk: string) {
+    if (this.verbose) {
+      process.stdout.write(pc.dim(chunk));
+      this.lastWasStream = true;
+    } else if (!this.isThinking) {
+      this.isThinking = true;
+      console.log(`  ${pc.dim("thinking...")}`);
+    }
+  }
+
   startTool(name: string, args: Record<string, unknown>) {
     this.flushStream();
+    this.isThinking = false;
 
     if (this.lastWasStream) {
       console.log();
       this.lastWasStream = false;
     }
 
-    let detail = "";
-    if (typeof args.command === "string") {
-      detail = `$ ${args.command}`;
-    } else if (typeof args.filePath === "string") {
-      detail = args.filePath;
-      if (typeof args.offset === "number" || typeof args.limit === "number") {
-        detail += ` (L${args.offset ?? 1}+${args.limit ?? 2000})`;
+    console.log(`  ${pc.cyan("⚙")} ${pc.bold("[Operator]")} Calling ${pc.cyan(name)}`);
+    const entries = Object.entries(args);
+    if (entries.length > 0) {
+      for (const [key, val] of entries) {
+        const valStr = typeof val === "string" ? val : JSON.stringify(val);
+        console.log(`    ${pc.dim("↳")} ${pc.dim(key)}: ${pc.yellow(valStr.length > 120 ? valStr.slice(0, 120) + "..." : valStr)}`);
       }
-    } else {
-      const raw = JSON.stringify(args);
-      detail = raw.length > 80 ? `${raw.slice(0, 80)}...` : raw;
     }
-
-    console.log(`  ${pc.cyan("⚙")} ${pc.bold("[Operator]")} ${pc.cyan(name)} ${pc.dim(detail)}`);
   }
 
   finishTool(name: string, output: string, isError = false) {
@@ -81,7 +100,7 @@ export class UI {
     const lines = rawLines.filter((l) => l.trim().length > 0);
 
     if (isError) {
-      const errLimit = this.verbose ? 50 : 8;
+      const errLimit = this.verbose ? 100 : 25;
       const errLines = lines.slice(0, errLimit);
       for (const line of errLines) {
         console.log(`    ${pc.red("│")} ${pc.red(line.slice(0, 200))}`);
@@ -93,22 +112,19 @@ export class UI {
       return;
     }
 
-    const maxPreview = this.verbose ? 50 : 8;
-    const preview = lines.slice(0, maxPreview);
+    const maxLines = this.verbose ? 300 : 4;
+    const preview = lines.slice(0, maxLines);
 
     if (lines.length > 0) {
       for (const line of preview) {
         console.log(`    ${pc.dim("│")} ${pc.dim(line.slice(0, 160))}`);
       }
-      if (lines.length > maxPreview) {
-        console.log(`    ${pc.dim("│")} ${pc.dim(`... (${lines.length - maxPreview} more lines)`)}`);
+      if (lines.length > maxLines) {
+        console.log(`    ${pc.dim("│")} ${pc.dim(`... (${lines.length - maxLines} more lines)`)}`);
       }
     }
 
-    const summary = lines.length > maxPreview
-      ? `${lines.length} lines output`
-      : "done";
-
+    const summary = `${lines.length} lines output`;
     console.log(`    ${pc.green("✔")} ${pc.dim(summary)}\n`);
   }
 
