@@ -119,12 +119,12 @@ function extractDiffRecord(
 }
 
 const HERO_STOPS: Array<[number, [number, number, number]]> = [
-  [0.00, [250, 232, 188]],
-  [0.15, [250, 195, 125]],
-  [0.35, [235, 125,  35]],
-  [0.55, [167,  52,   6]],
-  [0.75, [ 50,  18,  12]],
-  [0.90, [ 28,  22,  23]],
+  [0.00, [238, 242, 226]],
+  [0.15, [152, 217, 118]],
+  [0.35, [115, 158,  90]],
+  [0.55, [ 67,  96,  52]],
+  [0.75, [ 45,  64,  36]],
+  [0.90, [ 26,  32,  25]],
   [1.00, [ 22,  20,  21]],
 ];
 
@@ -156,7 +156,7 @@ function heroNoise(x: number, y: number): number {
 const HERO_DITHERS = [" ", " ", "░", "▒", "░", " ", "·"];
 
 function buildHeroFeedLines(width: number, totalLines: number): FeedLine[] {
-  const safeWidth = Math.max(20, width);
+  const safeWidth = Math.max(20, width - 2);
   const safeLines = Math.max(6, totalLines);
 
   const title = safeWidth >= 40 ? "M  O  R  P  H  E  U  S" : "MORPHEUS";
@@ -183,7 +183,7 @@ function buildHeroFeedLines(width: number, totalLines: number): FeedLine[] {
     textMap[1] = ["·  2 0 2 6  ·", [22, 20, 21], true];
     textMap[safeLines - 7] = [sub1, [218, 204, 167], false];
     textMap[safeLines - 6] = [title, [245, 212, 181], true];
-    if (sub2) textMap[safeLines - 4] = [sub2, [138, 126, 117], false];
+    if (sub2) textMap[safeLines - 4] = [sub2, [152, 217, 118], false];
     textMap[safeLines - 2] = [hint, [218, 204, 167], false];
   } else {
     textMap[safeLines - 4] = [sub1, [218, 204, 167], false];
@@ -240,7 +240,7 @@ function buildHeroFeedLines(width: number, totalLines: number): FeedLine[] {
     lines.push({
       id: `hero_intro_${y}`,
       threadId: "intro",
-      node: <Text wrap="truncate-end">{line}</Text>,
+      node: <Text wrap="truncate-end">{line + "  "}</Text>,
     });
   }
 
@@ -295,7 +295,7 @@ export function App({
   const inputBoxHeight = 1;
   const workspaceHeight = Math.max(4, terminalHeight - headerHeight - statusBarHeight - inputBoxHeight);
   const feedHeight = workspaceHeight;
-  const maxLineWidth = Math.max(20, leftWidth - 4);
+  const maxLineWidth = Math.max(20, leftWidth - 6);
 
   useEffect(() => {
     try {
@@ -778,7 +778,7 @@ export function App({
           threadId: thread.id,
           node: (
             <Text backgroundColor={theme.bg} wrap="truncate-end">
-              <Text color={theme.accent} bold>
+              <Text color={theme.accentBright} bold>
                 {asstHdr}
               </Text>
               {" ".repeat(padHdr)}

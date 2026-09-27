@@ -78,7 +78,7 @@ export function StatusBar({
           ) : status === "aborted" ? (
             <Text color={theme.accent}>{statusLabel}</Text>
           ) : status === "error" ? (
-            <Text color={theme.accent}>{statusLabel}</Text>
+            <Text color={theme.diffRemove}>{statusLabel}</Text>
           ) : (
             <Text color={theme.muted}>{statusLabel}</Text>
           )}

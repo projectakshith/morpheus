@@ -1,4 +1,5 @@
 import React from "react";
+import path from "node:path";
 import { Box, Text } from "ink";
 import Spinner from "ink-spinner";
 import type { Finding } from "../../core/types";
@@ -37,27 +38,43 @@ export interface DiffColumnProps {
   lines: RightLine[];
 }
 
-function formatToolArgs(name?: string, args?: Record<string, unknown>): string {
+function toRel(filePath: string, cwd: string): string {
+  if (path.isAbsolute(filePath)) {
+    const rel = path.relative(cwd, filePath);
+    return rel.startsWith("..") ? filePath : rel;
+  }
+  return filePath;
+}
+
+function cleanToolArg(name?: string, args?: Record<string, unknown>, cwd: string = process.cwd()): string {
   if (!args || Object.keys(args).length === 0) return "";
+
   if (name === "read_file" && typeof args.filePath === "string") {
+    const relPath = toRel(args.filePath, cwd);
     const range = args.offset ? `:${args.offset}` : "";
-    return `${args.filePath}${range}`;
+    return `${relPath}${range}`;
   }
   if ((name === "edit_file" || name === "write_file") && typeof args.filePath === "string") {
-    return args.filePath;
+    return toRel(args.filePath, cwd);
   }
   if (name === "bash" && typeof args.command === "string") {
-    return args.command;
+    let cmd = args.command.trim();
+    if (cmd.startsWith(`cd ${cwd} && `)) {
+      cmd = cmd.slice(`cd ${cwd} && `.length);
+    } else if (cmd.startsWith(`cd "${cwd}" && `)) {
+      cmd = cmd.slice(`cd "${cwd}" && `.length);
+    }
+    return cmd;
   }
   if ((name === "grep_code" || name === "grepCode") && typeof args.pattern === "string") {
-    const targetPath = typeof args.path === "string" ? ` in ${args.path}` : "";
-    return `"${args.pattern}"${targetPath}`;
+    const target = typeof args.path === "string" ? ` in ${toRel(args.path, cwd)}` : "";
+    return `"${args.pattern}"${target}`;
   }
   if ((name === "list_dir" || name === "listDir") && typeof args.dirPath === "string") {
-    return args.dirPath;
+    return toRel(args.dirPath, cwd);
   }
   if ((name === "outline_code" || name === "outlineCode") && typeof args.filePath === "string") {
-    return args.filePath;
+    return toRel(args.filePath, cwd);
   }
   if (name === "http_request" && typeof args.url === "string") {
     const method = typeof args.method === "string" ? `${args.method.toUpperCase()} ` : "";
@@ -66,12 +83,14 @@ function formatToolArgs(name?: string, args?: Record<string, unknown>): string {
   if (name === "record_finding" && typeof args.topic === "string") {
     return args.topic;
   }
+
   const primary =
     args.filePath ?? args.command ?? args.url ?? args.dirPath ?? args.pattern ?? args.topic;
-  if (typeof primary === "string") return primary;
+  if (typeof primary === "string") return toRel(primary, cwd);
+
   try {
     const str = JSON.stringify(args);
-    return str.length > 30 ? `${str.slice(0, 27)}...` : str;
+    return str.length > 25 ? `${str.slice(0, 22)}...` : str;
   } catch {
     return "";
   }
@@ -88,13 +107,14 @@ export function buildRightLines(
 ): RightLine[] {
   const lines: RightLine[] = [];
   const bg = theme.bgColumn;
+  const cwd = process.cwd();
 
   const totalTools = threads.reduce(
     (acc, t) => acc + t.steps.filter((s) => s.type === "tool").length,
     0
   );
 
-  const hdrLeft = " TOOL CALLS ";
+  const hdrLeft = "  TOOL CALLS";
   const hdrRight = `${totalTools} calls · ${edits.length} files`;
   const hdrAvail = Math.max(0, contentWidth - hdrLeft.length);
   const hdrRightTrimmed =
@@ -108,8 +128,8 @@ export function buildRightLines(
         <Text color={theme.secondary} bold>
           {hdrLeft}
         </Text>
+        {" ".repeat(Math.max(1, hdrPad))}
         <Text color={theme.muted}>{hdrRightTrimmed}</Text>
-        {" ".repeat(hdrPad)}
       </Text>
     ),
   });
@@ -118,7 +138,7 @@ export function buildRightLines(
     id: "hdr_div",
     node: (
       <Text backgroundColor={bg} color={theme.border}>
-        {"─".repeat(contentWidth)}
+        {"  " + "─".repeat(Math.max(0, contentWidth - 2))}
       </Text>
     ),
   });
@@ -130,7 +150,7 @@ export function buildRightLines(
     if (toolSteps.length === 0 && thread.status !== "running") return;
 
     hasAnyTools = true;
-    const pfx = ` ▲ #${thread.index} `;
+    const pfx = `  ▲ #${thread.index} `;
     const pAvail = Math.max(0, contentWidth - pfx.length - 2);
     const pText =
       thread.prompt.length > pAvail
@@ -152,15 +172,22 @@ export function buildRightLines(
     });
 
     toolSteps.forEach((step) => {
-      const argStr = formatToolArgs(step.name, step.args);
+      const argStr = cleanToolArg(step.name, step.args, cwd);
       const isExpanded = expandedToolIds.has(step.id);
-      const toggle = step.output ? (isExpanded ? " [-]" : " [+]") : "";
+      const name = step.name || "";
+
+      const rawOutput =
+        step.output || (step.outputPreview ? step.outputPreview.join("\n") : "");
+      const allOutLines = rawOutput
+        ? rawOutput.replace(/\r\n/g, "\n").split("\n").filter((l, i, arr) => i < arr.length - 1 || l.trim().length > 0)
+        : [];
+
+      const toggle = allOutLines.length > 2 ? (isExpanded ? " [-]" : " [+]") : "";
       const toggleLen = toggle.length;
-      const fixedLen = 3;
+      const fixedLen = 4;
       const avail = Math.max(0, contentWidth - fixedLen - toggleLen);
 
-      const name = step.name || "";
-      let rest = `${argStr ? ` ${argStr}` : ""}${!isExpanded && step.outputSummary ? ` · ${step.outputSummary}` : ""}`;
+      let rest = argStr ? ` ${argStr}` : "";
       const availRest = Math.max(0, avail - name.length);
       if (rest.length > availRest) {
         rest = `${rest.slice(0, Math.max(0, availRest - 1))}…`;
@@ -173,92 +200,124 @@ export function buildRightLines(
         toolId: step.id,
         node: (
           <Text backgroundColor={bg} wrap="truncate-end">
-            <Text> </Text>
+            <Text>  </Text>
             {step.isRunning ? (
               <Text color={theme.accentBright}>
                 <Spinner type="dots" />{" "}
               </Text>
             ) : step.isError ? (
-              <Text color={theme.accent}>✖ </Text>
+              <Text color={theme.diffRemove}>✖ </Text>
             ) : (
-              <Text color={theme.success}>✔ </Text>
+              <Text color={theme.accentBright}>✔ </Text>
             )}
             <Text color={theme.text} bold>
               {name}
             </Text>
             <Text color={theme.secondary}>{rest}</Text>
-            {toggle ? <Text color={theme.accent}>{toggle}</Text> : null}
+            {toggle ? <Text color={theme.muted}>{toggle}</Text> : null}
             {" ".repeat(pad)}
           </Text>
         ),
       });
 
-      if (isExpanded) {
-        const rawOutput = step.output || (step.outputPreview ? step.outputPreview.join("\n") : "");
-        const outLines = rawOutput
-          ? rawOutput.replace(/\r\n/g, "\n").split("\n").slice(0, 10)
-          : [];
+      if (step.isRunning) {
+        const runPfx = "    └ ";
+        const runText = "executing...";
+        const rPad = Math.max(0, contentWidth - runPfx.length - runText.length);
+        lines.push({
+          id: `${step.id}_executing`,
+          toolId: step.id,
+          node: (
+            <Text backgroundColor={bg} wrap="truncate-end">
+              <Text color={theme.border}>{runPfx}</Text>
+              <Text color={theme.accentBright} italic>{runText}</Text>
+              {" ".repeat(rPad)}
+            </Text>
+          ),
+        });
+      } else {
+        const previewLimit = isExpanded ? 14 : 2;
+        const linesToShow = allOutLines.slice(0, previewLimit);
 
-        if (outLines.length === 0) {
-          const emptyText = "   │ (no output returned)";
-          const eTrimmed =
-            emptyText.length > contentWidth ? emptyText.slice(0, contentWidth) : emptyText;
-          const ePad = Math.max(0, contentWidth - eTrimmed.length);
+        linesToShow.forEach((oLine, oIdx) => {
+          const prefix = "    │ ";
+          const oAvail = Math.max(0, contentWidth - prefix.length);
+          const trimmed =
+            oLine.length > oAvail ? `${oLine.slice(0, Math.max(0, oAvail - 1))}…` : oLine;
+
+          let formattedContent: React.ReactNode;
+          if (trimmed.startsWith("+") && !trimmed.startsWith("+++")) {
+            formattedContent = <Text color={theme.diffAdd}>{trimmed}</Text>;
+          } else if (trimmed.startsWith("-") && !trimmed.startsWith("---")) {
+            formattedContent = <Text color={theme.diffRemove}>{trimmed}</Text>;
+          } else if (trimmed.startsWith("@@")) {
+            formattedContent = <Text color={theme.diffHunk}>{trimmed}</Text>;
+          } else if (step.isError) {
+            formattedContent = <Text color={theme.diffRemove}>{trimmed}</Text>;
+          } else {
+            const numMatch = trimmed.match(/^(\s*\d+:\s*)(.*)/);
+            if (numMatch) {
+              formattedContent = (
+                <Text>
+                  <Text color={theme.muted}>{numMatch[1]}</Text>
+                  <Text color={theme.text}>{numMatch[2]}</Text>
+                </Text>
+              );
+            } else {
+              formattedContent = <Text color={theme.muted}>{trimmed}</Text>;
+            }
+          }
+
+          const oPad = Math.max(0, contentWidth - prefix.length - trimmed.length);
           lines.push({
-            id: `${step.id}_out_empty`,
+            id: `${step.id}_out_${oIdx}`,
             toolId: step.id,
             node: (
-              <Text backgroundColor={bg} color={theme.muted} italic wrap="truncate-end">
-                {eTrimmed}
-                {" ".repeat(ePad)}
+              <Text backgroundColor={bg} wrap="truncate-end">
+                <Text color={theme.border}>{prefix}</Text>
+                {formattedContent}
+                {" ".repeat(oPad)}
               </Text>
             ),
           });
-        } else {
-          outLines.forEach((oLine, oIdx) => {
-            const prefix = "   │ ";
-            const oAvail = Math.max(0, contentWidth - prefix.length);
-            const trimmed =
-              oLine.length > oAvail ? `${oLine.slice(0, Math.max(0, oAvail - 1))}…` : oLine;
-            let c: string = theme.text;
-            if (trimmed.startsWith("+") && !trimmed.startsWith("+++")) c = theme.diffAdd;
-            else if (trimmed.startsWith("-") && !trimmed.startsWith("---")) c = theme.diffRemove;
-            else if (trimmed.startsWith("@@")) c = theme.secondary;
-            else if (step.isError) c = theme.accent;
+        });
 
-            const oPad = Math.max(0, contentWidth - prefix.length - trimmed.length);
-            lines.push({
-              id: `${step.id}_out_${oIdx}`,
-              toolId: step.id,
-              node: (
-                <Text backgroundColor={bg} wrap="truncate-end">
-                  <Text color={theme.border}>{prefix}</Text>
-                  <Text color={c}>{trimmed}</Text>
-                  {" ".repeat(oPad)}
-                </Text>
-              ),
-            });
-          });
+        const closePfx = "    └ ";
+        let closeText: string;
+        let closeColor = theme.muted;
+
+        if (allOutLines.length === 0) {
+          closeText = "(done)";
+        } else if (isExpanded) {
+          closeText = `${allOutLines.length} lines · [click to collapse]`;
+          closeColor = theme.secondary;
+        } else if (allOutLines.length > 2) {
+          closeText = `${allOutLines.length} lines · [click to expand]`;
+          closeColor = theme.muted;
+        } else {
+          closeText = step.outputSummary || `${allOutLines.length} lines`;
         }
 
-        const colText = "   └ [click to collapse]";
-        const colTrimmed =
-          colText.length > contentWidth ? colText.slice(0, contentWidth) : colText;
-        const colPad = Math.max(0, contentWidth - colTrimmed.length);
+        const cAvail = Math.max(0, contentWidth - closePfx.length);
+        const cTrimmed =
+          closeText.length > cAvail ? `${closeText.slice(0, Math.max(0, cAvail - 1))}…` : closeText;
+        const cPad = Math.max(0, contentWidth - closePfx.length - cTrimmed.length);
+
         lines.push({
           id: `${step.id}_out_close`,
           toolId: step.id,
           node: (
             <Text backgroundColor={bg} wrap="truncate-end">
-              <Text color={theme.secondary}>{colTrimmed}</Text>
-              {" ".repeat(colPad)}
+              <Text color={theme.border}>{closePfx}</Text>
+              <Text color={closeColor}>{cTrimmed}</Text>
+              {" ".repeat(cPad)}
             </Text>
           ),
         });
       }
     });
 
-    const dots = " ·".repeat(Math.min(8, Math.floor(contentWidth / 4)));
+    const dots = "  " + "· ".repeat(Math.min(8, Math.floor((contentWidth - 2) / 4)));
     const dPad = Math.max(0, contentWidth - dots.length);
     lines.push({
       id: `${thread.id}_spacer`,
@@ -272,7 +331,7 @@ export function buildRightLines(
   });
 
   if (!hasAnyTools) {
-    const msg1 = " no tool calls yet";
+    const msg1 = "  no tool calls yet";
     const pad1 = Math.max(0, contentWidth - msg1.length);
     lines.push({
       id: "no_tools_1",
@@ -284,7 +343,7 @@ export function buildRightLines(
       ),
     });
 
-    const msg2 = " tool executions stream here";
+    const msg2 = "  tool executions stream here";
     const pad2 = Math.max(0, contentWidth - msg2.length);
     lines.push({
       id: "no_tools_2",
@@ -302,12 +361,12 @@ export function buildRightLines(
       id: "edits_div",
       node: (
         <Text backgroundColor={bg} color={theme.border}>
-          {"─".repeat(contentWidth)}
+          {"  " + "─".repeat(Math.max(0, contentWidth - 2))}
         </Text>
       ),
     });
 
-    const modLeft = " MODIFIED FILES ";
+    const modLeft = "  MODIFIED FILES";
     const modCount = String(edits.length);
     const modPad = Math.max(0, contentWidth - modLeft.length - modCount.length);
     lines.push({
@@ -317,26 +376,27 @@ export function buildRightLines(
           <Text color={theme.secondary} bold>
             {modLeft}
           </Text>
+          {" ".repeat(Math.max(1, modPad))}
           <Text color={theme.muted}>{modCount}</Text>
-          {" ".repeat(modPad)}
         </Text>
       ),
     });
 
     edits.slice(-3).forEach((edit, idx) => {
-      const tag = edit.type === "edit" ? " M " : " + ";
+      const tag = edit.type === "edit" ? "M " : "+ ";
       const stats = ` +${edit.linesAdded} -${edit.linesRemoved}`;
-      const availFile = Math.max(0, contentWidth - 3 - stats.length);
-      const fShort = edit.filePath.split("/").pop() || edit.filePath;
+      const availFile = Math.max(0, contentWidth - 4 - stats.length);
+      const fRel = toRel(edit.filePath, cwd);
       const fTrimmed =
-        fShort.length > availFile ? `${fShort.slice(0, Math.max(0, availFile - 1))}…` : fShort;
-      const ePad = Math.max(0, contentWidth - 3 - fTrimmed.length - stats.length);
+        fRel.length > availFile ? `${fRel.slice(0, Math.max(0, availFile - 1))}…` : fRel;
+      const ePad = Math.max(0, contentWidth - 4 - fTrimmed.length - stats.length);
 
       lines.push({
         id: `edit_${idx}`,
         node: (
           <Text backgroundColor={bg} wrap="truncate-end">
-            <Text color={edit.type === "edit" ? theme.accent : theme.success}>{tag}</Text>
+            <Text>  </Text>
+            <Text color={edit.type === "edit" ? theme.accent : theme.accentBright}>{tag}</Text>
             <Text color={theme.text}>{fTrimmed}</Text>
             <Text color={theme.diffAdd}> +{edit.linesAdded}</Text>
             <Text color={theme.diffRemove}> -{edit.linesRemoved}</Text>
@@ -352,12 +412,12 @@ export function buildRightLines(
       id: "findings_div",
       node: (
         <Text backgroundColor={bg} color={theme.border}>
-          {"─".repeat(contentWidth)}
+          {"  " + "─".repeat(Math.max(0, contentWidth - 2))}
         </Text>
       ),
     });
 
-    const fLeft = " FINDINGS ";
+    const fLeft = "  FINDINGS";
     const fCount = String(findings.length);
     const fPad = Math.max(0, contentWidth - fLeft.length - fCount.length);
     lines.push({
@@ -367,8 +427,8 @@ export function buildRightLines(
           <Text color={theme.secondary} bold>
             {fLeft}
           </Text>
-          <Text color={theme.accent}>{fCount}</Text>
-          {" ".repeat(fPad)}
+          {" ".repeat(Math.max(1, fPad))}
+          <Text color={theme.accentBright}>{fCount}</Text>
         </Text>
       ),
     });
@@ -400,12 +460,12 @@ export function buildRightLines(
       id: "git_div",
       node: (
         <Text backgroundColor={bg} color={theme.border}>
-          {"─".repeat(contentWidth)}
+          {"  " + "─".repeat(Math.max(0, contentWidth - 2))}
         </Text>
       ),
     });
 
-    const gitPfx = " git: ";
+    const gitPfx = "  git: ";
     const bTrimmed = branch.length > 18 ? `${branch.slice(0, 15)}…` : branch;
     const statStr = ` (${gitStatus || "clean"})`;
     const gitVisLen = gitPfx.length + bTrimmed.length + statStr.length;
