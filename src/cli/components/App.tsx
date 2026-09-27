@@ -167,6 +167,38 @@ function colHash(x: number): number {
   return v - Math.floor(v);
 }
 
+function fastNoise(x: number, y: number): number {
+  let n = (x * 374761393 + y * 668265263) ^ (x >> 3);
+  n = (n ^ (n >> 13)) * 1274126177;
+  return ((n ^ (n >> 16)) & 0x7fffffff) / 0x7fffffff;
+}
+
+function buildShellMockLines(width: number, height: number): string[] {
+  const user = process.env.USER || "user";
+  const cwd = process.cwd();
+  const folder = path.basename(cwd) || "morpheus";
+  const prompt = `${user}@mac ${folder} %`;
+
+  const raw: string[] = [
+    `Last login: ${new Date().toLocaleDateString("en-US", { weekday: "short", month: "short", day: "numeric" })} on ttys002`,
+    `${prompt} git status -s`,
+    ` M src/cli/components/App.tsx`,
+    ` M src/cli/components/DiffColumn.tsx`,
+    `${prompt} morpheus`,
+    `[boot] morpheus engine v${MORPHEUS_VERSION} (darwin-arm64)`,
+    `[core] mounting tty session (${width}x${height})...`,
+    `[sys] initializing agentic runtime and context safety...`,
+    `[ready] listening on stdio`,
+    `${prompt} _`,
+  ];
+
+  const lines: string[] = [];
+  for (let y = 0; y < height; y++) {
+    lines.push(raw[y] || "");
+  }
+  return lines;
+}
+
 function buildFullScreenIntro(
   width: number,
   height: number,
@@ -184,27 +216,40 @@ function buildFullScreenIntro(
   const titleText = W >= 50 ? "M   O   R   P   H   E   U   S" : "M O R P H E U S";
   const subText = "a g e n t i c   h a r n e s s";
 
-  const topY = Math.max(1, Math.min(3, Math.floor(H * 0.14)));
-  const titleY = Math.max(topY + 3, H - 4);
-  const subY = titleY + 1;
+  const topY = Math.max(1, Math.min(2, Math.floor(H * 0.08)));
+  const titleY = Math.max(topY + 3, H - 3);
+  const subY = Math.max(titleY + 1, H - 2);
 
   const topX = Math.floor((W - topText.length) / 2);
   const titleX = Math.floor((W - titleText.length) / 2);
   const subX = Math.floor((W - subText.length) / 2);
 
+  const shellLines = buildShellMockLines(W, H);
+  const user = process.env.USER || "user";
+
   const lines: FeedLine[] = [];
 
   for (let y = 0; y < H; y++) {
     const t = y / Math.max(1, H - 1);
+    const shellLine = shellLines[y] || "";
+    const isPromptLine = shellLine.startsWith(user);
+    const isGitStatus = shellLine.startsWith(" M ") || shellLine.startsWith("?? ");
+
     let line = "";
+    let lastBg = "";
+    let lastFg = "";
 
     for (let x = 0; x < W; x++) {
       const seed = colHash(x);
-      const delay = seed * 0.22;
-      const speed = 0.8 + colHash(x * 3 + 17) * 0.45;
+      const delay = seed * 0.25;
+      const speed = 0.8 + colHash(x * 5 + 19) * 0.45;
       const effP = Math.max(0, (progress - delay) / Math.max(0.01, 1 - delay));
-      const frontier = effP * (H + 10) * speed;
+      const frontier = effP * (H + 8) * speed;
       const dist = frontier - y;
+
+      let ch = " ";
+      let bgCode = "";
+      let fgCode = "";
 
       if (dist >= 3) {
         let isTextChar = false;
@@ -234,7 +279,7 @@ function buildFullScreenIntro(
         const wave =
           Math.sin(x * 0.28 + y * 0.2 + tick * 0.05) * 0.05 +
           Math.sin(x * 0.11 - y * 0.15) * 0.04;
-        const grain = heroNoise(x, y + tick * 0.01) - 0.5;
+        const grain = fastNoise(x, y + (tick & 7)) - 0.5;
         const localT = Math.max(0, Math.min(1, t + wave));
         const [r, g, b] = getHeroColor(localT);
 
@@ -243,16 +288,19 @@ function buildFullScreenIntro(
         const gg = clampColor(g + grain * noiseAmp);
         const gb = clampColor(b + grain * noiseAmp);
 
+        bgCode = `\x1b[48;2;${gr};${gg};${gb}m`;
+
         if (isTextChar) {
           const boldCode = isBold ? ";1" : "";
-          line += `\x1b[48;2;${gr};${gg};${gb}m\x1b[38;2;${fgR};${fgG};${fgB}${boldCode}m${charStr}`;
+          fgCode = `\x1b[38;2;${fgR};${fgG};${fgB}${boldCode}m`;
+          ch = charStr;
         } else {
           const charIdx = Math.floor(Math.abs(grain) * HERO_DITHERS.length) % HERO_DITHERS.length;
-          const ch = t < 0.72 ? HERO_DITHERS[charIdx] : " ";
+          ch = t < 0.72 ? HERO_DITHERS[charIdx] : " ";
           const fgr = clampColor(gr + 26);
           const fgg = clampColor(gg + 20);
           const fgb = clampColor(gb + 14);
-          line += `\x1b[48;2;${gr};${gg};${gb}m\x1b[38;2;${fgr};${fgg};${fgb}m${ch}`;
+          fgCode = `\x1b[38;2;${fgr};${fgg};${fgb}m`;
         }
       } else if (dist >= 0) {
         const charIdx = (x * 7 + y * 13 + tick) % MATRIX_CHARS.length;
@@ -260,15 +308,44 @@ function buildFullScreenIntro(
         const step = Math.floor(dist);
 
         if (step === 0) {
-          line += `\x1b[48;2;20;30;20m\x1b[38;2;235;255;235;1m${matrixChar}`;
+          bgCode = "\x1b[48;2;22;34;22m";
+          fgCode = "\x1b[38;2;240;255;240;1m";
+          ch = matrixChar;
         } else if (step === 1) {
-          line += `\x1b[48;2;18;26;18m\x1b[38;2;152;217;118;1m${matrixChar}`;
+          bgCode = "\x1b[48;2;18;26;18m";
+          fgCode = "\x1b[38;2;152;217;118;1m";
+          ch = matrixChar;
         } else {
-          line += `\x1b[48;2;16;22;16m\x1b[38;2;95;145;75m${matrixChar}`;
+          bgCode = "\x1b[48;2;16;22;16m";
+          fgCode = "\x1b[38;2;95;145;75m";
+          ch = matrixChar;
         }
       } else {
-        line += "\x1b[48;2;22;20;21m\x1b[38;2;22;20;21m ";
+        bgCode = "\x1b[48;2;22;20;21m";
+        const rawCh = x < shellLine.length ? shellLine[x] : " ";
+        ch = rawCh;
+        if (rawCh === " ") {
+          fgCode = "\x1b[38;2;22;20;21m";
+        } else if (rawCh === "_") {
+          fgCode = tick % 16 < 8 ? "\x1b[38;2;245;212;181;1m" : "\x1b[38;2;22;20;21m";
+        } else if (isPromptLine) {
+          fgCode = "\x1b[38;2;152;217;118m";
+        } else if (isGitStatus) {
+          fgCode = "\x1b[38;2;218;204;167m";
+        } else {
+          fgCode = "\x1b[38;2;180;185;175m";
+        }
       }
+
+      if (bgCode !== lastBg) {
+        line += bgCode;
+        lastBg = bgCode;
+      }
+      if (fgCode !== lastFg) {
+        line += fgCode;
+        lastFg = fgCode;
+      }
+      line += ch;
     }
 
     line += "\x1b[0m";
@@ -423,19 +500,20 @@ export function App({
   useEffect(() => {
     if (!isIntroActive) return;
     const startTime = Date.now();
-    const duration = 2400;
+    const duration = 2600;
     const interval = setInterval(() => {
       const elapsed = Date.now() - startTime;
-      const p = Math.min(1, elapsed / duration);
-      setIntroProgress(p);
+      const rawP = Math.min(1, elapsed / duration);
+      const easedP = rawP * rawP * (3 - 2 * rawP);
+      setIntroProgress(easedP);
       setIntroTick((prev) => prev + 1);
-      if (p >= 1) {
+      if (rawP >= 1) {
         clearInterval(interval);
         setTimeout(() => {
           setIsIntroActive(false);
-        }, 150);
+        }, 100);
       }
-    }, 40);
+    }, 33);
     return () => clearInterval(interval);
   }, [isIntroActive]);
 
