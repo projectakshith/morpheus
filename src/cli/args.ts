@@ -3,6 +3,7 @@ export interface ParsedCLIArgs {
   isLocal: boolean;
   model?: string;
   baseURL?: string;
+  maxSteps?: number;
   task: string;
 }
 
@@ -11,6 +12,7 @@ export function parseCLIArgs(args: string[] = process.argv.slice(2)): ParsedCLIA
   let isLocal = false;
   let model: string | undefined;
   let baseURL: string | undefined;
+  let maxSteps: number | undefined;
   const remainingArgs: string[] = [];
 
   for (let i = 0; i < args.length; i++) {
@@ -27,6 +29,13 @@ export function parseCLIArgs(args: string[] = process.argv.slice(2)): ParsedCLIA
       if (i + 1 < args.length) {
         baseURL = args[++i];
       }
+    } else if (arg === "-s" || arg === "--max-steps") {
+      if (i + 1 < args.length) {
+        const parsedNum = parseInt(args[++i], 10);
+        if (!isNaN(parsedNum) && parsedNum > 0) {
+          maxSteps = parsedNum;
+        }
+      }
     } else {
       remainingArgs.push(arg);
     }
@@ -37,6 +46,7 @@ export function parseCLIArgs(args: string[] = process.argv.slice(2)): ParsedCLIA
     isLocal,
     model,
     baseURL,
+    maxSteps,
     task: remainingArgs.join(" ").trim(),
   };
 }

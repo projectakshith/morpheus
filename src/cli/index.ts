@@ -31,6 +31,7 @@ export async function runCLI(args: string[] = process.argv.slice(2)): Promise<vo
       baseURL,
       isVerbose,
       initialTask,
+      maxSteps: parsed.maxSteps,
     })
   );
 

@@ -1,10 +1,9 @@
 import React, { useState, useEffect, useRef } from "react";
-import { Box, Text, useInput, useApp } from "ink";
+import { Box, useInput, useApp, useWindowSize } from "ink";
 import { Header } from "./Header";
 import { StatusBar } from "./StatusBar";
-import { Thinking } from "./Thinking";
-import { ToolCard } from "./ToolCard";
-import { MessageCard } from "./MessageCard";
+import { ThreadCard, type Thread, type ThreadStep } from "./ThreadCard";
+import { DiffColumn, type FileEditRecord } from "./DiffColumn";
 import { InputBox } from "./InputBox";
 import { runAgent } from "../../core/agent";
 import { gatherContext } from "../../core/context";
@@ -12,31 +11,70 @@ import { MORPHEUS_VERSION } from "../../index";
 import type { ChatMessage, Finding, TokenUsage } from "../../core/types";
 import { isToolError } from "../../utils/errors";
 
-export interface FeedItem {
-  id: string;
-  type: "user" | "thinking" | "tool" | "assistant";
-  content?: string;
-  name?: string;
-  args?: Record<string, unknown>;
-  isRunning?: boolean;
-  isError?: boolean;
-  isStreaming?: boolean;
-  outputSummary?: string;
-  outputPreview?: string[];
-  durationMs?: number;
-}
-
 export interface AppProps {
   model: string;
   isLocal?: boolean;
   baseURL?: string;
   isVerbose?: boolean;
   initialTask?: string;
+  maxSteps?: number;
 }
 
-/* Root interactive Ink application with Vercel-inspired monochrome layout and visual hierarchy */
-export function App({ model, isLocal = false, baseURL, isVerbose = false, initialTask }: AppProps) {
+/* Helper to extract structured diff records from tool execution results */
+function extractDiffRecord(
+  name: string,
+  args: Record<string, unknown>,
+  output: string
+): FileEditRecord | null {
+  if (name === "edit_file" && typeof args.filePath === "string") {
+    const rawLines = output.split("\n");
+    const diffLines = rawLines.filter(
+      (l) => l.startsWith("@@") || l.startsWith("+") || l.startsWith("-") || l.startsWith(" ")
+    );
+    let added = 0;
+    let removed = 0;
+    for (const line of diffLines) {
+      if (line.startsWith("+") && !line.startsWith("+++")) added++;
+      if (line.startsWith("-") && !line.startsWith("---")) removed++;
+    }
+    return {
+      filePath: args.filePath,
+      type: "edit",
+      diffLines: diffLines.length > 0 ? diffLines : rawLines.slice(0, 15),
+      linesAdded: added,
+      linesRemoved: removed,
+      timestamp: Date.now(),
+    };
+  }
+
+  if (name === "write_file" && typeof args.filePath === "string") {
+    const content = typeof args.content === "string" ? args.content : "";
+    const lines = content.split("\n");
+    return {
+      filePath: args.filePath,
+      type: "write",
+      diffLines: lines.slice(0, 15).map((l) => `+ ${l}`),
+      linesAdded: lines.length,
+      linesRemoved: 0,
+      timestamp: Date.now(),
+    };
+  }
+
+  return null;
+}
+
+/* Root interactive Ink application with split-column layout and Trinity-inspired thread hierarchy */
+export function App({
+  model,
+  isLocal = false,
+  baseURL,
+  isVerbose = false,
+  initialTask,
+  maxSteps,
+}: AppProps) {
   const { exit } = useApp();
+  const { columns } = useWindowSize();
+
   const [status, setStatus] = useState<"idle" | "running" | "aborted" | "error">(
     initialTask ? "running" : "idle"
   );
@@ -44,7 +82,8 @@ export function App({ model, isLocal = false, baseURL, isVerbose = false, initia
   const [elapsedSeconds, setElapsedSeconds] = useState(0);
   const [usage, setUsage] = useState<TokenUsage | undefined>();
   const [isThinkingExpanded, setIsThinkingExpanded] = useState(false);
-  const [feedItems, setFeedItems] = useState<FeedItem[]>([]);
+  const [threads, setThreads] = useState<Thread[]>([]);
+  const [fileEdits, setFileEdits] = useState<FileEditRecord[]>([]);
   const [history, setHistory] = useState<ChatMessage[]>([]);
   const [findings, setFindings] = useState<Finding[]>([]);
   const [promptHistory, setPromptHistory] = useState<string[]>([]);
@@ -54,6 +93,12 @@ export function App({ model, isLocal = false, baseURL, isVerbose = false, initia
   const baseContext = useRef(gatherContext(process.cwd()));
   const initialTaskFired = useRef(false);
 
+  /* Compute dynamic column partition based on terminal width */
+  const terminalWidth = columns || process.stdout.columns || 80;
+  const isSplitLayout = terminalWidth >= 90;
+  const leftWidth = isSplitLayout ? Math.floor(terminalWidth * 0.60) : Math.max(40, terminalWidth - 2);
+  const rightWidth = isSplitLayout ? terminalWidth - leftWidth - 3 : 0;
+
   /* Handle global shortcut keys */
   useInput((input, key) => {
     if (key.escape && status === "running") {
@@ -62,8 +107,19 @@ export function App({ model, isLocal = false, baseURL, isVerbose = false, initia
       return;
     }
 
+    /* Toggle thread step expansion / thinking preview */
     if (key.tab) {
-      setIsThinkingExpanded((prev) => !prev);
+      if (status === "running") {
+        setIsThinkingExpanded((prev) => !prev);
+      } else {
+        setThreads((prev) => {
+          if (prev.length === 0) return prev;
+          const targetIndex = prev.length - 1;
+          return prev.map((t, idx) =>
+            idx === targetIndex ? { ...t, isExpanded: !t.isExpanded } : t
+          );
+        });
+      }
       return;
     }
   });
@@ -84,15 +140,23 @@ export function App({ model, isLocal = false, baseURL, isVerbose = false, initia
       setElapsedSeconds(Math.floor((Date.now() - startTime) / 1000));
     }, 1000);
 
-    /* Append user message card to feed */
-    const userItemId = `user_${Date.now()}`;
-    setFeedItems((prev) => [
-      ...prev,
-      { id: userItemId, type: "user", content: taskText },
-    ]);
+    /* Initialize new conversation thread */
+    const threadId = `thread_${Date.now()}`;
+    const newThread: Thread = {
+      id: threadId,
+      index: threads.length + 1,
+      prompt: taskText,
+      response: "",
+      isStreaming: false,
+      steps: [],
+      isExpanded: false,
+      status: "running",
+      stepCount: 0,
+      startTime,
+    };
+    setThreads((prev) => [...prev, newThread]);
 
     let activeThinkingId: string | null = null;
-    let activeAssistantId: string | null = null;
     let activeToolId: string | null = null;
     let thinkingStartTime = 0;
 
@@ -103,129 +167,167 @@ export function App({ model, isLocal = false, baseURL, isVerbose = false, initia
         isLocal,
         baseURL,
         verbose: isVerbose,
+        maxSteps,
         findings,
         onStepStart: (step) => {
           setStepCount(step);
+          setThreads((prev) =>
+            prev.map((t) =>
+              t.id === threadId ? { ...t, stepCount: step } : t
+            )
+          );
         },
         onReasoningDelta: (chunk) => {
           if (!activeThinkingId) {
             activeThinkingId = `think_${Date.now()}`;
             thinkingStartTime = Date.now();
-            setFeedItems((prev) => [
-              ...prev,
-              {
-                id: activeThinkingId!,
-                type: "thinking",
-                content: chunk,
-                isStreaming: true,
-                durationMs: 0,
-              },
-            ]);
-          } else {
-            const currentId = activeThinkingId;
-            setFeedItems((prev) =>
-              prev.map((item) =>
-                item.id === currentId
-                  ? {
-                      ...item,
-                      content: (item.content || "") + chunk,
-                      durationMs: Date.now() - thinkingStartTime,
-                    }
-                  : item
+            const newStep: ThreadStep = {
+              id: activeThinkingId,
+              type: "thinking",
+              content: chunk,
+              isRunning: true,
+              durationMs: 0,
+            };
+            setThreads((prev) =>
+              prev.map((t) =>
+                t.id === threadId ? { ...t, steps: [...t.steps, newStep] } : t
               )
+            );
+          } else {
+            const curThinkId = activeThinkingId;
+            setThreads((prev) =>
+              prev.map((t) => {
+                if (t.id !== threadId) return t;
+                return {
+                  ...t,
+                  steps: t.steps.map((s) =>
+                    s.id === curThinkId
+                      ? {
+                          ...s,
+                          content: (s.content || "") + chunk,
+                          durationMs: Date.now() - thinkingStartTime,
+                        }
+                      : s
+                  ),
+                };
+              })
             );
           }
         },
         onToolCall: (name, toolArgs) => {
-          /* Close active thinking stream when a tool is invoked */
+          /* Close open thinking step on tool call */
           if (activeThinkingId) {
-            const currentThinkId = activeThinkingId;
-            setFeedItems((prev) =>
-              prev.map((item) =>
-                item.id === currentThinkId ? { ...item, isStreaming: false } : item
-              )
+            const curThinkId = activeThinkingId;
+            setThreads((prev) =>
+              prev.map((t) => {
+                if (t.id !== threadId) return t;
+                return {
+                  ...t,
+                  steps: t.steps.map((s) =>
+                    s.id === curThinkId ? { ...s, isRunning: false } : s
+                  ),
+                };
+              })
             );
             activeThinkingId = null;
           }
 
           activeToolId = `tool_${Date.now()}_${name}`;
-          setFeedItems((prev) => [
-            ...prev,
-            {
-              id: activeToolId!,
-              type: "tool",
-              name,
-              args: toolArgs,
-              isRunning: true,
-            },
-          ]);
+          const newStep: ThreadStep = {
+            id: activeToolId,
+            type: "tool",
+            name,
+            args: toolArgs,
+            isRunning: true,
+          };
+          setThreads((prev) =>
+            prev.map((t) =>
+              t.id === threadId ? { ...t, steps: [...t.steps, newStep] } : t
+            )
+          );
         },
         onToolResult: (name, res) => {
           const isError = isToolError(res.output, res.metadata?.isError as boolean | undefined);
           const lines = res.output.trim().split("\n").filter(Boolean);
           const outputSummary = `${lines.length} lines output`;
-          const currentToolId = activeToolId;
+          const curToolId = activeToolId;
 
-          setFeedItems((prev) =>
-            prev.map((item) =>
-              item.id === currentToolId
-                ? {
-                    ...item,
-                    isRunning: false,
-                    isError,
-                    outputSummary,
-                    outputPreview: lines.slice(0, 4),
-                  }
-                : item
-            )
+          setThreads((prev) =>
+            prev.map((t) => {
+              if (t.id !== threadId) return t;
+              return {
+                ...t,
+                steps: t.steps.map((s) =>
+                  s.id === curToolId
+                    ? {
+                        ...s,
+                        isRunning: false,
+                        isError,
+                        outputSummary,
+                        outputPreview: lines.slice(0, 4),
+                      }
+                    : s
+                ),
+              };
+            })
           );
           activeToolId = null;
+
+          /* Record file edits or writes for right column inspector */
+          const editRecord = extractDiffRecord(
+            name,
+            (newThread.steps.find((s) => s.id === curToolId)?.args as Record<string, unknown>) || {},
+            res.output
+          );
+          if (editRecord) {
+            setFileEdits((prev) => [...prev, editRecord]);
+          }
         },
         onTextDelta: (chunk) => {
-          /* Close thinking stream if still open */
+          /* Close open thinking step on assistant text stream */
           if (activeThinkingId) {
-            const currentThinkId = activeThinkingId;
-            setFeedItems((prev) =>
-              prev.map((item) =>
-                item.id === currentThinkId ? { ...item, isStreaming: false } : item
-              )
+            const curThinkId = activeThinkingId;
+            setThreads((prev) =>
+              prev.map((t) => {
+                if (t.id !== threadId) return t;
+                return {
+                  ...t,
+                  steps: t.steps.map((s) =>
+                    s.id === curThinkId ? { ...s, isRunning: false } : s
+                  ),
+                };
+              })
             );
             activeThinkingId = null;
           }
 
-          if (!activeAssistantId) {
-            activeAssistantId = `asst_${Date.now()}`;
-            setFeedItems((prev) => [
-              ...prev,
-              {
-                id: activeAssistantId!,
-                type: "assistant",
-                content: chunk,
-                isStreaming: true,
-              },
-            ]);
-          } else {
-            const currentAsstId = activeAssistantId;
-            setFeedItems((prev) =>
-              prev.map((item) =>
-                item.id === currentAsstId
-                  ? { ...item, content: (item.content || "") + chunk }
-                  : item
-              )
-            );
-          }
+          setThreads((prev) =>
+            prev.map((t) =>
+              t.id === threadId
+                ? {
+                    ...t,
+                    response: (t.response || "") + chunk,
+                    isStreaming: true,
+                  }
+                : t
+            )
+          );
         },
       });
 
-      /* Close active assistant stream */
-      if (activeAssistantId) {
-        const currentAsstId = activeAssistantId;
-        setFeedItems((prev) =>
-          prev.map((item) =>
-            item.id === currentAsstId ? { ...item, isStreaming: false } : item
-          )
-        );
-      }
+      /* Finalize thread completion */
+      setThreads((prev) =>
+        prev.map((t) =>
+          t.id === threadId
+            ? {
+                ...t,
+                status: result.aborted ? "aborted" : "completed",
+                isStreaming: false,
+                durationMs: Date.now() - t.startTime,
+              }
+            : t
+        )
+      );
 
       setHistory(result.messages);
       if (result.findings) {
@@ -239,14 +341,19 @@ export function App({ model, isLocal = false, baseURL, isVerbose = false, initia
       }
     } catch (err: unknown) {
       setStatus("error");
-      setFeedItems((prev) => [
-        ...prev,
-        {
-          id: `err_${Date.now()}`,
-          type: "assistant",
-          content: `Error: ${err instanceof Error ? err.message : String(err)}`,
-        },
-      ]);
+      setThreads((prev) =>
+        prev.map((t) =>
+          t.id === threadId
+            ? {
+                ...t,
+                status: "error",
+                isStreaming: false,
+                response: `Error: ${err instanceof Error ? err.message : String(err)}`,
+                durationMs: Date.now() - t.startTime,
+              }
+            : t
+        )
+      );
       if (initialTask) {
         setTimeout(() => exit(), 500);
       }
@@ -267,7 +374,7 @@ export function App({ model, isLocal = false, baseURL, isVerbose = false, initia
   }, []);
 
   return (
-    <Box flexDirection="column" paddingX={1} paddingY={1}>
+    <Box flexDirection="column" paddingX={1} paddingY={0}>
       <Header
         version={MORPHEUS_VERSION}
         model={model}
@@ -275,64 +382,48 @@ export function App({ model, isLocal = false, baseURL, isVerbose = false, initia
         gitStatus={baseContext.current.gitStatus}
       />
 
-      <Box flexDirection="column">
-        {feedItems.map((item) => {
-          if (item.type === "user") {
-            return <MessageCard key={item.id} role="user" content={item.content || ""} />;
-          }
-          if (item.type === "thinking") {
-            return (
-              <Thinking
-                key={item.id}
-                content={item.content || ""}
-                isStreaming={item.isStreaming}
-                isExpanded={isThinkingExpanded}
-                durationMs={item.durationMs}
+      {/* Two-column split layout: Left conversation threads, Right diff inspector */}
+      <Box flexDirection="row">
+        <Box flexDirection="column" width={leftWidth} paddingRight={isSplitLayout ? 1 : 0}>
+          <Box flexDirection="column">
+            {threads.map((thread) => (
+              <ThreadCard
+                key={thread.id}
+                thread={thread}
+                isThinkingExpanded={isThinkingExpanded}
               />
-            );
-          }
-          if (item.type === "tool") {
-            return (
-              <ToolCard
-                key={item.id}
-                name={item.name || "tool"}
-                args={item.args || {}}
-                isRunning={item.isRunning}
-                isError={item.isError}
-                outputSummary={item.outputSummary}
-                outputPreview={item.outputPreview}
-              />
-            );
-          }
-          if (item.type === "assistant") {
-            return (
-              <MessageCard
-                key={item.id}
-                role="assistant"
-                content={item.content || ""}
-                isStreaming={item.isStreaming}
-              />
-            );
-          }
-          return null;
-        })}
+            ))}
+          </Box>
+
+          <StatusBar
+            status={status}
+            stepCount={stepCount}
+            maxSteps={maxSteps}
+            usage={usage}
+            elapsedSeconds={elapsedSeconds}
+            isThinkingExpanded={isThinkingExpanded}
+            width={leftWidth}
+          />
+
+          {!initialTask && (
+            <InputBox
+              onSubmit={executeTask}
+              isDisabled={status === "running"}
+              history={promptHistory}
+            />
+          )}
+        </Box>
+
+        {isSplitLayout && (
+          <DiffColumn
+            width={rightWidth}
+            edits={fileEdits}
+            findings={findings}
+            branch={baseContext.current.branch}
+            gitStatus={baseContext.current.gitStatus}
+          />
+        )}
       </Box>
-
-      <StatusBar
-        status={status}
-        stepCount={stepCount}
-        usage={usage}
-        elapsedSeconds={elapsedSeconds}
-        isThinkingExpanded={isThinkingExpanded}
-      />
-
-      {!initialTask && (
-        <InputBox
-          onSubmit={executeTask}
-          isDisabled={status === "running"}
-          history={promptHistory}
-        />
-      )}
     </Box>
   );
 }

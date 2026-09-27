@@ -10,6 +10,7 @@ export interface StatusBarProps {
   usage?: TokenUsage;
   elapsedSeconds: number;
   isThinkingExpanded?: boolean;
+  width?: number;
 }
 
 /* Minimalist Vercel-style telemetry status bar with thin divider */
@@ -20,8 +21,9 @@ export function StatusBar({
   usage,
   elapsedSeconds,
   isThinkingExpanded = false,
+  width: customWidth,
 }: StatusBarProps) {
-  const width = Math.max(40, process.stdout.columns ? process.stdout.columns - 2 : 76);
+  const width = customWidth ?? Math.max(40, process.stdout.columns ? process.stdout.columns - 2 : 76);
 
   /* Format elapsed time as mm:ss */
   const mins = Math.floor(elapsedSeconds / 60)
@@ -72,7 +74,7 @@ export function StatusBar({
 
         <Box>
           <Text color="gray">
-            [esc] stop · [tab] {isThinkingExpanded ? "hide think" : "think"} · [ctrl+c] exit
+            [esc] stop · [tab] steps · [ctrl+c] exit
           </Text>
         </Box>
       </Box>
