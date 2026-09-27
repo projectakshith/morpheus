@@ -3,7 +3,7 @@ import { Box, Text, useInput, useWindowSize } from "ink";
 import Spinner from "ink-spinner";
 import { Header } from "./Header";
 import { StatusBar } from "./StatusBar";
-import { DiffColumn, type FileEditRecord, type ToolStepRecord } from "./DiffColumn";
+import { DiffColumn, buildRightLines, type FileEditRecord, type RightLine } from "./DiffColumn";
 import { InputBox } from "./InputBox";
 import { runAgent } from "../../core/agent";
 import { gatherContext } from "../../core/context";
@@ -139,6 +139,8 @@ export function App({
   const [history, setHistory] = useState<ChatMessage[]>([]);
   const [findings, setFindings] = useState<Finding[]>([]);
   const [promptHistory, setPromptHistory] = useState<string[]>([]);
+  const [expandedToolIds, setExpandedToolIds] = useState<Set<string>>(new Set());
+  const [rightScrollTop, setRightScrollTop] = useState(0);
 
   const abortControllerRef = useRef<AbortController | null>(null);
   const timerRef = useRef<NodeJS.Timeout | null>(null);
@@ -147,6 +149,10 @@ export function App({
   const isUserScrolledRef = useRef(false);
   const maxScrollRef = useRef(0);
   const activeToolArgsRef = useRef<Record<string, unknown>>({});
+  const isRightUserScrolledRef = useRef(false);
+  const maxRightScrollRef = useRef(0);
+  const visibleRightLinesRef = useRef<RightLine[]>([]);
+  const currentRightScrollRef = useRef(0);
 
   const terminalWidth = columns || process.stdout.columns || 80;
   const terminalHeight = rows || process.stdout.rows || 24;
@@ -172,17 +178,59 @@ export function App({
 
       for (const match of mouseMatches) {
         const button = parseInt(match[1], 10);
-        if (button === 64) {
-          isUserScrolledRef.current = true;
-          setScrollOffset((prev) => Math.min(maxScrollRef.current, prev + 2));
-        } else if (button === 65) {
-          setScrollOffset((prev) => {
-            const next = Math.max(0, prev - 2);
-            if (next === 0) {
-              isUserScrolledRef.current = false;
+        const col = parseInt(match[2], 10);
+        const row = parseInt(match[3], 10);
+        const isRelease = match[4] === "m";
+
+        if (isSplitLayout && col > leftWidth) {
+          if (button === 64) {
+            setRightScrollTop((prev) => {
+              const base = isRightUserScrolledRef.current ? prev : maxRightScrollRef.current;
+              return Math.max(0, base - 2);
+            });
+            isRightUserScrolledRef.current = true;
+          } else if (button === 65) {
+            setRightScrollTop((prev) => {
+              const base = isRightUserScrolledRef.current ? prev : maxRightScrollRef.current;
+              const next = Math.min(maxRightScrollRef.current, base + 2);
+              if (next >= maxRightScrollRef.current) {
+                isRightUserScrolledRef.current = false;
+              }
+              return next;
+            });
+          } else if (button === 0 && !isRelease) {
+            const workspaceRow = row - 3;
+            if (workspaceRow >= 0 && workspaceRow < visibleRightLinesRef.current.length) {
+              const clickedLine = visibleRightLinesRef.current[workspaceRow];
+              if (clickedLine?.toolId) {
+                const clickedId = clickedLine.toolId;
+                setRightScrollTop(currentRightScrollRef.current);
+                isRightUserScrolledRef.current = true;
+                setExpandedToolIds((prev) => {
+                  const next = new Set(prev);
+                  if (next.has(clickedId)) {
+                    next.delete(clickedId);
+                  } else {
+                    next.add(clickedId);
+                  }
+                  return next;
+                });
+              }
             }
-            return next;
-          });
+          }
+        } else {
+          if (button === 64) {
+            isUserScrolledRef.current = true;
+            setScrollOffset((prev) => Math.min(maxScrollRef.current, prev + 2));
+          } else if (button === 65) {
+            setScrollOffset((prev) => {
+              const next = Math.max(0, prev - 2);
+              if (next === 0) {
+                isUserScrolledRef.current = false;
+              }
+              return next;
+            });
+          }
         }
       }
     };
@@ -198,7 +246,7 @@ export function App({
 
     process.on("exit", cleanup);
     return cleanup;
-  }, [leftWidth]);
+  }, [leftWidth, isSplitLayout]);
 
   useInput((input, key) => {
     if (key.escape && status === "running") {
@@ -227,43 +275,11 @@ export function App({
     if (key.end) {
       isUserScrolledRef.current = false;
       setScrollOffset(0);
+      isRightUserScrolledRef.current = false;
+      setRightScrollTop(0);
       return;
     }
   });
-
-  const activeToolStep = useMemo<ToolStepRecord | null>(() => {
-    const runningThread = threads.find((t) => t.status === "running");
-    if (!runningThread) return null;
-    const runningTool = runningThread.steps.find((s) => s.type === "tool" && s.isRunning);
-    if (!runningTool) return null;
-    return {
-      id: runningTool.id,
-      name: runningTool.name,
-      args: runningTool.args,
-      isRunning: true,
-    };
-  }, [threads]);
-
-  const allSessionTools = useMemo<ToolStepRecord[]>(() => {
-    const result: ToolStepRecord[] = [];
-    for (const thread of threads) {
-      for (const step of thread.steps) {
-        if (step.type === "tool") {
-          result.push({
-            id: step.id,
-            name: step.name,
-            args: step.args,
-            isRunning: step.isRunning,
-            isError: step.isError,
-            outputSummary: step.outputSummary,
-            outputPreview: step.outputPreview,
-            output: step.output,
-          });
-        }
-      }
-    }
-    return result;
-  }, [threads]);
 
   const executeTask = async (taskText: string) => {
     if (status === "running") return;
@@ -273,6 +289,8 @@ export function App({
     setElapsedSeconds(0);
     isUserScrolledRef.current = false;
     setScrollOffset(0);
+    isRightUserScrolledRef.current = false;
+    setRightScrollTop(0);
     setPromptHistory((prev) => [...prev, taskText]);
 
     const abortController = new AbortController();
@@ -643,6 +661,34 @@ export function App({
     return allFeedLines.slice(startIndex, startIndex + feedHeight);
   }, [allFeedLines, scrollOffset, feedHeight, maxScroll]);
 
+  const rightContentWidth = Math.max(16, rightWidth - 1);
+
+  const allRightLines = useMemo<RightLine[]>(() => {
+    return buildRightLines(
+      threads,
+      fileEdits,
+      findings,
+      baseContext.current.branch,
+      baseContext.current.gitStatus,
+      expandedToolIds,
+      rightContentWidth
+    );
+  }, [threads, fileEdits, findings, expandedToolIds, rightContentWidth]);
+
+  const maxRightScroll = Math.max(0, allRightLines.length - workspaceHeight);
+  maxRightScrollRef.current = maxRightScroll;
+
+  const effectiveRightScroll = isRightUserScrolledRef.current
+    ? Math.min(rightScrollTop, maxRightScroll)
+    : maxRightScroll;
+  currentRightScrollRef.current = effectiveRightScroll;
+
+  const visibleRightLines = useMemo(() => {
+    return allRightLines.slice(effectiveRightScroll, effectiveRightScroll + workspaceHeight);
+  }, [allRightLines, effectiveRightScroll, workspaceHeight]);
+
+  visibleRightLinesRef.current = visibleRightLines;
+
   return (
     <Box
       flexDirection="column"
@@ -678,12 +724,7 @@ export function App({
           <DiffColumn
             width={rightWidth}
             height={workspaceHeight}
-            edits={fileEdits}
-            findings={findings}
-            branch={baseContext.current.branch}
-            gitStatus={baseContext.current.gitStatus}
-            activeToolStep={activeToolStep}
-            toolSteps={allSessionTools}
+            lines={visibleRightLines}
           />
         )}
       </Box>

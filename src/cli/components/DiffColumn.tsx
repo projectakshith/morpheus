@@ -2,6 +2,7 @@ import React from "react";
 import { Box, Text } from "ink";
 import Spinner from "ink-spinner";
 import type { Finding } from "../../core/types";
+import type { Thread } from "./App";
 
 export interface FileEditRecord {
   filePath: string;
@@ -23,15 +24,16 @@ export interface ToolStepRecord {
   output?: string;
 }
 
+export interface RightLine {
+  id: string;
+  toolId?: string;
+  node: React.ReactNode;
+}
+
 export interface DiffColumnProps {
   width: number;
-  height?: number | string;
-  edits: FileEditRecord[];
-  findings: Finding[];
-  branch?: string;
-  gitStatus?: string;
-  activeToolStep?: ToolStepRecord | null;
-  toolSteps?: ToolStepRecord[];
+  height: number;
+  lines: RightLine[];
 }
 
 function formatToolArgs(name?: string, args?: Record<string, unknown>): string {
@@ -68,32 +70,371 @@ function formatToolArgs(name?: string, args?: Record<string, unknown>): string {
   if (typeof primary === "string") return primary;
   try {
     const str = JSON.stringify(args);
-    return str.length > 40 ? `${str.slice(0, 37)}...` : str;
+    return str.length > 30 ? `${str.slice(0, 27)}...` : str;
   } catch {
     return "";
   }
 }
 
-export function DiffColumn({
-  width,
-  height,
-  edits,
-  findings,
-  branch,
-  gitStatus,
-  activeToolStep,
-  toolSteps = [],
-}: DiffColumnProps) {
-  const contentWidth = Math.max(16, width - 3);
-  const latestEdit = edits.length > 0 ? edits[edits.length - 1] : undefined;
-  const completedTools = toolSteps.filter((s) => !s.isRunning);
-  const recentCompleted = completedTools.slice(-4);
+export function buildRightLines(
+  threads: Thread[],
+  edits: FileEditRecord[],
+  findings: Finding[],
+  branch?: string,
+  gitStatus?: string,
+  expandedToolIds: Set<string> = new Set(),
+  contentWidth: number = 36
+): RightLine[] {
+  const lines: RightLine[] = [];
+  const bg = "#0e0e11";
+
+  const totalTools = threads.reduce(
+    (acc, t) => acc + t.steps.filter((s) => s.type === "tool").length,
+    0
+  );
+
+  const hdrLeft = " TOOL CALLS ";
+  const hdrRight = `${totalTools} calls · ${edits.length} files`;
+  const hdrAvail = Math.max(0, contentWidth - hdrLeft.length);
+  const hdrRightTrimmed =
+    hdrRight.length > hdrAvail ? `${hdrRight.slice(0, Math.max(0, hdrAvail - 1))}…` : hdrRight;
+  const hdrPad = Math.max(0, contentWidth - hdrLeft.length - hdrRightTrimmed.length);
+
+  lines.push({
+    id: "hdr_title",
+    node: (
+      <Text backgroundColor={bg} wrap="truncate-end">
+        <Text color="white" bold>
+          {hdrLeft}
+        </Text>
+        <Text color="gray">{hdrRightTrimmed}</Text>
+        {" ".repeat(hdrPad)}
+      </Text>
+    ),
+  });
+
+  lines.push({
+    id: "hdr_div",
+    node: (
+      <Text backgroundColor={bg} color="gray">
+        {"─".repeat(contentWidth)}
+      </Text>
+    ),
+  });
+
+  let hasAnyTools = false;
+
+  threads.forEach((thread) => {
+    const toolSteps = thread.steps.filter((s) => s.type === "tool");
+    if (toolSteps.length === 0 && thread.status !== "running") return;
+
+    hasAnyTools = true;
+    const pfx = ` ▲ #${thread.index} `;
+    const pAvail = Math.max(0, contentWidth - pfx.length - 2);
+    const pText =
+      thread.prompt.length > pAvail
+        ? `${thread.prompt.slice(0, Math.max(0, pAvail - 1))}…`
+        : thread.prompt;
+    const pPad = Math.max(0, contentWidth - pfx.length - pText.length - 2);
+
+    lines.push({
+      id: `${thread.id}_prompt_hdr`,
+      node: (
+        <Text backgroundColor={bg} wrap="truncate-end">
+          <Text color="cyan" bold>
+            {pfx}
+          </Text>
+          <Text color="white">"{pText}"</Text>
+          {" ".repeat(pPad)}
+        </Text>
+      ),
+    });
+
+    toolSteps.forEach((step) => {
+      const argStr = formatToolArgs(step.name, step.args);
+      const isExpanded = expandedToolIds.has(step.id);
+      const toggle = step.output ? (isExpanded ? " [-]" : " [+]") : "";
+      const toggleLen = toggle.length;
+      const fixedLen = 3;
+      const avail = Math.max(0, contentWidth - fixedLen - toggleLen);
+
+      const name = step.name || "";
+      let rest = `${argStr ? ` ${argStr}` : ""}${!isExpanded && step.outputSummary ? ` · ${step.outputSummary}` : ""}`;
+      const availRest = Math.max(0, avail - name.length);
+      if (rest.length > availRest) {
+        rest = `${rest.slice(0, Math.max(0, availRest - 1))}…`;
+      }
+      const visLen = fixedLen + name.length + rest.length + toggleLen;
+      const pad = Math.max(0, contentWidth - visLen);
+
+      lines.push({
+        id: `${step.id}_tool_hdr`,
+        toolId: step.id,
+        node: (
+          <Text backgroundColor={bg} wrap="truncate-end">
+            <Text> </Text>
+            {step.isRunning ? (
+              <Text color="yellow">
+                <Spinner type="dots" />{" "}
+              </Text>
+            ) : step.isError ? (
+              <Text color="red">✖ </Text>
+            ) : (
+              <Text color="green">✔ </Text>
+            )}
+            <Text color="white" bold>
+              {name}
+            </Text>
+            <Text color="cyan">{rest}</Text>
+            {toggle ? <Text color="gray">{toggle}</Text> : null}
+            {" ".repeat(pad)}
+          </Text>
+        ),
+      });
+
+      if (isExpanded) {
+        const rawOutput = step.output || (step.outputPreview ? step.outputPreview.join("\n") : "");
+        const outLines = rawOutput
+          ? rawOutput.replace(/\r\n/g, "\n").split("\n").slice(0, 10)
+          : [];
+
+        if (outLines.length === 0) {
+          const emptyText = "   │ (no output returned)";
+          const eTrimmed =
+            emptyText.length > contentWidth ? emptyText.slice(0, contentWidth) : emptyText;
+          const ePad = Math.max(0, contentWidth - eTrimmed.length);
+          lines.push({
+            id: `${step.id}_out_empty`,
+            toolId: step.id,
+            node: (
+              <Text backgroundColor={bg} color="gray" italic wrap="truncate-end">
+                {eTrimmed}
+                {" ".repeat(ePad)}
+              </Text>
+            ),
+          });
+        } else {
+          outLines.forEach((oLine, oIdx) => {
+            const prefix = "   │ ";
+            const oAvail = Math.max(0, contentWidth - prefix.length);
+            const trimmed =
+              oLine.length > oAvail ? `${oLine.slice(0, Math.max(0, oAvail - 1))}…` : oLine;
+            let c: "green" | "red" | "cyan" | "gray" = "gray";
+            if (trimmed.startsWith("+") && !trimmed.startsWith("+++")) c = "green";
+            else if (trimmed.startsWith("-") && !trimmed.startsWith("---")) c = "red";
+            else if (trimmed.startsWith("@@")) c = "cyan";
+            else if (step.isError) c = "red";
+
+            const oPad = Math.max(0, contentWidth - prefix.length - trimmed.length);
+            lines.push({
+              id: `${step.id}_out_${oIdx}`,
+              toolId: step.id,
+              node: (
+                <Text backgroundColor={bg} wrap="truncate-end">
+                  <Text color="gray">{prefix}</Text>
+                  <Text color={c}>{trimmed}</Text>
+                  {" ".repeat(oPad)}
+                </Text>
+              ),
+            });
+          });
+        }
+
+        const colText = "   └ [click to collapse]";
+        const colTrimmed =
+          colText.length > contentWidth ? colText.slice(0, contentWidth) : colText;
+        const colPad = Math.max(0, contentWidth - colTrimmed.length);
+        lines.push({
+          id: `${step.id}_out_close`,
+          toolId: step.id,
+          node: (
+            <Text backgroundColor={bg} wrap="truncate-end">
+              <Text color="cyan">{colTrimmed}</Text>
+              {" ".repeat(colPad)}
+            </Text>
+          ),
+        });
+      }
+    });
+
+    const dots = " ·".repeat(Math.min(8, Math.floor(contentWidth / 4)));
+    const dPad = Math.max(0, contentWidth - dots.length);
+    lines.push({
+      id: `${thread.id}_spacer`,
+      node: (
+        <Text backgroundColor={bg} color="gray" wrap="truncate-end">
+          {dots}
+          {" ".repeat(dPad)}
+        </Text>
+      ),
+    });
+  });
+
+  if (!hasAnyTools) {
+    const msg1 = " no tool calls yet";
+    const pad1 = Math.max(0, contentWidth - msg1.length);
+    lines.push({
+      id: "no_tools_1",
+      node: (
+        <Text backgroundColor={bg} color="gray" wrap="truncate-end">
+          {msg1}
+          {" ".repeat(pad1)}
+        </Text>
+      ),
+    });
+
+    const msg2 = " tool executions stream here";
+    const pad2 = Math.max(0, contentWidth - msg2.length);
+    lines.push({
+      id: "no_tools_2",
+      node: (
+        <Text backgroundColor={bg} color="gray" wrap="truncate-end">
+          {msg2}
+          {" ".repeat(pad2)}
+        </Text>
+      ),
+    });
+  }
+
+  if (edits.length > 0) {
+    lines.push({
+      id: "edits_div",
+      node: (
+        <Text backgroundColor={bg} color="gray">
+          {"─".repeat(contentWidth)}
+        </Text>
+      ),
+    });
+
+    const modLeft = " MODIFIED FILES ";
+    const modCount = String(edits.length);
+    const modPad = Math.max(0, contentWidth - modLeft.length - modCount.length);
+    lines.push({
+      id: "edits_hdr",
+      node: (
+        <Text backgroundColor={bg} wrap="truncate-end">
+          <Text color="white" bold>
+            {modLeft}
+          </Text>
+          <Text color="gray">{modCount}</Text>
+          {" ".repeat(modPad)}
+        </Text>
+      ),
+    });
+
+    edits.slice(-3).forEach((edit, idx) => {
+      const tag = edit.type === "edit" ? " M " : " + ";
+      const stats = ` +${edit.linesAdded} -${edit.linesRemoved}`;
+      const availFile = Math.max(0, contentWidth - 3 - stats.length);
+      const fShort = edit.filePath.split("/").pop() || edit.filePath;
+      const fTrimmed =
+        fShort.length > availFile ? `${fShort.slice(0, Math.max(0, availFile - 1))}…` : fShort;
+      const ePad = Math.max(0, contentWidth - 3 - fTrimmed.length - stats.length);
+
+      lines.push({
+        id: `edit_${idx}`,
+        node: (
+          <Text backgroundColor={bg} wrap="truncate-end">
+            <Text color={edit.type === "edit" ? "yellow" : "greenBright"}>{tag}</Text>
+            <Text color="white">{fTrimmed}</Text>
+            <Text color="green"> +{edit.linesAdded}</Text>
+            <Text color="red"> -{edit.linesRemoved}</Text>
+            {" ".repeat(ePad)}
+          </Text>
+        ),
+      });
+    });
+  }
+
+  if (findings.length > 0) {
+    lines.push({
+      id: "findings_div",
+      node: (
+        <Text backgroundColor={bg} color="gray">
+          {"─".repeat(contentWidth)}
+        </Text>
+      ),
+    });
+
+    const fLeft = " FINDINGS ";
+    const fCount = String(findings.length);
+    const fPad = Math.max(0, contentWidth - fLeft.length - fCount.length);
+    lines.push({
+      id: "findings_hdr",
+      node: (
+        <Text backgroundColor={bg} wrap="truncate-end">
+          <Text color="white" bold>
+            {fLeft}
+          </Text>
+          <Text color="cyan">{fCount}</Text>
+          {" ".repeat(fPad)}
+        </Text>
+      ),
+    });
+
+    findings.slice(-2).forEach((f, idx) => {
+      const fPfx = "  ● ";
+      const availTopic = Math.max(0, contentWidth - 4);
+      const topicTrimmed =
+        f.topic.length > availTopic ? `${f.topic.slice(0, Math.max(0, availTopic - 1))}…` : f.topic;
+      const itemPad = Math.max(0, contentWidth - 4 - topicTrimmed.length);
+
+      lines.push({
+        id: `finding_${idx}`,
+        node: (
+          <Text backgroundColor={bg} wrap="truncate-end">
+            <Text color="white" bold>
+              {fPfx}
+              {topicTrimmed}
+            </Text>
+            {" ".repeat(itemPad)}
+          </Text>
+        ),
+      });
+    });
+  }
+
+  if (branch) {
+    lines.push({
+      id: "git_div",
+      node: (
+        <Text backgroundColor={bg} color="gray">
+          {"─".repeat(contentWidth)}
+        </Text>
+      ),
+    });
+
+    const gitPfx = " git: ";
+    const bTrimmed = branch.length > 18 ? `${branch.slice(0, 15)}…` : branch;
+    const statStr = ` (${gitStatus || "clean"})`;
+    const gitVisLen = gitPfx.length + bTrimmed.length + statStr.length;
+    const gitPad = Math.max(0, contentWidth - gitVisLen);
+
+    lines.push({
+      id: "git_info",
+      node: (
+        <Text backgroundColor={bg} wrap="truncate-end">
+          <Text color="gray">{gitPfx}</Text>
+          <Text color="white">{bTrimmed}</Text>
+          <Text color={gitStatus && gitStatus !== "clean" ? "yellow" : "gray"}>{statStr}</Text>
+          {" ".repeat(gitPad)}
+        </Text>
+      ),
+    });
+  }
+
+  return lines;
+}
+
+export function DiffColumn({ width, height, lines }: DiffColumnProps) {
+  const visible = lines.slice(0, height);
+  const padCount = Math.max(0, height - visible.length);
 
   return (
     <Box
       flexDirection="column"
       width={width}
-      height={height ?? "100%"}
+      height={height}
       overflow="hidden"
       borderStyle="single"
       borderLeft={true}
@@ -101,185 +442,18 @@ export function DiffColumn({
       borderTop={false}
       borderBottom={false}
       borderColor="gray"
-      paddingLeft={1}
+      paddingLeft={0}
     >
-      <Box justifyContent="space-between" marginBottom={0}>
-        <Text bold color="white">
-          TOOL CALLS
-        </Text>
-        <Text color="gray">
-          {toolSteps.length} {toolSteps.length === 1 ? "call" : "calls"} · {edits.length} {edits.length === 1 ? "file" : "files"}
-        </Text>
-      </Box>
-
-      {activeToolStep && (
-        <Box flexDirection="column" marginTop={1} marginBottom={1}>
-          <Text color="gray">{"─".repeat(contentWidth)}</Text>
-          <Box justifyContent="space-between">
-            <Text color="yellow" bold>
-              ACTIVE TOOL
-            </Text>
-            <Text color="yellow">
-              <Spinner type="dots" />
-            </Text>
-          </Box>
-          <Box marginTop={0}>
-            <Text color="white" bold>
-              {activeToolStep.name}
-            </Text>
-            <Text color="cyan"> {formatToolArgs(activeToolStep.name, activeToolStep.args)}</Text>
-          </Box>
+      {visible.map((line) => (
+        <Box key={line.id} height={1} overflow="hidden">
+          {line.node}
         </Box>
-      )}
-
-      {recentCompleted.length > 0 ? (
-        <Box flexDirection="column" marginTop={activeToolStep ? 0 : 1}>
-          <Text color="gray">{"─".repeat(contentWidth)}</Text>
-          <Box justifyContent="space-between" marginBottom={1}>
-            <Text color="white" bold>
-              HISTORY
-            </Text>
-            <Text color="gray">{completedTools.length}</Text>
-          </Box>
-          {recentCompleted.map((step) => {
-            const argStr = formatToolArgs(step.name, step.args);
-            const lines = step.outputPreview || (step.output ? step.output.trim().split("\n").slice(0, 3) : []);
-            return (
-              <Box key={step.id} flexDirection="column" marginBottom={1}>
-                <Box>
-                  <Text color={step.isError ? "red" : "green"}>
-                    {step.isError ? "✖ " : "✔ "}
-                  </Text>
-                  <Text color="white" bold>
-                    {step.name}
-                  </Text>
-                  {argStr ? <Text color="cyan"> {argStr}</Text> : null}
-                  {step.outputSummary ? <Text color="gray"> · {step.outputSummary}</Text> : null}
-                </Box>
-                {lines.slice(0, 2).map((l, lIdx) => (
-                  <Text key={lIdx} color="gray" wrap="truncate-end">
-                    {"  "}│ {l.length > contentWidth - 6 ? `${l.slice(0, contentWidth - 7)}…` : l}
-                  </Text>
-                ))}
-              </Box>
-            );
-          })}
+      ))}
+      {Array.from({ length: padCount }).map((_, idx) => (
+        <Box key={`pad_${idx}`} height={1} overflow="hidden">
+          <Text backgroundColor="#0e0e11">{" ".repeat(Math.max(16, width - 1))}</Text>
         </Box>
-      ) : !activeToolStep ? (
-        <Box flexDirection="column" marginY={1}>
-          <Text color="gray">no tool calls yet</Text>
-          <Text color="gray">tool executions &amp; diffs</Text>
-          <Text color="gray">will stream here in real time</Text>
-        </Box>
-      ) : null}
-
-      {edits.length > 0 && (
-        <Box flexDirection="column" marginBottom={1}>
-          <Text color="gray">{"─".repeat(contentWidth)}</Text>
-          <Box justifyContent="space-between">
-            <Text color="white" bold>
-              MODIFIED FILES
-            </Text>
-            <Text color="gray">{edits.length}</Text>
-          </Box>
-          {edits.slice(-3).map((edit, idx) => (
-            <Box key={idx} justifyContent="space-between">
-              <Box>
-                <Text color={edit.type === "edit" ? "yellow" : "greenBright"}>
-                  {edit.type === "edit" ? "M " : "+ "}
-                </Text>
-                <Text color="white" wrap="truncate-end">
-                  {edit.filePath.length > contentWidth - 12
-                    ? "..." + edit.filePath.slice(-(contentWidth - 15))
-                    : edit.filePath}
-                </Text>
-              </Box>
-              <Text color="gray">
-                <Text color="green">+{edit.linesAdded}</Text>{" "}
-                <Text color="red">-{edit.linesRemoved}</Text>
-              </Text>
-            </Box>
-          ))}
-        </Box>
-      )}
-
-      {latestEdit && latestEdit.diffLines.length > 0 && (
-        <Box flexDirection="column" marginBottom={1}>
-          <Text color="gray">{"─".repeat(contentWidth)}</Text>
-          <Box justifyContent="space-between">
-            <Text color="cyan" bold>
-              diff · {latestEdit.filePath.split("/").pop()}
-            </Text>
-            <Text color="gray">{latestEdit.type}</Text>
-          </Box>
-          <Box flexDirection="column" marginTop={0}>
-            {latestEdit.diffLines.slice(0, 8).map((line, idx) => {
-              if (line.startsWith("+") && !line.startsWith("+++")) {
-                return (
-                  <Text key={idx} color="green" wrap="truncate-end">
-                    {line}
-                  </Text>
-                );
-              }
-              if (line.startsWith("-") && !line.startsWith("---")) {
-                return (
-                  <Text key={idx} color="red" wrap="truncate-end">
-                    {line}
-                  </Text>
-                );
-              }
-              if (line.startsWith("@@")) {
-                return (
-                  <Text key={idx} color="cyan" wrap="truncate-end">
-                    {line}
-                  </Text>
-                );
-              }
-              return (
-                <Text key={idx} color="gray" wrap="truncate-end">
-                  {line}
-                </Text>
-              );
-            })}
-          </Box>
-        </Box>
-      )}
-
-      {findings.length > 0 && (
-        <Box flexDirection="column" marginBottom={1}>
-          <Text color="gray">{"─".repeat(contentWidth)}</Text>
-          <Box justifyContent="space-between">
-            <Text bold color="white">
-              FINDINGS
-            </Text>
-            <Text color="cyan">{findings.length}</Text>
-          </Box>
-          <Box flexDirection="column" marginTop={0}>
-            {findings.slice(-2).map((f, idx) => (
-              <Box key={idx} flexDirection="column" marginY={0}>
-                <Text color="white" bold>
-                  ● {f.topic}
-                </Text>
-                <Text color="gray" wrap="truncate-end">
-                  {f.takeaway}
-                </Text>
-              </Box>
-            ))}
-          </Box>
-        </Box>
-      )}
-
-      {branch && (
-        <Box flexDirection="column" marginTop={0}>
-          <Text color="gray">{"─".repeat(Math.max(10, contentWidth - 2))}</Text>
-          <Box justifyContent="space-between">
-            <Text color="gray">git: {branch}</Text>
-            <Text color={gitStatus && gitStatus !== "clean" ? "yellow" : "gray"}>
-              {gitStatus || "clean"}
-            </Text>
-          </Box>
-        </Box>
-      )}
+      ))}
     </Box>
   );
 }
