@@ -1,14 +1,11 @@
 import { tool } from "ai";
 import { z } from "zod";
-import { readFile } from "./read.js";
-import { writeFile } from "./write.js";
-import { editFile } from "./edit.js";
-import { executeBash } from "./bash.js";
+import { readFile } from "./read";
+import { writeFile } from "./write";
+import { editFile } from "./edit";
+import { executeBash } from "./bash";
+import { formatError } from "../utils/errors";
 
-/**
- * Creates the standard toolset for Morpheus, bound to the specified working directory.
- * Note: Parameters use strict schema formatting required by strict endpoints (Groq / OpenAI).
- */
 export function createTools(cwd: string = process.cwd()) {
   return {
     read_file: tool({
@@ -20,8 +17,12 @@ export function createTools(cwd: string = process.cwd()) {
         limit: z.number().int().describe("Maximum number of lines to return (defaults to 2000)"),
       }),
       execute: async (params) => {
-        const result = await readFile(params, cwd);
-        return result.output;
+        try {
+          const result = await readFile(params, cwd);
+          return result.output;
+        } catch (err: unknown) {
+          return `Error: ${formatError(err)}`;
+        }
       },
     }),
 
@@ -33,8 +34,12 @@ export function createTools(cwd: string = process.cwd()) {
         content: z.string().describe("Full content to write into the file"),
       }),
       execute: async (params) => {
-        const result = await writeFile(params, cwd);
-        return result.output;
+        try {
+          const result = await writeFile(params, cwd);
+          return result.output;
+        } catch (err: unknown) {
+          return `Error: ${formatError(err)}`;
+        }
       },
     }),
 
@@ -48,8 +53,12 @@ export function createTools(cwd: string = process.cwd()) {
         replaceAll: z.boolean().describe("Replace all occurrences (pass false for unique match)"),
       }),
       execute: async (params) => {
-        const result = await editFile(params, cwd);
-        return result.output;
+        try {
+          const result = await editFile(params, cwd);
+          return result.output;
+        } catch (err: unknown) {
+          return `Error: ${formatError(err)}`;
+        }
       },
     }),
 
@@ -61,8 +70,12 @@ export function createTools(cwd: string = process.cwd()) {
         timeoutMs: z.number().int().describe("Timeout in milliseconds (defaults to 60000)"),
       }),
       execute: async (params) => {
-        const result = await executeBash(params, cwd);
-        return result.output;
+        try {
+          const result = await executeBash(params, cwd);
+          return result.output;
+        } catch (err: unknown) {
+          return `Error: ${formatError(err)}`;
+        }
       },
     }),
   };

@@ -1,7 +1,7 @@
 import fs from "node:fs/promises";
 import path from "node:path";
-import { resolvePath } from "../utils/filesystem.js";
-import type { ToolResult } from "../core/types.js";
+import { resolvePath } from "../utils/filesystem";
+import type { ToolResult } from "../core/types";
 
 export interface WriteFileParams {
   filePath: string;
@@ -15,7 +15,6 @@ export async function writeFile(
   const fullPath = resolvePath(params.filePath, cwd);
   const dir = path.dirname(fullPath);
 
-  // Auto-create missing parent directories
   await fs.mkdir(dir, { recursive: true });
   await fs.writeFile(fullPath, params.content, "utf-8");
 

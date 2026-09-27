@@ -14,3 +14,17 @@ export function formatError(err: unknown): string {
     return String(err);
   }
 }
+
+export function isToolError(output: string, explicitIsError?: boolean): boolean {
+  if (explicitIsError !== undefined) {
+    return explicitIsError;
+  }
+  const trimmed = output.trim();
+  if (/^Command exited with code [1-9]/.test(trimmed)) {
+    return true;
+  }
+  if (/^Error:/i.test(trimmed) || /^Fatal:/i.test(trimmed)) {
+    return true;
+  }
+  return false;
+}

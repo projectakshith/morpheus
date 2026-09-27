@@ -1,7 +1,7 @@
 import fs from "node:fs/promises";
-import { resolvePath, exists, detectLineEnding, normalizeLineEndings } from "../utils/filesystem.js";
-import { similarity } from "../utils/levenshtein.js";
-import type { ToolResult } from "../core/types.js";
+import { resolvePath, exists, detectLineEnding, normalizeLineEndings } from "../utils/filesystem";
+import { similarity } from "../utils/levenshtein";
+import type { ToolResult } from "../core/types";
 
 export interface EditFileParams {
   filePath: string;
@@ -70,7 +70,6 @@ export async function editFile(
 
   let updatedContent: string;
 
-  // Phase 1: Exact substring match
   if (normalized.includes(normalizedOld)) {
     const occurrences = normalized.split(normalizedOld).length - 1;
 
@@ -84,7 +83,6 @@ export async function editFile(
       ? normalized.replaceAll(normalizedOld, normalizedNew)
       : normalized.replace(normalizedOld, normalizedNew);
   } else {
-    // Phase 2: Fuzzy line block matching fallback
     const sourceLines = normalized.split("\n");
     const targetLines = normalizedOld.split("\n");
     const fuzzyHit = findFuzzyMatch(sourceLines, targetLines);
@@ -104,7 +102,6 @@ export async function editFile(
     updatedContent = sourceLines.join("\n");
   }
 
-  // Restore original line endings (CRLF vs LF)
   const finalContent = ending === "\r\n"
     ? updatedContent.replaceAll("\n", "\r\n")
     : updatedContent;

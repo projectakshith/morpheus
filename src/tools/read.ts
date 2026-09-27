@@ -1,9 +1,9 @@
 import fs from "node:fs/promises";
 import path from "node:path";
-import { resolvePath, exists } from "../utils/filesystem.js";
-import { similarity } from "../utils/levenshtein.js";
-import { truncateOutput } from "./construct.js";
-import type { ToolResult } from "../core/types.js";
+import { resolvePath, exists } from "../utils/filesystem";
+import { similarity } from "../utils/levenshtein";
+import { truncateOutput } from "./construct";
+import type { ToolResult } from "../core/types";
 
 export interface ReadFileParams {
   filePath: string;
@@ -50,7 +50,6 @@ export async function readFile(
 
   const stat = await fs.stat(fullPath);
 
-  // If path is a directory, list its entries
   if (stat.isDirectory()) {
     const entries = await fs.readdir(fullPath, { withFileTypes: true });
     const listing = entries
@@ -69,7 +68,6 @@ export async function readFile(
   const startIndex = offset - 1;
   const slice = lines.slice(startIndex, startIndex + limit);
 
-  // Prefix line numbers (1-indexed)
   const numbered = slice
     .map((line, idx) => `${startIndex + idx + 1}: ${line}`)
     .join("\n");

@@ -4,7 +4,7 @@ import os from "node:os";
 
 export const CONSTRUCT_DIR = path.join(os.homedir(), ".morpheus", "construct");
 export const MAX_LINES = 2000;
-export const MAX_BYTES = 50 * 1024; // 50 KB
+export const MAX_BYTES = 50 * 1024;
 
 export interface TruncationResult {
   content: string;
@@ -31,7 +31,6 @@ export async function truncateOutput(
     return { content: text, truncated: false };
   }
 
-  // Collect head lines up to byte/line limit
   const previewLines: string[] = [];
   let currentBytes = 0;
 
@@ -44,7 +43,6 @@ export async function truncateOutput(
     currentBytes += lineBytes;
   }
 
-  // Spill complete output to disk
   await fs.mkdir(CONSTRUCT_DIR, { recursive: true });
   const filename = `tool_${Date.now()}_${Math.random().toString(36).slice(2, 8)}.log`;
   const fullPath = path.join(CONSTRUCT_DIR, filename);

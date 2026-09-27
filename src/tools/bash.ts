@@ -1,6 +1,6 @@
 import { spawn } from "node:child_process";
-import { truncateOutput } from "./construct.js";
-import type { ToolResult } from "../core/types.js";
+import { truncateOutput } from "./construct";
+import type { ToolResult } from "../core/types";
 
 export interface BashParams {
   command: string;
