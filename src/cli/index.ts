@@ -6,7 +6,6 @@ import { parseCLIArgs } from "./args";
 
 dotenv.config();
 
-/* Launches Morpheus interactive TUI or executes one-shot task with Ink rendering */
 export async function runCLI(args: string[] = process.argv.slice(2)): Promise<void> {
   const parsed = parseCLIArgs(args);
   const isVerbose = parsed.isVerbose;

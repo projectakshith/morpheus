@@ -2,6 +2,7 @@ import React from "react";
 import { Box, Text } from "ink";
 import Spinner from "ink-spinner";
 import type { TokenUsage } from "../../core/types";
+import { theme } from "../theme";
 
 export interface StatusBarProps {
   status: "idle" | "running" | "aborted" | "error";
@@ -24,7 +25,6 @@ export function StatusBar({
   scrollOffset = 0,
 }: StatusBarProps) {
   const width = customWidth ?? Math.max(40, process.stdout.columns ? process.stdout.columns - 2 : 76);
-  const lineWidth = Math.max(10, width - 2);
 
   const mins = Math.floor(elapsedSeconds / 60)
     .toString()
@@ -42,39 +42,58 @@ export function StatusBar({
     ? `${(usage.totalTokens / 1000).toFixed(0)}k`
     : "0k";
 
+  const statusLabel =
+    status === "running"
+      ? "RUNNING"
+      : status === "aborted"
+      ? "● STOPPED"
+      : status === "error"
+      ? "● ERROR"
+      : "● READY";
+
+  const metricsStr = ` · ${timeStr} · step ${stepCount}/${maxSteps} · ctx ${peakCtx}/${limitCtx} · api ${totalTokens}`;
+  const scrollStr = scrollOffset > 0 ? ` · ▲ +${scrollOffset}` : "";
+  const hintStr = scrollOffset > 0 ? "[end] bottom · [esc] stop" : "[esc] stop · [ctrl+c] exit";
+
+  const leftLen =
+    (status === "running" ? 2 : 0) +
+    statusLabel.length +
+    metricsStr.length +
+    scrollStr.length;
+  const padBetween = Math.max(1, width - leftLen - hintStr.length);
+
   return (
-    <Box flexDirection="column">
-      <Text color="gray">{"─".repeat(lineWidth)}</Text>
-      <Box justifyContent="space-between">
-        <Box>
+    <Box flexDirection="column" width={width} height={2} overflow="hidden">
+      <Box height={1} overflow="hidden">
+        <Text backgroundColor={theme.bg} color={theme.border}>
+          {"─".repeat(width)}
+        </Text>
+      </Box>
+      <Box height={1} overflow="hidden">
+        <Text backgroundColor={theme.bg} wrap="truncate-end">
           {status === "running" ? (
-            <Text color="greenBright">
-              <Spinner type="dots" /> <Text bold>RUNNING</Text>
+            <Text color={theme.accentBright}>
+              <Spinner type="dots" /> <Text bold>{statusLabel}</Text>
             </Text>
           ) : status === "aborted" ? (
-            <Text color="yellow">● STOPPED</Text>
+            <Text color={theme.accent}>{statusLabel}</Text>
           ) : status === "error" ? (
-            <Text color="red">● ERROR</Text>
+            <Text color={theme.accent}>{statusLabel}</Text>
           ) : (
-            <Text color="gray">● READY</Text>
+            <Text color={theme.muted}>{statusLabel}</Text>
           )}
 
-          <Text color="gray">
-            {" "}· {timeStr} · step {stepCount}/{maxSteps} · ctx {peakCtx}/{limitCtx} · api {totalTokens}
-          </Text>
+          <Text color={theme.secondary}>{metricsStr}</Text>
 
           {scrollOffset > 0 && (
-            <Text color="yellow" bold>
-              {" "}· ▲ +{scrollOffset}
+            <Text color={theme.accent} bold>
+              {scrollStr}
             </Text>
           )}
-        </Box>
 
-        <Box>
-          <Text color="gray">
-            {scrollOffset > 0 ? "[end] bottom · [esc] stop" : "[esc] stop · [ctrl+c] exit"}
-          </Text>
-        </Box>
+          {" ".repeat(padBetween)}
+          <Text color={theme.muted}>{hintStr}</Text>
+        </Text>
       </Box>
     </Box>
   );

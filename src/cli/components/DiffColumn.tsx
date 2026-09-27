@@ -3,6 +3,7 @@ import { Box, Text } from "ink";
 import Spinner from "ink-spinner";
 import type { Finding } from "../../core/types";
 import type { Thread } from "./App";
+import { theme } from "../theme";
 
 export interface FileEditRecord {
   filePath: string;
@@ -86,7 +87,7 @@ export function buildRightLines(
   contentWidth: number = 36
 ): RightLine[] {
   const lines: RightLine[] = [];
-  const bg = "#0e0e11";
+  const bg = theme.bgColumn;
 
   const totalTools = threads.reduce(
     (acc, t) => acc + t.steps.filter((s) => s.type === "tool").length,
@@ -104,10 +105,10 @@ export function buildRightLines(
     id: "hdr_title",
     node: (
       <Text backgroundColor={bg} wrap="truncate-end">
-        <Text color="white" bold>
+        <Text color={theme.secondary} bold>
           {hdrLeft}
         </Text>
-        <Text color="gray">{hdrRightTrimmed}</Text>
+        <Text color={theme.muted}>{hdrRightTrimmed}</Text>
         {" ".repeat(hdrPad)}
       </Text>
     ),
@@ -116,7 +117,7 @@ export function buildRightLines(
   lines.push({
     id: "hdr_div",
     node: (
-      <Text backgroundColor={bg} color="gray">
+      <Text backgroundColor={bg} color={theme.border}>
         {"─".repeat(contentWidth)}
       </Text>
     ),
@@ -141,10 +142,10 @@ export function buildRightLines(
       id: `${thread.id}_prompt_hdr`,
       node: (
         <Text backgroundColor={bg} wrap="truncate-end">
-          <Text color="cyan" bold>
+          <Text color={theme.accent} bold>
             {pfx}
           </Text>
-          <Text color="white">"{pText}"</Text>
+          <Text color={theme.text}>"{pText}"</Text>
           {" ".repeat(pPad)}
         </Text>
       ),
@@ -174,19 +175,19 @@ export function buildRightLines(
           <Text backgroundColor={bg} wrap="truncate-end">
             <Text> </Text>
             {step.isRunning ? (
-              <Text color="yellow">
+              <Text color={theme.accentBright}>
                 <Spinner type="dots" />{" "}
               </Text>
             ) : step.isError ? (
-              <Text color="red">✖ </Text>
+              <Text color={theme.accent}>✖ </Text>
             ) : (
-              <Text color="green">✔ </Text>
+              <Text color={theme.success}>✔ </Text>
             )}
-            <Text color="white" bold>
+            <Text color={theme.text} bold>
               {name}
             </Text>
-            <Text color="cyan">{rest}</Text>
-            {toggle ? <Text color="gray">{toggle}</Text> : null}
+            <Text color={theme.secondary}>{rest}</Text>
+            {toggle ? <Text color={theme.accent}>{toggle}</Text> : null}
             {" ".repeat(pad)}
           </Text>
         ),
@@ -207,7 +208,7 @@ export function buildRightLines(
             id: `${step.id}_out_empty`,
             toolId: step.id,
             node: (
-              <Text backgroundColor={bg} color="gray" italic wrap="truncate-end">
+              <Text backgroundColor={bg} color={theme.muted} italic wrap="truncate-end">
                 {eTrimmed}
                 {" ".repeat(ePad)}
               </Text>
@@ -219,11 +220,11 @@ export function buildRightLines(
             const oAvail = Math.max(0, contentWidth - prefix.length);
             const trimmed =
               oLine.length > oAvail ? `${oLine.slice(0, Math.max(0, oAvail - 1))}…` : oLine;
-            let c: "green" | "red" | "cyan" | "gray" = "gray";
-            if (trimmed.startsWith("+") && !trimmed.startsWith("+++")) c = "green";
-            else if (trimmed.startsWith("-") && !trimmed.startsWith("---")) c = "red";
-            else if (trimmed.startsWith("@@")) c = "cyan";
-            else if (step.isError) c = "red";
+            let c: string = theme.text;
+            if (trimmed.startsWith("+") && !trimmed.startsWith("+++")) c = theme.diffAdd;
+            else if (trimmed.startsWith("-") && !trimmed.startsWith("---")) c = theme.diffRemove;
+            else if (trimmed.startsWith("@@")) c = theme.secondary;
+            else if (step.isError) c = theme.accent;
 
             const oPad = Math.max(0, contentWidth - prefix.length - trimmed.length);
             lines.push({
@@ -231,7 +232,7 @@ export function buildRightLines(
               toolId: step.id,
               node: (
                 <Text backgroundColor={bg} wrap="truncate-end">
-                  <Text color="gray">{prefix}</Text>
+                  <Text color={theme.border}>{prefix}</Text>
                   <Text color={c}>{trimmed}</Text>
                   {" ".repeat(oPad)}
                 </Text>
@@ -249,7 +250,7 @@ export function buildRightLines(
           toolId: step.id,
           node: (
             <Text backgroundColor={bg} wrap="truncate-end">
-              <Text color="cyan">{colTrimmed}</Text>
+              <Text color={theme.secondary}>{colTrimmed}</Text>
               {" ".repeat(colPad)}
             </Text>
           ),
@@ -262,7 +263,7 @@ export function buildRightLines(
     lines.push({
       id: `${thread.id}_spacer`,
       node: (
-        <Text backgroundColor={bg} color="gray" wrap="truncate-end">
+        <Text backgroundColor={bg} color={theme.border} wrap="truncate-end">
           {dots}
           {" ".repeat(dPad)}
         </Text>
@@ -276,7 +277,7 @@ export function buildRightLines(
     lines.push({
       id: "no_tools_1",
       node: (
-        <Text backgroundColor={bg} color="gray" wrap="truncate-end">
+        <Text backgroundColor={bg} color={theme.muted} wrap="truncate-end">
           {msg1}
           {" ".repeat(pad1)}
         </Text>
@@ -288,7 +289,7 @@ export function buildRightLines(
     lines.push({
       id: "no_tools_2",
       node: (
-        <Text backgroundColor={bg} color="gray" wrap="truncate-end">
+        <Text backgroundColor={bg} color={theme.muted} wrap="truncate-end">
           {msg2}
           {" ".repeat(pad2)}
         </Text>
@@ -300,7 +301,7 @@ export function buildRightLines(
     lines.push({
       id: "edits_div",
       node: (
-        <Text backgroundColor={bg} color="gray">
+        <Text backgroundColor={bg} color={theme.border}>
           {"─".repeat(contentWidth)}
         </Text>
       ),
@@ -313,10 +314,10 @@ export function buildRightLines(
       id: "edits_hdr",
       node: (
         <Text backgroundColor={bg} wrap="truncate-end">
-          <Text color="white" bold>
+          <Text color={theme.secondary} bold>
             {modLeft}
           </Text>
-          <Text color="gray">{modCount}</Text>
+          <Text color={theme.muted}>{modCount}</Text>
           {" ".repeat(modPad)}
         </Text>
       ),
@@ -335,10 +336,10 @@ export function buildRightLines(
         id: `edit_${idx}`,
         node: (
           <Text backgroundColor={bg} wrap="truncate-end">
-            <Text color={edit.type === "edit" ? "yellow" : "greenBright"}>{tag}</Text>
-            <Text color="white">{fTrimmed}</Text>
-            <Text color="green"> +{edit.linesAdded}</Text>
-            <Text color="red"> -{edit.linesRemoved}</Text>
+            <Text color={edit.type === "edit" ? theme.accent : theme.success}>{tag}</Text>
+            <Text color={theme.text}>{fTrimmed}</Text>
+            <Text color={theme.diffAdd}> +{edit.linesAdded}</Text>
+            <Text color={theme.diffRemove}> -{edit.linesRemoved}</Text>
             {" ".repeat(ePad)}
           </Text>
         ),
@@ -350,7 +351,7 @@ export function buildRightLines(
     lines.push({
       id: "findings_div",
       node: (
-        <Text backgroundColor={bg} color="gray">
+        <Text backgroundColor={bg} color={theme.border}>
           {"─".repeat(contentWidth)}
         </Text>
       ),
@@ -363,10 +364,10 @@ export function buildRightLines(
       id: "findings_hdr",
       node: (
         <Text backgroundColor={bg} wrap="truncate-end">
-          <Text color="white" bold>
+          <Text color={theme.secondary} bold>
             {fLeft}
           </Text>
-          <Text color="cyan">{fCount}</Text>
+          <Text color={theme.accent}>{fCount}</Text>
           {" ".repeat(fPad)}
         </Text>
       ),
@@ -383,10 +384,10 @@ export function buildRightLines(
         id: `finding_${idx}`,
         node: (
           <Text backgroundColor={bg} wrap="truncate-end">
-            <Text color="white" bold>
+            <Text color={theme.accent} bold>
               {fPfx}
-              {topicTrimmed}
             </Text>
+            <Text color={theme.text}>{topicTrimmed}</Text>
             {" ".repeat(itemPad)}
           </Text>
         ),
@@ -398,7 +399,7 @@ export function buildRightLines(
     lines.push({
       id: "git_div",
       node: (
-        <Text backgroundColor={bg} color="gray">
+        <Text backgroundColor={bg} color={theme.border}>
           {"─".repeat(contentWidth)}
         </Text>
       ),
@@ -414,9 +415,11 @@ export function buildRightLines(
       id: "git_info",
       node: (
         <Text backgroundColor={bg} wrap="truncate-end">
-          <Text color="gray">{gitPfx}</Text>
-          <Text color="white">{bTrimmed}</Text>
-          <Text color={gitStatus && gitStatus !== "clean" ? "yellow" : "gray"}>{statStr}</Text>
+          <Text color={theme.muted}>{gitPfx}</Text>
+          <Text color={theme.secondary}>{bTrimmed}</Text>
+          <Text color={gitStatus && gitStatus !== "clean" ? theme.accent : theme.muted}>
+            {statStr}
+          </Text>
           {" ".repeat(gitPad)}
         </Text>
       ),
@@ -441,7 +444,7 @@ export function DiffColumn({ width, height, lines }: DiffColumnProps) {
       borderRight={false}
       borderTop={false}
       borderBottom={false}
-      borderColor="gray"
+      borderColor={theme.border}
       paddingLeft={0}
     >
       {visible.map((line) => (
@@ -451,7 +454,9 @@ export function DiffColumn({ width, height, lines }: DiffColumnProps) {
       ))}
       {Array.from({ length: padCount }).map((_, idx) => (
         <Box key={`pad_${idx}`} height={1} overflow="hidden">
-          <Text backgroundColor="#0e0e11">{" ".repeat(Math.max(16, width - 1))}</Text>
+          <Text backgroundColor={theme.bgColumn}>
+            {" ".repeat(Math.max(16, width - 1))}
+          </Text>
         </Box>
       ))}
     </Box>

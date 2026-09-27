@@ -1,16 +1,28 @@
-import pc from "picocolors";
+export const PALETTE = {
+  dynamicBlack: "#161415",
+  deepOnyx: "#121011",
+  honeyBeige: "#f5d4b5",
+  eggLiqueur: "#dacca7",
+  apocalypticOrange: "#c95f2d",
+  orangeBright: "#e25822",
+  borderDark: "#383330",
+  borderSubtle: "#262221",
+  mutedText: "#70665f",
+  successGreen: "#85c483",
+};
 
 export const theme = {
-  green: (text: string) => pc.green(text),
-  brightGreen: (text: string) => pc.bold(pc.green(text)),
-  cyan: (text: string) => pc.cyan(text),
-
-  dim: (text: string) => pc.dim(text),
-  bold: (text: string) => pc.bold(text),
-  red: (text: string) => pc.red(text),
-  yellow: (text: string) => pc.yellow(text),
-
-  badge: (label: string) => pc.bgGreen(pc.black(` ${label} `)),
-  toolBadge: (tool: string) => pc.bgCyan(pc.black(` ${tool} `)),
-  errorBadge: (label: string) => pc.bgRed(pc.white(` ${label} `)),
+  bg: PALETTE.dynamicBlack,
+  bgFeed: PALETTE.dynamicBlack,
+  bgColumn: PALETTE.deepOnyx,
+  text: PALETTE.honeyBeige,
+  secondary: PALETTE.eggLiqueur,
+  accent: PALETTE.apocalypticOrange,
+  accentBright: PALETTE.orangeBright,
+  border: PALETTE.borderDark,
+  borderSubtle: PALETTE.borderSubtle,
+  muted: PALETTE.mutedText,
+  success: PALETTE.successGreen,
+  diffAdd: PALETTE.successGreen,
+  diffRemove: PALETTE.apocalypticOrange,
 };

@@ -1,16 +1,25 @@
 import React, { useState } from "react";
 import { Box, Text, useInput } from "ink";
+import { theme } from "../theme";
 
 export interface InputBoxProps {
   onSubmit: (value: string) => void;
   isDisabled?: boolean;
   history?: string[];
+  width?: number;
 }
 
-export function InputBox({ onSubmit, isDisabled = false, history = [] }: InputBoxProps) {
+export function InputBox({
+  onSubmit,
+  isDisabled = false,
+  history = [],
+  width: customWidth,
+}: InputBoxProps) {
   const [value, setValue] = useState("");
   const [cursorPos, setCursorPos] = useState(0);
   const [historyIndex, setHistoryIndex] = useState(-1);
+
+  const width = customWidth ?? Math.max(40, process.stdout.columns ? process.stdout.columns : 80);
 
   useInput((input, key) => {
     if (isDisabled) return;
@@ -95,26 +104,44 @@ export function InputBox({ onSubmit, isDisabled = false, history = [] }: InputBo
     }
   });
 
+  const promptPrefix = "▲ > ";
+  let contentLen = promptPrefix.length;
+  if (isDisabled) {
+    contentLen += "processing task... (press [esc] to stop)".length;
+  } else if (value.length === 0) {
+    contentLen += 1 + "ask a question or describe a task...".length;
+  } else {
+    contentLen += Math.max(value.length, cursorPos + 1);
+  }
+  const pad = Math.max(0, width - contentLen);
+
   return (
-    <Box marginY={0}>
-      <Text color="greenBright" bold>
-        ▲{" "}
+    <Box height={1} width={width} overflow="hidden">
+      <Text backgroundColor={theme.bg} wrap="truncate-end">
+        <Text color={theme.accent} bold>
+          ▲{" "}
+        </Text>
+        <Text color={theme.muted}>&gt; </Text>
+        {isDisabled ? (
+          <Text color={theme.muted}>processing task... (press [esc] to stop)</Text>
+        ) : value.length === 0 ? (
+          <Text>
+            <Text backgroundColor={theme.text} color={theme.bg}>
+              {" "}
+            </Text>
+            <Text color={theme.muted}> ask a question or describe a task...</Text>
+          </Text>
+        ) : (
+          <Text>
+            <Text color={theme.text}>{value.slice(0, cursorPos)}</Text>
+            <Text backgroundColor={theme.text} color={theme.bg}>
+              {value[cursorPos] || " "}
+            </Text>
+            <Text color={theme.text}>{value.slice(cursorPos + 1)}</Text>
+          </Text>
+        )}
+        {" ".repeat(pad)}
       </Text>
-      <Text color="gray">&gt; </Text>
-      {isDisabled ? (
-        <Text color="gray">processing task... (press [esc] to stop)</Text>
-      ) : value.length === 0 ? (
-        <Box>
-          <Text inverse> </Text>
-          <Text color="gray">ask a question or describe a task...</Text>
-        </Box>
-      ) : (
-        <Box>
-          <Text>{value.slice(0, cursorPos)}</Text>
-          <Text inverse>{value[cursorPos] || " "}</Text>
-          <Text>{value.slice(cursorPos + 1)}</Text>
-        </Box>
-      )}
     </Box>
   );
 }

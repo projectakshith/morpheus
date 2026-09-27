@@ -11,6 +11,7 @@ import { MORPHEUS_VERSION } from "../../index";
 import { MarkdownFormatter } from "../format";
 import type { ChatMessage, Finding, TokenUsage } from "../../core/types";
 import { isToolError } from "../../utils/errors";
+import { theme } from "../theme";
 
 export interface ThreadStep {
   id: string;
@@ -169,6 +170,7 @@ export function App({
 
   useEffect(() => {
     try {
+      process.stdout.write("\x1b]11;#161415\x07");
       process.stdout.write("\x1b[?1000h\x1b[?1006h");
     } catch {}
 
@@ -239,6 +241,7 @@ export function App({
 
     const cleanup = () => {
       try {
+        process.stdout.write("\x1b]111\x07");
         process.stdout.write("\x1b[?1000l\x1b[?1002l\x1b[?1006l");
       } catch {}
       process.stdin.off("data", onData);
@@ -546,8 +549,11 @@ export function App({
         id: `${thread.id}_user_hdr`,
         threadId: thread.id,
         node: (
-          <Text color="white" bold>
-            ▲ you
+          <Text backgroundColor={theme.bg} wrap="truncate-end">
+            <Text color={theme.secondary} bold>
+              ▲ you
+            </Text>
+            {" ".repeat(Math.max(0, leftWidth - 5))}
           </Text>
         ),
       });
@@ -556,10 +562,17 @@ export function App({
       promptLines.forEach((pLine) => {
         const wrapped = wrapLine(pLine, maxLineWidth);
         wrapped.forEach((wLine) => {
+          const visLen = 2 + wLine.length;
+          const pad = Math.max(0, leftWidth - visLen);
           lines.push({
             id: `${thread.id}_prompt_${lines.length}`,
             threadId: thread.id,
-            node: <Text color="white">  {wLine}</Text>,
+            node: (
+              <Text backgroundColor={theme.bg} wrap="truncate-end">
+                <Text color={theme.text} bold>  {wLine}</Text>
+                {" ".repeat(pad)}
+              </Text>
+            ),
           });
         });
       });
@@ -567,16 +580,23 @@ export function App({
       const thinkingSteps = thread.steps.filter((s) => s.type === "thinking");
       thinkingSteps.forEach((tStep) => {
         const sec = ((tStep.durationMs || 0) / 1000).toFixed(1);
+        const hdrText = `▲ reasoning (${sec}s)`;
+        const visLen = tStep.isRunning ? hdrText.length + 3 : hdrText.length;
+        const pad = Math.max(0, leftWidth - visLen);
         lines.push({
           id: `${tStep.id}_think_hdr`,
           threadId: thread.id,
-          node: tStep.isRunning ? (
-            <Text color="yellow">
-              ▲ reasoning <Spinner type="dots" /> ({sec}s)
-            </Text>
-          ) : (
-            <Text color="gray">
-              ▲ reasoning ({sec}s)
+          node: (
+            <Text backgroundColor={theme.bg} wrap="truncate-end">
+              {tStep.isRunning ? (
+                <Text color={theme.accentBright}>
+                  <Spinner type="dots" />{" "}
+                </Text>
+              ) : null}
+              <Text color={tStep.isRunning ? theme.secondary : theme.muted} italic>
+                {hdrText}
+              </Text>
+              {" ".repeat(pad)}
             </Text>
           ),
         });
@@ -586,12 +606,18 @@ export function App({
           rawThinkLines.forEach((rLine) => {
             const wrapped = wrapLine(rLine, maxLineWidth);
             wrapped.forEach((wLine) => {
+              const visLen = 4 + wLine.length;
+              const pad = Math.max(0, leftWidth - visLen);
               lines.push({
                 id: `${tStep.id}_think_${lines.length}`,
                 threadId: thread.id,
                 node: (
-                  <Text color="gray">
-                    {"  "}<Text italic>{wLine}</Text>
+                  <Text backgroundColor={theme.bg} wrap="truncate-end">
+                    <Text color={theme.border}>  │ </Text>
+                    <Text color={theme.secondary} italic>
+                      {wLine}
+                    </Text>
+                    {" ".repeat(pad)}
                   </Text>
                 ),
               });
@@ -601,12 +627,17 @@ export function App({
       });
 
       if (thread.response || thread.isStreaming) {
+        const asstHdr = "▲ morpheus";
+        const padHdr = Math.max(0, leftWidth - asstHdr.length);
         lines.push({
           id: `${thread.id}_asst_hdr`,
           threadId: thread.id,
           node: (
-            <Text color="greenBright" bold>
-              ▲ morpheus
+            <Text backgroundColor={theme.bg} wrap="truncate-end">
+              <Text color={theme.accent} bold>
+                {asstHdr}
+              </Text>
+              {" ".repeat(padHdr)}
             </Text>
           ),
         });
@@ -622,25 +653,44 @@ export function App({
         formattedLines.forEach((mLine) => {
           const wrapped = wrapLine(mLine, maxLineWidth);
           wrapped.forEach((wLine) => {
+            const cleanText = wLine.replace(/\x1b\[[0-9;]*m/g, "");
+            const visLen = 2 + cleanText.length;
+            const pad = Math.max(0, leftWidth - visLen);
             lines.push({
               id: `${thread.id}_asst_line_${lines.length}`,
               threadId: thread.id,
-              node: <Text>  {wLine}</Text>,
+              node: (
+                <Text backgroundColor={theme.bg} wrap="truncate-end">
+                  <Text color={theme.text}>  {wLine}</Text>
+                  {" ".repeat(pad)}
+                </Text>
+              ),
             });
           });
         });
       }
 
       if (tIdx < threads.length - 1) {
+        const dots = "  " + "· ".repeat(Math.min(16, Math.max(4, Math.floor(leftWidth / 6))));
+        const padDots = Math.max(0, leftWidth - dots.length);
         lines.push({
           id: `${thread.id}_spacer_1`,
           threadId: thread.id,
-          node: <Text color="gray">  {"· ".repeat(Math.min(16, Math.max(4, Math.floor(leftWidth / 6))))}</Text>,
+          node: (
+            <Text backgroundColor={theme.bg} wrap="truncate-end">
+              <Text color={theme.border}>{dots}</Text>
+              {" ".repeat(padDots)}
+            </Text>
+          ),
         });
         lines.push({
           id: `${thread.id}_spacer_2`,
           threadId: thread.id,
-          node: <Text> </Text>,
+          node: (
+            <Text backgroundColor={theme.bg}>
+              {" ".repeat(leftWidth)}
+            </Text>
+          ),
         });
       }
     });
@@ -709,12 +759,16 @@ export function App({
           flexDirection="column"
           width={leftWidth}
           height={workspaceHeight}
-          paddingRight={isSplitLayout ? 1 : 0}
         >
           <Box flexDirection="column" height={feedHeight} overflow="hidden">
             {visibleLines.map((line) => (
               <Box key={line.id} height={1} overflow="hidden">
                 {line.node}
+              </Box>
+            ))}
+            {Array.from({ length: Math.max(0, feedHeight - visibleLines.length) }).map((_, idx) => (
+              <Box key={`feed_pad_${idx}`} height={1} overflow="hidden">
+                <Text backgroundColor={theme.bg}>{" ".repeat(leftWidth)}</Text>
               </Box>
             ))}
           </Box>
@@ -743,6 +797,7 @@ export function App({
         onSubmit={executeTask}
         isDisabled={status === "running"}
         history={promptHistory}
+        width={terminalWidth}
       />
     </Box>
   );
