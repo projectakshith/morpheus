@@ -8,7 +8,25 @@ import { spawn } from "node:child_process";
 import { App } from "./components/App";
 import { parseCLIArgs } from "./args";
 
+import { fileURLToPath } from "node:url";
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+
+// 1. Load project-specific .env from current working directory
 dotenv.config();
+
+// 2. Load global user .env if present (~/.morpheus/.env)
+const userEnv = path.join(os.homedir(), ".morpheus", ".env");
+if (fs.existsSync(userEnv)) {
+  dotenv.config({ path: userEnv });
+}
+
+// 3. Fallback to package repository .env
+const repoEnv = path.resolve(__dirname, "../../.env");
+if (fs.existsSync(repoEnv)) {
+  dotenv.config({ path: repoEnv });
+}
 
 /* Auto-spawns Neo background proxy router if not yet running */
 async function ensureNeoDaemon(baseURL: string): Promise<void> {
