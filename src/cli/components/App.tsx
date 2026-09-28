@@ -9,7 +9,7 @@ import { Header } from "./Header.js";
 import { StatusBar } from "./StatusBar.js";
 import { DiffColumn, buildRightLines } from "./DiffColumn.js";
 import { InputBox } from "./InputBox.js";
-import { ModelSelector } from "./ModelSelector.js";
+import { ModelSelector, AVAILABLE_MODELS } from "./ModelSelector.js";
 import { SessionSelector } from "./SessionSelector.js";
 import { SettingsSelector } from "./SettingsSelector.js";
 import { gatherContext } from "../../core/context.js";
@@ -72,6 +72,11 @@ export function App({
     feedHeight,
     maxLineWidth,
   } = useTerminalLayout();
+
+  const [autocompleteCount, setAutocompleteCount] = useState(0);
+  const popupHeight = autocompleteCount > 0 ? Math.min(autocompleteCount + 2, 8) : 0;
+  const effectiveWorkspaceHeight = Math.max(4, workspaceHeight - popupHeight);
+  const effectiveFeedHeight = effectiveWorkspaceHeight;
 
   const {
     status,
@@ -203,18 +208,18 @@ export function App({
     });
   }, [threads, leftWidth, maxLineWidth, feedHeight, collapsedThinkingIds, matrixQuote]);
 
-  const maxScroll = Math.max(0, allFeedLines.length - feedHeight);
+  const maxScroll = Math.max(0, allFeedLines.length - effectiveFeedHeight);
   maxScrollRef.current = maxScroll;
 
   const visibleLines = useMemo(() => {
     const total = allFeedLines.length;
-    if (total <= feedHeight) {
+    if (total <= effectiveFeedHeight) {
       return allFeedLines;
     }
     const clampedOffset = Math.min(scrollOffset, maxScroll);
-    const startIndex = Math.max(0, total - feedHeight - clampedOffset);
-    return allFeedLines.slice(startIndex, startIndex + feedHeight);
-  }, [allFeedLines, scrollOffset, feedHeight, maxScroll]);
+    const startIndex = Math.max(0, total - effectiveFeedHeight - clampedOffset);
+    return allFeedLines.slice(startIndex, startIndex + effectiveFeedHeight);
+  }, [allFeedLines, scrollOffset, effectiveFeedHeight, maxScroll]);
 
   visibleLinesRef.current = visibleLines;
 
@@ -234,7 +239,7 @@ export function App({
     );
   }, [threads, fileEdits, findings, expandedToolIds, collapsedThreadIds, expandedFileEdits, rightContentWidth]);
 
-  const maxRightScroll = Math.max(0, allRightLines.length - workspaceHeight);
+  const maxRightScroll = Math.max(0, allRightLines.length - effectiveWorkspaceHeight);
   maxRightScrollRef.current = maxRightScroll;
 
   const effectiveRightScroll = isRightUserScrolledRef.current
@@ -243,8 +248,8 @@ export function App({
   currentRightScrollRef.current = effectiveRightScroll;
 
   const visibleRightLines = useMemo(() => {
-    return allRightLines.slice(effectiveRightScroll, effectiveRightScroll + workspaceHeight);
-  }, [allRightLines, effectiveRightScroll, workspaceHeight]);
+    return allRightLines.slice(effectiveRightScroll, effectiveRightScroll + effectiveWorkspaceHeight);
+  }, [allRightLines, effectiveRightScroll, effectiveWorkspaceHeight]);
 
   visibleRightLinesRef.current = visibleRightLines;
 
@@ -285,11 +290,11 @@ export function App({
         width={terminalWidth}
       />
 
-      <Box flexDirection="row" width={terminalWidth} height={workspaceHeight} overflow="hidden">
+      <Box flexDirection="row" width={terminalWidth} height={effectiveWorkspaceHeight} overflow="hidden">
         {activeModal === "model" ? (
           <Box
             width={terminalWidth}
-            height={workspaceHeight}
+            height={effectiveWorkspaceHeight}
             alignItems="center"
             justifyContent="center"
           >
@@ -320,7 +325,7 @@ export function App({
         ) : activeModal === "session" ? (
           <Box
             width={terminalWidth}
-            height={workspaceHeight}
+            height={effectiveWorkspaceHeight}
             alignItems="center"
             justifyContent="center"
           >
@@ -341,7 +346,7 @@ export function App({
         ) : activeModal === "settings" ? (
           <Box
             width={terminalWidth}
-            height={workspaceHeight}
+            height={effectiveWorkspaceHeight}
             alignItems="center"
             justifyContent="center"
           >
@@ -365,15 +370,15 @@ export function App({
             <Box
               flexDirection="column"
               width={leftWidth}
-              height={workspaceHeight}
+              height={effectiveWorkspaceHeight}
             >
-              <Box flexDirection="column" height={feedHeight} overflow="hidden">
+              <Box flexDirection="column" height={effectiveFeedHeight} overflow="hidden">
                 {visibleLines.map((line) => (
                   <Box key={line.id} height={1} overflow="hidden">
                     {line.node}
                   </Box>
                 ))}
-                {Array.from({ length: Math.max(0, feedHeight - visibleLines.length) }).map((_, idx) => (
+                {Array.from({ length: Math.max(0, effectiveFeedHeight - visibleLines.length) }).map((_, idx) => (
                   <Box key={`feed_pad_${idx}`} height={1} overflow="hidden">
                     <Text backgroundColor={theme.bg}>{" ".repeat(leftWidth)}</Text>
                   </Box>
@@ -384,7 +389,7 @@ export function App({
             {isSplitLayout && (
               <DiffColumn
                 width={rightWidth}
-                height={workspaceHeight}
+                height={effectiveWorkspaceHeight}
                 lines={visibleRightLines}
               />
             )}
@@ -424,6 +429,9 @@ export function App({
         }
         history={promptHistory}
         width={terminalWidth}
+        availableModels={AVAILABLE_MODELS.map((m) => m.id)}
+        cwd={process.cwd()}
+        onSuggestionsChange={setAutocompleteCount}
       />
     </Box>
   );
