@@ -18,6 +18,19 @@ describe("Autocomplete Engine & Providers", () => {
     assert.ok(labels.some((l) => l.includes("/model")), "Should contain /model");
     assert.ok(labels.some((l) => l.includes("/help")), "Should contain /help");
     assert.ok(labels.some((l) => l.includes("/stop")), "Should contain /stop");
+    assert.ok(labels.some((l) => l.includes("/session")), "Should contain /session");
+    assert.ok(labels.some((l) => l.includes("/sessions")), "Should contain /sessions");
+    assert.ok(res.suggestions.length >= 10, "Should include all built-in commands without premature truncation");
+  });
+
+  it("handles typos like /sessiions via fuzzy similarity", () => {
+    const res = computeAutocomplete({
+      input: "/sessiions",
+      cursorPos: 10,
+    });
+
+    assert.ok(res.suggestions.length > 0, "Should find closest command for /sessiions");
+    assert.ok(res.suggestions.some((s) => s.insertText.includes("/session")));
   });
 
   it("computes dim inline ghost text for matching slash command", () => {

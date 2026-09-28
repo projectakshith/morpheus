@@ -8,7 +8,7 @@ import { Box, Text, useInput } from "ink";
 import { Header } from "./Header.js";
 import { StatusBar } from "./StatusBar.js";
 import { DiffColumn, buildRightLines } from "./DiffColumn.js";
-import { InputBox } from "./InputBox.js";
+import { InputBox, POPUP_TOTAL_HEIGHT } from "./InputBox.js";
 import { ModelSelector, AVAILABLE_MODELS } from "./ModelSelector.js";
 import { SessionSelector } from "./SessionSelector.js";
 import { SettingsSelector } from "./SettingsSelector.js";
@@ -73,8 +73,8 @@ export function App({
     maxLineWidth,
   } = useTerminalLayout();
 
-  const [autocompleteCount, setAutocompleteCount] = useState(0);
-  const popupHeight = autocompleteCount > 0 ? Math.min(autocompleteCount + 2, 8) : 0;
+  const [isPopupOpen, setIsPopupOpen] = useState(false);
+  const popupHeight = isPopupOpen ? POPUP_TOTAL_HEIGHT : 0;
   const effectiveWorkspaceHeight = Math.max(4, workspaceHeight - popupHeight);
   const effectiveFeedHeight = effectiveWorkspaceHeight;
 
@@ -431,7 +431,7 @@ export function App({
         width={terminalWidth}
         availableModels={AVAILABLE_MODELS.map((m) => m.id)}
         cwd={process.cwd()}
-        onSuggestionsChange={setAutocompleteCount}
+        onPopupOpenChange={setIsPopupOpen}
       />
     </Box>
   );

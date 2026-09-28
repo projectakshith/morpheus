@@ -50,7 +50,7 @@ export function computeAutocomplete(
     return true;
   });
 
-  const suggestions = deduplicated.slice(0, 7);
+  const suggestions = deduplicated.slice(0, 50);
   if (suggestions.length === 0) {
     return { suggestions: [], selectedIndex: 0 };
   }

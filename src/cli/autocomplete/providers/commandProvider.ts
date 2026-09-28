@@ -3,6 +3,7 @@
  */
 
 import type { SuggestionItem, AutocompleteContext } from "../types.js";
+import { similarity } from "../../../utils/levenshtein.js";
 
 interface CommandDef {
   name: string;
@@ -115,6 +116,25 @@ export function getCommandSuggestions(ctx: AutocompleteContext): SuggestionItem[
     if (matchesPrimary || matchesAlias) {
       suggestions.push({
         id: `command-${cmd.name}`,
+        label: cmd.name + (cmd.hasArgs ? " [args]" : ""),
+        detail: cmd.description,
+        insertText: cmd.name + (cmd.hasArgs ? " " : ""),
+        category: "command",
+        replaceRange: { start: 0, end: beforeCursor.length },
+      });
+    }
+  }
+
+  /* Fallback: if user made a typo (e.g. /sessiions), find closest command via fuzzy similarity */
+  if (suggestions.length === 0 && query.length >= 3) {
+    const matchesFuzzy = BUILTIN_COMMANDS.filter((cmd) => {
+      const sim = similarity(cmd.name.toLowerCase(), query);
+      return sim >= 0.55 || cmd.name.toLowerCase().includes(query.slice(1, 4));
+    });
+
+    for (const cmd of matchesFuzzy) {
+      suggestions.push({
+        id: `command-fuzzy-${cmd.name}`,
         label: cmd.name + (cmd.hasArgs ? " [args]" : ""),
         detail: cmd.description,
         insertText: cmd.name + (cmd.hasArgs ? " " : ""),

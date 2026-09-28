@@ -2,7 +2,9 @@ import React, { useState, useMemo, useEffect } from "react";
 import { Box, Text, useInput } from "ink";
 import { theme } from "../theme.js";
 import { computeAutocomplete, applySuggestion } from "../autocomplete/engine.js";
-import { AutocompletePopup } from "./AutocompletePopup.js";
+import { AutocompletePopup, POPUP_TOTAL_HEIGHT } from "./AutocompletePopup.js";
+
+export { POPUP_TOTAL_HEIGHT };
 
 export interface InputBoxProps {
   onSubmit: (value: string) => void;
@@ -13,7 +15,7 @@ export interface InputBoxProps {
   width?: number;
   availableModels?: string[];
   cwd?: string;
-  onSuggestionsChange?: (count: number) => void;
+  onPopupOpenChange?: (isOpen: boolean) => void;
 }
 
 export function InputBox({
@@ -25,7 +27,7 @@ export function InputBox({
   width: customWidth,
   availableModels = [],
   cwd,
-  onSuggestionsChange,
+  onPopupOpenChange,
 }: InputBoxProps) {
   const [value, setValue] = useState("");
   const [cursorPos, setCursorPos] = useState(0);
@@ -33,7 +35,7 @@ export function InputBox({
   const [selectedIndex, setSelectedIndex] = useState(0);
   const [isPopupDismissed, setIsPopupDismissed] = useState(false);
 
-  const width = customWidth ?? Math.max(40, process.stdout.columns ? process.stdout.columns : 80);
+  const width = Math.max(40, customWidth ?? (process.stdout.columns ? process.stdout.columns : 80));
 
   /* Compute suggestions and dim inline ghost text based on active input */
   const autoResult = useMemo(() => {
@@ -54,10 +56,17 @@ export function InputBox({
 
   const { suggestions, ghostText } = autoResult;
 
-  /* Notify parent container of suggestion popup height changes for layout sizing */
+  /* The suggestion popup is active for slash commands and file mentions */
+  const isCommandOrMention = Boolean(
+    (value.startsWith("/") || value.includes("@")) &&
+      !isPopupDismissed &&
+      !isDisabled
+  );
+
+  /* Notify parent container of stable open/closed state (never fluctuates per letter) */
   useEffect(() => {
-    onSuggestionsChange?.(suggestions.length);
-  }, [suggestions.length, onSuggestionsChange]);
+    onPopupOpenChange?.(isCommandOrMention);
+  }, [isCommandOrMention, onPopupOpenChange]);
 
   useInput((input, key) => {
     if (isDisabled) return;
@@ -69,7 +78,7 @@ export function InputBox({
 
     /* Escape: dismiss suggestion popup and ghost text */
     if (key.escape) {
-      if (suggestions.length > 0 && !isPopupDismissed) {
+      if (isCommandOrMention) {
         setIsPopupDismissed(true);
         return;
       }
@@ -77,7 +86,7 @@ export function InputBox({
 
     /* Tab: accept highlighted suggestion or inline ghost text */
     if (key.tab || input === "\t") {
-      if (suggestions.length > 0) {
+      if (isCommandOrMention && suggestions.length > 0) {
         const activeItem = suggestions[autoResult.selectedIndex];
         if (activeItem) {
           const applied = applySuggestion(value, cursorPos, activeItem);
@@ -142,9 +151,9 @@ export function InputBox({
       return;
     }
 
-    /* Up Arrow: cycle suggestion list if visible, otherwise navigate prompt history */
+    /* Up Arrow: scroll suggestions if in command/mention mode, otherwise history */
     if (key.upArrow) {
-      if (suggestions.length > 0 && !isPopupDismissed) {
+      if (isCommandOrMention && suggestions.length > 0) {
         setSelectedIndex((prev) => (prev <= 0 ? suggestions.length - 1 : prev - 1));
         return;
       }
@@ -160,9 +169,9 @@ export function InputBox({
       }
     }
 
-    /* Down Arrow: cycle suggestion list if visible, otherwise navigate prompt history */
+    /* Down Arrow: scroll suggestions if in command/mention mode, otherwise history */
     if (key.downArrow) {
-      if (suggestions.length > 0 && !isPopupDismissed) {
+      if (isCommandOrMention && suggestions.length > 0) {
         setSelectedIndex((prev) => (prev >= suggestions.length - 1 ? 0 : prev + 1));
         return;
       }
@@ -279,19 +288,17 @@ export function InputBox({
 
   /* Render inline dim ghost text right in the typing space when cursor is at the end */
   const showGhostText = Boolean(ghostText && cursorPos === value.length);
-  const ghostFirstChar = showGhostText && ghostText ? ghostText[0] : null;
-  const ghostRemaining = showGhostText && ghostText ? ghostText.slice(1) : "";
 
   const renderedLen =
     promptPrefix.length +
     beforeCursor.length +
     1 +
-    (showGhostText ? ghostRemaining.length : afterCursor.length);
+    (showGhostText && ghostText ? ghostText.length : afterCursor.length);
   const pad = Math.max(0, width - renderedLen);
 
   return (
     <Box flexDirection="column" width={width}>
-      {suggestions.length > 0 && !isPopupDismissed && (
+      {isCommandOrMention && (
         <AutocompletePopup
           suggestions={suggestions}
           selectedIndex={autoResult.selectedIndex}
@@ -307,10 +314,10 @@ export function InputBox({
           <Text color={theme.muted}>{promptPrefix.slice(2)}</Text>
           <Text color={theme.text}>{beforeCursor}</Text>
           <Text backgroundColor={theme.text} color={theme.bg}>
-            {showGhostText && ghostFirstChar ? ghostFirstChar : cursorChar}
+            {cursorChar}
           </Text>
-          {showGhostText ? (
-            <Text color={theme.muted}>{ghostRemaining}</Text>
+          {showGhostText && ghostText ? (
+            <Text color={theme.muted}>{ghostText}</Text>
           ) : (
             <Text color={theme.text}>{afterCursor}</Text>
           )}
