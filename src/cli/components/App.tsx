@@ -1102,6 +1102,64 @@ export function App({
       stepCount: 0,
       startTime,
     };
+    /* Pre-flight check: verify required provider is authenticated */
+    try {
+      const neoBase = baseURL || "http://127.0.0.1:8787/v1";
+      let providerId = "antigravity";
+      if (
+        currentModel.startsWith("cloud/") ||
+        currentModel.startsWith("openrouter/") ||
+        currentModel.includes("space-bunny") ||
+        currentModel.includes("deepseek")
+      ) {
+        providerId = "openrouter";
+      } else if (
+        currentModel.startsWith("local/") ||
+        currentModel.includes("llama") ||
+        currentModel.includes("qwen")
+      ) {
+        providerId = "local";
+      }
+
+      const statusUrl = neoBase.endsWith("/v1")
+        ? `${neoBase}/auth/status?provider=${providerId}`
+        : `${neoBase}/v1/auth/status?provider=${providerId}`;
+
+      const checkRes = await fetch(statusUrl, { signal: AbortSignal.timeout(800) });
+      if (checkRes.ok) {
+        const authData = (await checkRes.json()) as { authenticated?: boolean; error?: string; name?: string };
+        if (authData.authenticated === false) {
+          let fixHint = "";
+          if (providerId === "openrouter") {
+            fixHint = "Run `/login openrouter <api-key>` to configure your OpenRouter key.";
+          } else if (providerId === "antigravity") {
+            fixHint = "Run `/login antigravity` to authenticate via Google OAuth.";
+          } else if (providerId === "local") {
+            fixHint = "Ensure Ollama is running (`ollama serve`) or run `/login local`.";
+          }
+
+          const unauthThread: Thread = {
+            id: threadId,
+            index: threads.length + 1,
+            prompt: taskText,
+            response: `● **Authentication Required for ${authData.name || providerId}**\n\n${authData.error || "Provider is not authenticated."}\n\n*${fixHint}*`,
+            isStreaming: false,
+            steps: [],
+            isExpanded: false,
+            status: "error",
+            stepCount: 0,
+            startTime,
+            durationMs: 0,
+          };
+          setThreads((prev) => [...prev, unauthThread]);
+          setStatus("idle");
+          return;
+        }
+      }
+    } catch {
+      /* Fallback gracefully if Neo auth check times out or fails */
+    }
+
     setThreads((prev) => [...prev, newThread]);
 
     let activeThinkingId: string | null = null;
@@ -1311,6 +1369,7 @@ export function App({
                 ...t,
                 status: result.aborted ? "aborted" : "completed",
                 isStreaming: false,
+                response: t.response || (result.aborted ? "*Task stopped.*" : "*Model produced no output.*"),
                 durationMs: Date.now() - t.startTime,
               }
             : t
@@ -1327,7 +1386,16 @@ export function App({
       setStatus("error");
       const errMsg = err instanceof Error ? err.message : String(err);
       let errorResponse = `Error: ${errMsg}`;
-      if (errMsg.includes("fetch failed") || errMsg.includes("ECONNREFUSED")) {
+      if (
+        errMsg.includes("OPENROUTER_API_KEY") ||
+        errMsg.includes("OpenRouter API key") ||
+        errMsg.includes("OpenRouter is not configured") ||
+        errMsg.includes("OpenRouter")
+      ) {
+        errorResponse += `\n\n*OpenRouter is not authenticated. Type \`/login openrouter <api-key>\` to configure your API key.*`;
+      } else if (errMsg.includes("Antigravity") && (errMsg.includes("missing") || errMsg.includes("credentials") || errMsg.includes("Keychain"))) {
+        errorResponse += `\n\n*Google Cloud Code is not authenticated. Type \`/login antigravity\` to authenticate via browser OAuth.*`;
+      } else if (errMsg.includes("fetch failed") || errMsg.includes("ECONNREFUSED")) {
         errorResponse += `\n\n*Unable to connect to model proxy (${baseURL || "http://127.0.0.1:8787"}). Type \`/auth\` to check credentials or ensure Neo is running.*`;
       }
       setThreads((prev) =>

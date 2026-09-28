@@ -296,6 +296,15 @@ export class Operator {
             continue;
           }
 
+          /* Surface upstream errors rather than silently skipping them */
+          if (parsed.error) {
+            const errorMsg =
+              typeof parsed.error === "string"
+                ? parsed.error
+                : parsed.error.message || JSON.stringify(parsed.error);
+            throw new Error(`[Upstream Error] ${errorMsg}`);
+          }
+
           if (parsed.usage) {
             yield {
               type: "usage",
