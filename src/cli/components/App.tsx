@@ -837,6 +837,118 @@ export function App({
       return;
     }
 
+    if (trimmed === "/login") {
+      const loginThreadId = `thread_${Date.now()}`;
+      const initialLoginThread: Thread = {
+        id: loginThreadId,
+        index: threads.length + 1,
+        prompt: taskText,
+        response: "Opening Google authentication in your default browser...\nPlease complete sign-in and return to this terminal.",
+        isStreaming: false,
+        steps: [],
+        isExpanded: false,
+        status: "running",
+        stepCount: 0,
+        startTime: Date.now(),
+        durationMs: 0,
+      };
+      setPromptHistory((prev) => [...prev, taskText]);
+      setThreads((prev) => [...prev, initialLoginThread]);
+
+      try {
+        const neoBase = baseURL || "http://127.0.0.1:8787/v1";
+        const loginUrl = neoBase.endsWith("/v1")
+          ? `${neoBase}/auth/login`
+          : `${neoBase}/v1/auth/login`;
+
+        const res = await fetch(loginUrl, { method: "POST" });
+        if (res.ok) {
+          setThreads((prev) =>
+            prev.map((t) =>
+              t.id === loginThreadId
+                ? {
+                    ...t,
+                    status: "completed",
+                    response: "Authentication successful! Google Cloud credentials have been refreshed and saved to macOS Keychain.",
+                  }
+                : t
+            )
+          );
+        } else {
+          const errText = await res.text();
+          setThreads((prev) =>
+            prev.map((t) =>
+              t.id === loginThreadId
+                ? {
+                    ...t,
+                    status: "error",
+                    response: `Authentication error (${res.status}): ${errText}`,
+                  }
+                : t
+            )
+          );
+        }
+      } catch (err: unknown) {
+        setThreads((prev) =>
+          prev.map((t) =>
+            t.id === loginThreadId
+              ? {
+                  ...t,
+                  status: "error",
+                  response: `Could not reach Neo proxy: ${err instanceof Error ? err.message : String(err)}. Ensure Neo is running on port 8787.`,
+                }
+              : t
+          )
+        );
+      }
+      return;
+    }
+
+    if (trimmed === "/auth" || trimmed === "/whoami" || trimmed === "/status") {
+      let authStatusText = "";
+      try {
+        const neoBase = baseURL || "http://127.0.0.1:8787/v1";
+        const statusUrl = neoBase.endsWith("/v1")
+          ? `${neoBase}/auth/status`
+          : `${neoBase}/v1/auth/status`;
+
+        const res = await fetch(statusUrl, { signal: AbortSignal.timeout(1500) });
+        if (res.ok) {
+          const info = (await res.json()) as {
+            authenticated: boolean;
+            email?: string;
+            expiry?: string;
+            service?: string;
+            account?: string;
+          };
+          if (info.authenticated) {
+            authStatusText = `● **Authentication Active** (macOS Keychain)\n• **Account:** \`${info.email || "Active"}\`\n• **Keychain Target:** \`${info.service || "gemini"} / ${info.account || "antigravity"}\`\n• **Token Expiry:** \`${info.expiry || "Auto-refreshing"}\`\n\n*All Antigravity models route through this identity.*`;
+          } else {
+            authStatusText = `● **Authentication Missing**\nNo credentials found in macOS Keychain. Type \`/login\` to authenticate.`;
+          }
+        }
+      } catch {
+        authStatusText = `● **Neo Router Offline**\nCould not connect to Neo on port 8787. Ensure Neo is active.`;
+      }
+
+      const authThread: Thread = {
+        id: `thread_${Date.now()}`,
+        index: threads.length + 1,
+        prompt: taskText,
+        response: authStatusText,
+        isStreaming: false,
+        steps: [],
+        isExpanded: false,
+        status: "completed",
+        stepCount: 0,
+        startTime: Date.now(),
+        durationMs: 0,
+      };
+      setPromptHistory((prev) => [...prev, taskText]);
+      setThreads((prev) => [...prev, authThread]);
+      return;
+    }
+
     setStatus("running");
     setStepCount(0);
     setElapsedSeconds(0);
@@ -1090,6 +1202,11 @@ export function App({
       setStatus(result.aborted ? "aborted" : "idle");
     } catch (err: unknown) {
       setStatus("error");
+      const errMsg = err instanceof Error ? err.message : String(err);
+      let errorResponse = `Error: ${errMsg}`;
+      if (errMsg.includes("fetch failed") || errMsg.includes("ECONNREFUSED")) {
+        errorResponse += `\n\n*Unable to connect to model proxy (${baseURL || "http://127.0.0.1:8787"}). Type \`/auth\` to check credentials or ensure Neo is running.*`;
+      }
       setThreads((prev) =>
         prev.map((t) =>
           t.id === threadId
@@ -1097,7 +1214,7 @@ export function App({
                 ...t,
                 status: "error",
                 isStreaming: false,
-                response: `Error: ${err instanceof Error ? err.message : String(err)}`,
+                response: errorResponse,
                 durationMs: Date.now() - t.startTime,
               }
             : t
