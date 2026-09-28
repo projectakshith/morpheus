@@ -127,18 +127,26 @@ export class Operator {
   private numCtx: number;
 
   constructor(config: OperatorConfig = {}) {
+    /* Differentiate Neo router proxy on port 8787 from local Ollama */
+    const isNeo = Boolean(
+      (config.baseURL && config.baseURL.includes("8787")) ||
+        (process.env.MORPHEUS_BASE_URL && process.env.MORPHEUS_BASE_URL.includes("8787"))
+    );
+
     const isLocalConfig =
-      Boolean(config.isLocal) ||
-      process.env.MORPHEUS_LOCAL === "true" ||
-      Boolean(
-        config.baseURL &&
-          (config.baseURL.includes("localhost") || config.baseURL.includes("127.0.0.1"))
-      ) ||
-      Boolean(
-        process.env.MORPHEUS_BASE_URL &&
-          (process.env.MORPHEUS_BASE_URL.includes("localhost") ||
-            process.env.MORPHEUS_BASE_URL.includes("127.0.0.1"))
-      );
+      !isNeo &&
+      (Boolean(config.isLocal) ||
+        process.env.MORPHEUS_LOCAL === "true" ||
+        Boolean(
+          config.baseURL &&
+            (config.baseURL.includes("11434") ||
+              (config.baseURL.includes("localhost") && !config.baseURL.includes("8787")))
+        ) ||
+        Boolean(
+          process.env.MORPHEUS_BASE_URL &&
+            (process.env.MORPHEUS_BASE_URL.includes("11434") ||
+              (process.env.MORPHEUS_BASE_URL.includes("localhost") && !process.env.MORPHEUS_BASE_URL.includes("8787")))
+        ));
 
     this.isLocal = isLocalConfig;
 

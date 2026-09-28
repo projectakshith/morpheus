@@ -53,7 +53,7 @@ export function StatusBar({
 
   const metricsStr = ` · ${timeStr} · step ${stepCount}/${maxSteps} · ctx ${peakCtx}/${limitCtx} · api ${totalTokens}`;
   const scrollStr = scrollOffset > 0 ? ` · ▲ +${scrollOffset}` : "";
-  const hintStr = scrollOffset > 0 ? "[end] bottom · [esc] stop" : "[esc] stop · [ctrl+c] exit";
+  const hintStr = scrollOffset > 0 ? "[end] bottom · [esc] stop" : "/model switch · [esc] stop · [ctrl+c] exit";
 
   const leftLen =
     (status === "running" ? 2 : 0) +

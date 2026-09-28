@@ -9,6 +9,7 @@ import { Header } from "./Header";
 import { StatusBar } from "./StatusBar";
 import { DiffColumn, buildRightLines, type FileEditRecord, type RightLine } from "./DiffColumn";
 import { InputBox } from "./InputBox";
+import { ModelSelector } from "./ModelSelector";
 import { runAgent } from "../../core/agent";
 import { gatherContext } from "../../core/context";
 import { MORPHEUS_VERSION } from "../../index";
@@ -506,6 +507,7 @@ export function App({
   const { columns, rows } = useWindowSize();
 
   const [currentModel, setCurrentModel] = useState(model);
+  const [isModelSelectorOpen, setIsModelSelectorOpen] = useState(false);
   const [status, setStatus] = useState<"idle" | "running" | "aborted" | "error">(
     initialTask ? "running" : "idle"
   );
@@ -711,6 +713,9 @@ export function App({
       setIsIntroActive(false);
       return;
     }
+    if (isModelSelectorOpen) {
+      return;
+    }
     if (key.escape && status === "running") {
       abortControllerRef.current?.abort();
       setStatus("aborted");
@@ -826,54 +831,9 @@ export function App({
         return;
       }
 
-      let availableModelsText = "";
-      try {
-        const neoBase = baseURL || "http://127.0.0.1:8787/v1";
-        const modelsUrl = neoBase.endsWith("/v1") ? `${neoBase}/models` : `${neoBase}/v1/models`;
-        const modelsRes = await fetch(modelsUrl, {
-          signal: AbortSignal.timeout(1500),
-        });
-        if (modelsRes.ok) {
-          const json = (await modelsRes.json()) as { data?: Array<{ id: string; owned_by: string }> };
-          const list = json.data || [];
-          if (list.length > 0) {
-            availableModelsText = list
-              .map((m) => `• \`${m.id}\` (${m.owned_by})${m.id === currentModel ? " ← active" : ""}`)
-              .join("\n");
-          }
-        }
-      } catch {
-        /* Fallback to static list if neo is not running */
-      }
-
-      if (!availableModelsText) {
-        availableModelsText = [
-          `• \`flash\` (or \`gemini-3.8-flash\`) — Gemini 3.8 Flash (High)${currentModel === "flash" ? " ← active" : ""}`,
-          `• \`claude-opus-4-6-thinking\` — Claude Opus 4.6 (Thinking)${currentModel === "claude-opus-4-6-thinking" ? " ← active" : ""}`,
-          `• \`claude-sonnet-4-6\` — Claude Sonnet 4.6 (Thinking)${currentModel === "claude-sonnet-4-6" ? " ← active" : ""}`,
-          `• \`gemini-3.1-pro-high\` — Gemini 3.1 Pro (High)${currentModel === "gemini-3.1-pro-high" ? " ← active" : ""}`,
-          `• \`gemini-3.6-flash-high\` — Gemini 3.6 Flash (High)${currentModel === "gemini-3.6-flash-high" ? " ← active" : ""}`,
-          `• \`gpt-oss-120b-medium\` — GPT-OSS 120B (Medium)${currentModel === "gpt-oss-120b-medium" ? " ← active" : ""}`,
-          `• \`local/qwen2.5-coder:7b\` — Local Ollama Qwen${currentModel.includes("qwen") ? " ← active" : ""}`,
-          `• \`cloud/stealth/space-bunny-alpha\` — OpenRouter Cloud${currentModel.includes("space-bunny") ? " ← active" : ""}`,
-        ].join("\n");
-      }
-
-      const modelMenuThread: Thread = {
-        id: `thread_${Date.now()}`,
-        index: threads.length + 1,
-        prompt: taskText,
-        response: `**Active Model:** \`${currentModel}\`\n\n**Available Models via Neo:**\n${availableModelsText}\n\n*Type \`/model <name>\` to switch active model.*`,
-        isStreaming: false,
-        steps: [],
-        isExpanded: false,
-        status: "completed",
-        stepCount: 0,
-        startTime: Date.now(),
-        durationMs: 0,
-      };
+      /* Open interactive UI model picker */
       setPromptHistory((prev) => [...prev, taskText]);
-      setThreads((prev) => [...prev, modelMenuThread]);
+      setIsModelSelectorOpen(true);
       return;
     }
 
@@ -1421,31 +1381,68 @@ export function App({
       />
 
       <Box flexDirection="row" width={terminalWidth} height={workspaceHeight} overflow="hidden">
-        <Box
-          flexDirection="column"
-          width={leftWidth}
-          height={workspaceHeight}
-        >
-          <Box flexDirection="column" height={feedHeight} overflow="hidden">
-            {visibleLines.map((line) => (
-              <Box key={line.id} height={1} overflow="hidden">
-                {line.node}
-              </Box>
-            ))}
-            {Array.from({ length: Math.max(0, feedHeight - visibleLines.length) }).map((_, idx) => (
-              <Box key={`feed_pad_${idx}`} height={1} overflow="hidden">
-                <Text backgroundColor={theme.bg}>{" ".repeat(leftWidth)}</Text>
-              </Box>
-            ))}
-          </Box>
-        </Box>
-
-        {isSplitLayout && (
-          <DiffColumn
-            width={rightWidth}
+        {isModelSelectorOpen ? (
+          <Box
+            width={terminalWidth}
             height={workspaceHeight}
-            lines={visibleRightLines}
-          />
+            alignItems="center"
+            justifyContent="center"
+          >
+            <ModelSelector
+              currentModel={currentModel}
+              width={Math.min(terminalWidth, 80)}
+              onSelect={(selectedId) => {
+                setCurrentModel(selectedId);
+                setIsModelSelectorOpen(false);
+                const switchThread: Thread = {
+                  id: `thread_${Date.now()}`,
+                  index: threads.length + 1,
+                  prompt: `/model ${selectedId}`,
+                  response: `Switched active model to: \`${selectedId}\`\nAll future turns will route through Neo using this model.`,
+                  isStreaming: false,
+                  steps: [],
+                  isExpanded: false,
+                  status: "completed",
+                  stepCount: 0,
+                  startTime: Date.now(),
+                  durationMs: 0,
+                };
+                setThreads((prev) => [...prev, switchThread]);
+              }}
+              onClose={() => {
+                setIsModelSelectorOpen(false);
+              }}
+            />
+          </Box>
+        ) : (
+          <>
+            <Box
+              flexDirection="column"
+              width={leftWidth}
+              height={workspaceHeight}
+            >
+              <Box flexDirection="column" height={feedHeight} overflow="hidden">
+                {visibleLines.map((line) => (
+                  <Box key={line.id} height={1} overflow="hidden">
+                    {line.node}
+                  </Box>
+                ))}
+                {Array.from({ length: Math.max(0, feedHeight - visibleLines.length) }).map((_, idx) => (
+                  <Box key={`feed_pad_${idx}`} height={1} overflow="hidden">
+                    <Text backgroundColor={theme.bg}>{" ".repeat(leftWidth)}</Text>
+                  </Box>
+                ))}
+              </Box>
+            </Box>
+
+            {isSplitLayout && (
+              <DiffColumn
+                width={rightWidth}
+                height={workspaceHeight}
+                lines={visibleRightLines}
+              />
+            )}
+          </>
         )}
       </Box>
 
@@ -1461,7 +1458,12 @@ export function App({
 
       <InputBox
         onSubmit={executeTask}
-        isDisabled={status === "running"}
+        isDisabled={status === "running" || isModelSelectorOpen}
+        disabledMessage={
+          isModelSelectorOpen
+            ? "selecting model... (use [↑/↓] to navigate, [enter] to select, [esc] to cancel)"
+            : undefined
+        }
         history={promptHistory}
         width={terminalWidth}
       />

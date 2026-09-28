@@ -5,6 +5,7 @@ import { theme } from "../theme";
 export interface InputBoxProps {
   onSubmit: (value: string) => void;
   isDisabled?: boolean;
+  disabledMessage?: string;
   history?: string[];
   width?: number;
 }
@@ -12,6 +13,7 @@ export interface InputBoxProps {
 export function InputBox({
   onSubmit,
   isDisabled = false,
+  disabledMessage,
   history = [],
   width: customWidth,
 }: InputBoxProps) {
@@ -134,7 +136,7 @@ export function InputBox({
   const availWidth = Math.max(10, width - promptPrefix.length - 2);
 
   if (isDisabled) {
-    const disabledMsg = "processing task... (press [esc] to stop)";
+    const disabledMsg = disabledMessage || "processing task... (press [esc] to stop)";
     const pad = Math.max(0, width - promptPrefix.length - disabledMsg.length);
     return (
       <Box height={1} width={width} overflow="hidden">

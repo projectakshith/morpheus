@@ -154,7 +154,7 @@ export function generateRepoMap(
   cwd: string,
   options: RepoMapOptions = {}
 ): string {
-  const maxFiles = options.maxFiles ?? 30;
+  const maxFiles = options.maxFiles ?? 45;
   const maxDepth = options.maxDepth ?? 3;
 
   const candidateDirs = ["src", "lib", "app", "bin"];

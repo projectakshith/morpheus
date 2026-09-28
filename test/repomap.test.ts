@@ -22,7 +22,7 @@ describe("generateRepoMap (Skeleton Repo Map)", () => {
   it("produces compact token-efficient output", () => {
     const map = generateRepoMap(process.cwd());
     const lines = map.split("\n").filter(Boolean);
-    assert.ok(lines.length <= 30, "Repo map should remain under 30 lines");
+    assert.ok(lines.length <= 45, "Repo map should remain under 45 lines");
     for (const line of lines) {
       assert.ok(line.includes(":"), "Each entry should map file to symbols");
     }
