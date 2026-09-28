@@ -21,6 +21,14 @@ test("parseCLIArgs handles custom base-url", () => {
   assert.equal(parsed.task, "explain architecture");
 });
 
+test("parseCLIArgs handles --neo flag", () => {
+  const parsed = parseCLIArgs(["--neo", "-m", "flash", "inspect codebase"]);
+  assert.equal(parsed.isNeo, true);
+  assert.equal(parsed.baseURL, "http://127.0.0.1:8787/v1");
+  assert.equal(parsed.model, "flash");
+  assert.equal(parsed.task, "inspect codebase");
+});
+
 test("parseCLIArgs defaults properly with no arguments", () => {
   const parsed = parseCLIArgs([]);
   assert.equal(parsed.isVerbose, false);

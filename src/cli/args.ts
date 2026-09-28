@@ -1,6 +1,7 @@
 export interface ParsedCLIArgs {
   isVerbose: boolean;
   isLocal: boolean;
+  isNeo: boolean;
   model?: string;
   baseURL?: string;
   maxSteps?: number;
@@ -10,6 +11,7 @@ export interface ParsedCLIArgs {
 export function parseCLIArgs(args: string[] = process.argv.slice(2)): ParsedCLIArgs {
   let isVerbose = false;
   let isLocal = false;
+  let isNeo = false;
   let model: string | undefined;
   let baseURL: string | undefined;
   let maxSteps: number | undefined;
@@ -19,6 +21,9 @@ export function parseCLIArgs(args: string[] = process.argv.slice(2)): ParsedCLIA
     const arg = args[i];
     if (arg === "-v" || arg === "--verbose") {
       isVerbose = true;
+    } else if (arg === "--neo") {
+      isNeo = true;
+      baseURL = baseURL || "http://127.0.0.1:8787/v1";
     } else if (arg === "--local" || arg === "--ollama") {
       isLocal = true;
     } else if (arg === "-m" || arg === "--model") {
@@ -44,6 +49,7 @@ export function parseCLIArgs(args: string[] = process.argv.slice(2)): ParsedCLIA
   return {
     isVerbose,
     isLocal,
+    isNeo,
     model,
     baseURL,
     maxSteps,

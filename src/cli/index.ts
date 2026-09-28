@@ -11,10 +11,15 @@ export async function runCLI(args: string[] = process.argv.slice(2)): Promise<vo
   const isVerbose = parsed.isVerbose;
   const isLocal = parsed.isLocal;
   let model = parsed.model;
-  const baseURL = parsed.baseURL;
+  let baseURL = parsed.baseURL;
   const initialTask = parsed.task;
 
-  if (isLocal && !model) {
+  if (parsed.isNeo) {
+    baseURL = baseURL || "http://127.0.0.1:8787/v1";
+    if (!model) {
+      model = process.env.MORPHEUS_NEO_MODEL || "flash";
+    }
+  } else if (isLocal && !model) {
     model = process.env.MORPHEUS_LOCAL_MODEL || "qwen2.5-coder:7b";
   } else if (!model) {
     model =
