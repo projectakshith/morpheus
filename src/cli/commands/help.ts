@@ -19,9 +19,10 @@ export class HelpCommand implements CommandHandler {
 • \`/diff\` - View current git working tree modifications against HEAD
 • \`/session\` - View active session details and token metrics
 • \`/sessions\` - List recent persistent sessions in this repository
+• \`/queue\` or \`/clear-queue\` - View or clear background queued tasks
+• \`/stop\` or \`/abort\` - Halt active execution and clear pending queue
 • \`/resume [id]\` - Restore past session and conversation history
 • \`/new\` - Start a fresh conversation session
-• \`/log\` - Inspect recent agent execution and tool logs
 • \`/help\` - Show this overview
 
 *Or simply type any instruction or question to run an agentic task.*`;

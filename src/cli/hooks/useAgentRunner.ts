@@ -63,11 +63,15 @@ export function useAgentRunner({
   const [findings, setFindings] = useState<Finding[]>([]);
   const [sessionId, setSessionId] = useState<string>(() => generateSessionId());
   const [sessionTitle, setSessionTitle] = useState<string>("New Session");
+  const [queuedCount, setQueuedCount] = useState<number>(0);
 
   const abortControllerRef = useRef<AbortController | null>(null);
   const timerRef = useRef<NodeJS.Timeout | null>(null);
   const activeToolArgsRef = useRef<Record<string, unknown>>({});
   const sessionCreatedAtRef = useRef<number>(Date.now());
+  const promptQueueRef = useRef<{ id: string; prompt: string }[]>([]);
+  const isExecutingRef = useRef(false);
+  const executeAgentTurnRef = useRef<(taskText: string, existingThreadId?: string) => Promise<void>>(async () => {});
 
   /* Keep state refs to avoid closure staleness during async persistence */
   const threadsRef = useRef(threads);
@@ -137,40 +141,111 @@ export function useAgentRunner({
     setUsage(undefined);
   };
 
+  const drainNextQueuedTask = () => {
+    if (promptQueueRef.current.length > 0) {
+      const next = promptQueueRef.current.shift()!;
+      setQueuedCount(promptQueueRef.current.length);
+      executeAgentTurnRef.current(next.prompt, next.id).catch(console.error);
+    } else {
+      setStatus((prev) => (prev === "aborted" ? "aborted" : "idle"));
+    }
+  };
+
   const abort = () => {
-    if (status === "running") {
+    if (status === "running" || isExecutingRef.current) {
       abortControllerRef.current?.abort();
+      const cleared = promptQueueRef.current;
+      promptQueueRef.current = [];
+      setQueuedCount(0);
+      if (cleared.length > 0) {
+        setThreads((prev) =>
+          prev.map((t) =>
+            cleared.some((c) => c.id === t.id)
+              ? { ...t, status: "aborted", response: "*Cancelled from queue.*" }
+              : t
+          )
+        );
+      }
       setStatus("aborted");
     }
   };
 
-  const executeTask = async (taskText: string) => {
-    if (status === "running") return;
+  const clearQueue = () => {
+    const cleared = promptQueueRef.current;
+    promptQueueRef.current = [];
+    setQueuedCount(0);
+    if (cleared.length > 0) {
+      setThreads((prev) =>
+        prev.map((t) =>
+          cleared.some((c) => c.id === t.id)
+            ? { ...t, status: "aborted", response: "*Cancelled from queue.*" }
+            : t
+        )
+      );
+    }
+  };
 
-    /* Execute registered slash commands via modular CommandRegistry */
-    const handled = await commandRegistry.dispatch(taskText, {
-      taskText,
+  const executeTask = async (taskText: string) => {
+    const trimmed = taskText.trim();
+    if (!trimmed) return;
+
+    /* Execute registered slash commands via modular CommandRegistry immediately (even while running!) */
+    const handled = await commandRegistry.dispatch(trimmed, {
+      taskText: trimmed,
       baseURL: baseURL || "http://127.0.0.1:8787/v1",
       currentModel,
       setCurrentModel,
       setIsModelSelectorOpen,
       setThreads,
       setPromptHistory,
-      threadsCount: threads.length,
+      threadsCount: threadsRef.current.length,
       sessionId,
       setSessionId,
       sessionTitle,
       setHistory,
       setFindings,
       setFileEdits,
-      usage,
+      usage: usageRef.current,
       loadSessionById,
       resetSession,
       openModal,
       closeModal,
+      abort,
+      getQueue: () => promptQueueRef.current.map((q) => q.prompt),
+      clearQueue,
+      isAgentRunning: isExecutingRef.current || status === "running",
     });
 
     if (handled) return;
+
+    /* If agent is already active: queue the task instead of dropping it */
+    if (isExecutingRef.current || status === "running") {
+      const queueThreadId = `thread_queued_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`;
+      const queueThread: Thread = {
+        id: queueThreadId,
+        index: threadsRef.current.length + 1,
+        prompt: trimmed,
+        response: "",
+        isStreaming: false,
+        steps: [],
+        isExpanded: false,
+        status: "queued",
+        stepCount: 0,
+        startTime: Date.now(),
+      };
+
+      setPromptHistory((prev) => [...prev, trimmed]);
+      setThreads((prev) => [...prev, queueThread]);
+      promptQueueRef.current.push({ id: queueThreadId, prompt: trimmed });
+      setQueuedCount(promptQueueRef.current.length);
+      return;
+    }
+
+    await executeAgentTurn(trimmed);
+  };
+
+  const executeAgentTurn = async (taskText: string, existingThreadId?: string) => {
+    isExecutingRef.current = true;
 
     let currentTitle = sessionTitle;
     if (sessionTitle === "New Session" || !sessionTitle) {
@@ -185,7 +260,9 @@ export function useAgentRunner({
     setScrollOffset(0);
     isRightUserScrolledRef.current = false;
     setRightScrollTop(0);
-    setPromptHistory((prev) => [...prev, taskText]);
+    if (!existingThreadId) {
+      setPromptHistory((prev) => [...prev, taskText]);
+    }
 
     const abortController = new AbortController();
     abortControllerRef.current = abortController;
@@ -195,19 +272,38 @@ export function useAgentRunner({
       setElapsedSeconds(Math.floor((Date.now() - startTime) / 1000));
     }, 200);
 
-    const threadId = `thread_${Date.now()}`;
-    const newThread: Thread = {
-      id: threadId,
-      index: threads.length + 1,
-      prompt: taskText,
-      response: "",
-      isStreaming: false,
-      steps: [],
-      isExpanded: false,
-      status: "running",
-      stepCount: 0,
-      startTime,
-    };
+    const threadId = existingThreadId || `thread_${Date.now()}`;
+    if (existingThreadId) {
+      setThreads((prev) =>
+        prev.map((t) =>
+          t.id === existingThreadId
+            ? {
+                ...t,
+                status: "running",
+                response: "",
+                isStreaming: false,
+                steps: [],
+                stepCount: 0,
+                startTime,
+              }
+            : t
+        )
+      );
+    } else {
+      const newThread: Thread = {
+        id: threadId,
+        index: threadsRef.current.length + 1,
+        prompt: taskText,
+        response: "",
+        isStreaming: false,
+        steps: [],
+        isExpanded: false,
+        status: "running",
+        stepCount: 0,
+        startTime,
+      };
+      setThreads((prev) => [...prev, newThread]);
+    }
 
     /* Pre-flight check: verify required provider is authenticated */
     try {
@@ -247,7 +343,7 @@ export function useAgentRunner({
 
           const unauthThread: Thread = {
             id: threadId,
-            index: threads.length + 1,
+            index: threadsRef.current.length + (existingThreadId ? 0 : 1),
             prompt: taskText,
             response: `● **Authentication Required for ${authData.name || providerId}**\n\n${authData.error || "Provider is not authenticated."}\n\n*${fixHint}*`,
             isStreaming: false,
@@ -258,8 +354,14 @@ export function useAgentRunner({
             startTime,
             durationMs: 0,
           };
-          setThreads((prev) => [...prev, unauthThread]);
+          if (existingThreadId) {
+            setThreads((prev) => prev.map((t) => (t.id === threadId ? unauthThread : t)));
+          } else {
+            setThreads((prev) => [...prev, unauthThread]);
+          }
           setStatus("idle");
+          isExecutingRef.current = false;
+          drainNextQueuedTask();
           return;
         }
       }
@@ -267,22 +369,20 @@ export function useAgentRunner({
       /* Fallback gracefully if Neo auth check times out or fails */
     }
 
-    setThreads((prev) => [...prev, newThread]);
-
     let activeThinkingId: string | null = null;
     let activeToolId: string | null = null;
     let thinkingStartTime = 0;
     let activeToolStartTime = 0;
 
     try {
-      const result = await runAgent(taskText, history, {
+      const result = await runAgent(taskText, historyRef.current, {
         abortSignal: abortController.signal,
         model: currentModel,
         isLocal,
         baseURL,
         verbose: isVerbose,
         maxSteps,
-        findings,
+        findings: findingsRef.current,
         onStepStart: (step) => {
           setStepCount(step);
           if (!isUserScrolledRef.current) {
@@ -483,10 +583,13 @@ export function useAgentRunner({
         )
       );
 
+      historyRef.current = result.messages;
       setHistory(result.messages);
       if (result.findings) {
+        findingsRef.current = result.findings;
         setFindings(result.findings);
       }
+      usageRef.current = result.usage;
       setUsage(result.usage);
       setStatus(result.aborted ? "aborted" : "idle");
 
@@ -517,7 +620,15 @@ export function useAgentRunner({
         errMsg.includes("OpenRouter")
       ) {
         errorResponse += `\n\n*OpenRouter is not authenticated. Type \`/login openrouter <api-key>\` to configure your API key.*`;
-      } else if (errMsg.includes("Antigravity") && (errMsg.includes("missing") || errMsg.includes("credentials") || errMsg.includes("Keychain"))) {
+      } else if (
+        errMsg.includes("Antigravity") &&
+        (errMsg.includes("credentials") ||
+          errMsg.includes("Keychain") ||
+          errMsg.includes("401") ||
+          errMsg.includes("403") ||
+          errMsg.includes("unauthenticated") ||
+          errMsg.includes("OAuth error"))
+      ) {
         errorResponse += `\n\n*Google Cloud Code is not authenticated. Type \`/login antigravity\` to authenticate via browser OAuth.*`;
       } else if (errMsg.includes("fetch failed") || errMsg.includes("ECONNREFUSED")) {
         errorResponse += `\n\n*Unable to connect to model proxy (${baseURL || "http://127.0.0.1:8787"}). Type \`/auth\` to check credentials or ensure Neo is running.*`;
@@ -557,8 +668,12 @@ export function useAgentRunner({
         clearInterval(timerRef.current);
       }
       abortControllerRef.current = null;
+      isExecutingRef.current = false;
+      drainNextQueuedTask();
     }
   };
+
+  executeAgentTurnRef.current = executeAgentTurn;
 
   return {
     status,
@@ -581,5 +696,7 @@ export function useAgentRunner({
     resetSession,
     executeTask,
     abort,
+    queuedCount,
+    clearQueue,
   };
 }

@@ -26,7 +26,7 @@ export interface Thread {
   isStreaming?: boolean;
   steps: ThreadStep[];
   isExpanded: boolean;
-  status: "running" | "completed" | "aborted" | "error";
+  status: "running" | "completed" | "aborted" | "error" | "queued";
   stepCount: number;
   startTime: number;
   durationMs?: number;

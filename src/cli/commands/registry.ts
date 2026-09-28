@@ -6,6 +6,8 @@ import { loginCommand } from "./login.js";
 import { authCommand } from "./auth.js";
 import { helpCommand } from "./help.js";
 import { settingsCommand } from "./settings.js";
+import { stopCommand } from "./stop.js";
+import { queueCommand } from "./queue.js";
 
 export class CommandRegistry {
   private handlers: CommandHandler[] = [];
@@ -18,6 +20,8 @@ export class CommandRegistry {
     this.register(loginCommand);
     this.register(authCommand);
     this.register(settingsCommand);
+    this.register(stopCommand);
+    this.register(queueCommand);
     this.register(helpCommand);
   }
 

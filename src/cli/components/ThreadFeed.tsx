@@ -131,7 +131,18 @@ export function buildThreadFeedLines({
       }
     });
 
-    if (thread.response || thread.isStreaming) {
+    if (thread.status === "queued") {
+      lines.push({
+        id: `${thread.id}_queued_line`,
+        threadId: thread.id,
+        node: (
+          <Text backgroundColor={theme.bg} wrap="truncate-end">
+            <Text color={theme.warning}>  ⏳ [queued behind active task · waiting for turn]</Text>
+            {" ".repeat(Math.max(0, leftWidth - 52))}
+          </Text>
+        ),
+      });
+    } else if (thread.response || thread.isStreaming) {
       const asstHdr = "▲ morpheus";
       const padHdr = Math.max(0, leftWidth - asstHdr.length);
       lines.push({

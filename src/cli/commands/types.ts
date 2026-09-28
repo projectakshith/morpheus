@@ -26,6 +26,10 @@ export interface CommandContext {
   resetSession?: () => void;
   openModal?: (modal: "model" | "session" | "settings") => void;
   closeModal?: () => void;
+  abort?: () => void;
+  getQueue?: () => string[];
+  clearQueue?: () => void;
+  isAgentRunning?: boolean;
 }
 
 export interface CommandHandler {

@@ -87,6 +87,7 @@ export function App({
     resetSession,
     executeTask,
     abort,
+    queuedCount,
   } = useAgentRunner({
     currentModel,
     setCurrentModel,
@@ -399,11 +400,12 @@ export function App({
         elapsedSeconds={elapsedSeconds}
         width={terminalWidth}
         scrollOffset={scrollOffset}
+        queueCount={queuedCount}
       />
 
       <InputBox
         onSubmit={executeTask}
-        isDisabled={status === "running" || activeModal !== "none"}
+        isDisabled={activeModal !== "none"}
         disabledMessage={
           activeModal === "model"
             ? "selecting model... (use [↑/↓] to navigate, [enter] to select, [esc] to cancel)"
@@ -411,6 +413,13 @@ export function App({
             ? "browsing sessions... (use [↑/↓] to navigate, [enter] to resume, [esc] to cancel)"
             : activeModal === "settings"
             ? "settings dashboard... (use [↑/↓] to navigate, [enter] to toggle, [esc] to cancel)"
+            : undefined
+        }
+        placeholder={
+          status === "running"
+            ? queuedCount > 0
+              ? ` [${queuedCount} queued] type prompt to queue or run /command...`
+              : " agent working · type prompt to queue or run /command..."
             : undefined
         }
         history={promptHistory}

@@ -115,5 +115,64 @@ describe("CommandRegistry", () => {
     assert.equal(handled, true);
     assert.equal(modalOpened, "session");
   });
+
+  it("dispatches /stop command and triggers abort callback", async () => {
+    let aborted = false;
+    let threadCreated: Thread | null = null;
+    const ctx: CommandContext = {
+      taskText: "/stop",
+      baseURL: "http://127.0.0.1:8787/v1",
+      currentModel: "flash",
+      setCurrentModel: () => {},
+      setIsModelSelectorOpen: () => {},
+      setThreads: (updater) => {
+        const next = typeof updater === "function" ? updater([]) : updater;
+        threadCreated = next[0] || null;
+      },
+      setPromptHistory: () => {},
+      threadsCount: 0,
+      abort: () => {
+        aborted = true;
+      },
+    };
+
+    const handled = await commandRegistry.dispatch("/stop", ctx);
+    assert.equal(handled, true);
+    assert.equal(aborted, true);
+    assert.ok(threadCreated);
+    assert.ok((threadCreated as Thread).response.includes("stopped"));
+  });
+
+  it("dispatches /queue and /clear-queue commands cleanly", async () => {
+    let queueCleared = false;
+    let threadCreated: Thread | null = null;
+    const mockQueue = ["fix authentication", "run build"];
+
+    const ctx: CommandContext = {
+      taskText: "/queue",
+      baseURL: "http://127.0.0.1:8787/v1",
+      currentModel: "flash",
+      setCurrentModel: () => {},
+      setIsModelSelectorOpen: () => {},
+      setThreads: (updater) => {
+        const next = typeof updater === "function" ? updater([]) : updater;
+        threadCreated = next[0] || null;
+      },
+      setPromptHistory: () => {},
+      threadsCount: 0,
+      getQueue: () => mockQueue,
+      clearQueue: () => {
+        queueCleared = true;
+      },
+    };
+
+    const handledQueue = await commandRegistry.dispatch("/queue", ctx);
+    assert.equal(handledQueue, true);
+    assert.ok((threadCreated as Thread).response.includes("fix authentication"));
+
+    const handledClear = await commandRegistry.dispatch("/clear-queue", ctx);
+    assert.equal(handledClear, true);
+    assert.equal(queueCleared, true);
+  });
 });
 

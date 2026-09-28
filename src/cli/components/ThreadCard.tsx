@@ -27,7 +27,7 @@ export interface Thread {
   isStreaming?: boolean;
   steps: ThreadStep[];
   isExpanded: boolean;
-  status: "running" | "completed" | "aborted" | "error";
+  status: "running" | "completed" | "aborted" | "error" | "queued";
   stepCount: number;
   startTime: number;
   durationMs?: number;
@@ -73,7 +73,11 @@ export function ThreadCard({ thread, isThinkingExpanded = false }: ThreadCardPro
         </Box>
       </Box>
 
-      {thread.status === "running" ? (
+      {thread.status === "queued" ? (
+        <Box marginLeft={2} marginY={0}>
+          <Text color="yellow">⏳ [queued behind active task · waiting for turn]</Text>
+        </Box>
+      ) : thread.status === "running" ? (
         <Box flexDirection="column" marginLeft={2} marginY={0}>
           {thread.steps.map((step) => {
             if (step.type === "thinking") {

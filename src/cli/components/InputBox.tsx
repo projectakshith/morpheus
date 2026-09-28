@@ -6,6 +6,7 @@ export interface InputBoxProps {
   onSubmit: (value: string) => void;
   isDisabled?: boolean;
   disabledMessage?: string;
+  placeholder?: string;
   history?: string[];
   width?: number;
 }
@@ -14,6 +15,7 @@ export function InputBox({
   onSubmit,
   isDisabled = false,
   disabledMessage,
+  placeholder: customPlaceholder,
   history = [],
   width: customWidth,
 }: InputBoxProps) {
@@ -153,7 +155,7 @@ export function InputBox({
   }
 
   if (value.length === 0) {
-    const placeholder = " ask a question or describe a task...";
+    const placeholder = customPlaceholder ?? " ask a question or describe a task...";
     const pad = Math.max(0, width - promptPrefix.length - 1 - placeholder.length);
     return (
       <Box height={1} width={width} overflow="hidden">

@@ -13,6 +13,7 @@ export interface StatusBarProps {
   isThinkingExpanded?: boolean;
   width?: number;
   scrollOffset?: number;
+  queueCount?: number;
 }
 
 export function StatusBar({
@@ -23,6 +24,7 @@ export function StatusBar({
   elapsedSeconds,
   width: customWidth,
   scrollOffset = 0,
+  queueCount = 0,
 }: StatusBarProps) {
   const width = customWidth ?? Math.max(40, process.stdout.columns ? process.stdout.columns - 2 : 76);
 
@@ -51,9 +53,15 @@ export function StatusBar({
       ? "● ERROR"
       : "● READY";
 
-  const metricsStr = ` · ${timeStr} · step ${stepCount}/${maxSteps} · ctx ${peakCtx}/${limitCtx} · api ${totalTokens}`;
+  const queueStr = queueCount > 0 ? ` · ⏳ ${queueCount} queued` : "";
+  const metricsStr = ` · ${timeStr} · step ${stepCount}/${maxSteps} · ctx ${peakCtx}/${limitCtx} · api ${totalTokens}${queueStr}`;
   const scrollStr = scrollOffset > 0 ? ` · ▲ +${scrollOffset}` : "";
-  const hintStr = scrollOffset > 0 ? "[end] bottom · [esc] stop" : "/model switch · [esc] stop · [ctrl+c] exit";
+  const hintStr =
+    scrollOffset > 0
+      ? "[end] bottom · [esc] stop"
+      : status === "running"
+      ? "/command · type prompt to queue · [esc] stop"
+      : "/model switch · [esc] stop · [ctrl+c] exit";
 
   const leftLen =
     (status === "running" ? 2 : 0) +
