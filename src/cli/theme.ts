@@ -48,6 +48,7 @@ export const theme = {
   diffAdd: PALETTE.diffAdd,
   diffRemove: PALETTE.diffRemove,
   diffHunk: PALETTE.diffHunk,
+  error: PALETTE.diffRemove,
   hexToRgb,
   ansiFg,
   ansiBg,

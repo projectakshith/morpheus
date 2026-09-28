@@ -101,50 +101,56 @@ const SUPPORTED_EXTS = new Set([
 
 function scanDirectory(
   baseDir: string,
-  currentDir: string,
-  maxDepth: number,
-  depth = 0
+  startDir: string,
+  maxDepth: number
 ): string[] {
-  if (depth >= maxDepth) return [];
-
   const lines: string[] = [];
-  const subdirs: string[] = [];
-  let entries: fs.Dirent[] = [];
+  const queue: Array<{ dir: string; depth: number }> = [{ dir: startDir, depth: 0 }];
 
-  try {
-    entries = fs.readdirSync(currentDir, { withFileTypes: true });
-  } catch {
-    return [];
-  }
+  while (queue.length > 0) {
+    const item = queue.shift();
+    if (!item) break;
+    const { dir, depth } = item;
+    if (depth >= maxDepth) continue;
 
-  for (const entry of entries) {
-    if (entry.name.startsWith(".")) continue;
+    let entries: fs.Dirent[] = [];
+    try {
+      entries = fs.readdirSync(dir, { withFileTypes: true });
+    } catch {
+      continue;
+    }
 
-    const fullPath = path.join(currentDir, entry.name);
+    const subdirs: string[] = [];
 
-    if (entry.isDirectory()) {
-      if (IGNORED_DIRS.has(entry.name)) continue;
-      subdirs.push(fullPath);
-    } else if (entry.isFile()) {
-      const ext = path.extname(entry.name);
-      if (!SUPPORTED_EXTS.has(ext)) continue;
-      if (entry.name.includes(".test.") || entry.name.includes(".spec.")) continue;
+    for (const entry of entries) {
+      if (entry.name.startsWith(".")) continue;
+      const fullPath = path.join(dir, entry.name);
 
-      try {
-        const code = fs.readFileSync(fullPath, "utf-8");
-        const symbols = extractSymbols(code);
-        if (symbols.length > 0) {
-          const relPath = path.relative(baseDir, fullPath);
-          lines.push(`${relPath}: ${symbols.join(", ")}`);
+      if (entry.isDirectory()) {
+        if (!IGNORED_DIRS.has(entry.name)) {
+          subdirs.push(fullPath);
         }
-      } catch {
-        continue;
+      } else if (entry.isFile()) {
+        const ext = path.extname(entry.name);
+        if (!SUPPORTED_EXTS.has(ext)) continue;
+        if (entry.name.includes(".test.") || entry.name.includes(".spec.")) continue;
+
+        try {
+          const code = fs.readFileSync(fullPath, "utf-8");
+          const symbols = extractSymbols(code);
+          if (symbols.length > 0) {
+            const relPath = path.relative(baseDir, fullPath);
+            lines.push(`${relPath}: ${symbols.join(", ")}`);
+          }
+        } catch {
+          continue;
+        }
       }
     }
-  }
 
-  for (const subdir of subdirs) {
-    lines.push(...scanDirectory(baseDir, subdir, maxDepth, depth + 1));
+    for (const subdir of subdirs) {
+      queue.push({ dir: subdir, depth: depth + 1 });
+    }
   }
 
   return lines;
@@ -163,12 +169,12 @@ export function generateRepoMap(
   for (const sub of candidateDirs) {
     const full = path.join(cwd, sub);
     if (fs.existsSync(full)) {
-      lines.push(...scanDirectory(cwd, full, maxDepth, 0));
+      lines.push(...scanDirectory(cwd, full, maxDepth));
     }
   }
 
   if (lines.length === 0) {
-    lines.push(...scanDirectory(cwd, cwd, maxDepth, 0));
+    lines.push(...scanDirectory(cwd, cwd, maxDepth));
   }
 
   const selected = lines.slice(0, maxFiles);
