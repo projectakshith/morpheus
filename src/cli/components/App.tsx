@@ -837,13 +837,71 @@ export function App({
       return;
     }
 
-    if (trimmed === "/login") {
+    if (trimmed === "/login" || trimmed.startsWith("/login ")) {
+      const parts = trimmed.split(/\s+/);
+      const subCommand = parts[1]?.toLowerCase();
+      const arg = parts.slice(2).join(" ").trim();
       const loginThreadId = `thread_${Date.now()}`;
+
+      /* Handle /login help or unknown subcommand */
+      if (subCommand && !["antigravity", "agy", "google", "openrouter", "local", "ollama"].includes(subCommand)) {
+        const helpText = `● **Modular Authentication Providers**\n\n• \`/login antigravity\` - Authenticate Google Cloud Code via browser OAuth\n• \`/login openrouter <api-key>\` - Validate and store OpenRouter API key\n• \`/login local [baseUrl]\` - Connect to local Ollama server (default: http://127.0.0.1:11434)\n• \`/auth\` - View real-time status across all providers`;
+        const helpThread: Thread = {
+          id: loginThreadId,
+          index: threads.length + 1,
+          prompt: taskText,
+          response: helpText,
+          isStreaming: false,
+          steps: [],
+          isExpanded: false,
+          status: "completed",
+          stepCount: 0,
+          startTime: Date.now(),
+          durationMs: 0,
+        };
+        setPromptHistory((prev) => [...prev, taskText]);
+        setThreads((prev) => [...prev, helpThread]);
+        return;
+      }
+
+      /* Determine target provider */
+      let targetProvider = "antigravity";
+      let requestBody: Record<string, unknown> = { provider: "antigravity" };
+      let initialMessage = "Opening Google authentication in your default browser...\nPlease complete sign-in and return to this terminal.";
+
+      if (subCommand === "openrouter") {
+        targetProvider = "openrouter";
+        if (!arg) {
+          const errThread: Thread = {
+            id: loginThreadId,
+            index: threads.length + 1,
+            prompt: taskText,
+            response: "Error: OpenRouter API key is required.\nUsage: `/login openrouter <your-api-key>`",
+            isStreaming: false,
+            steps: [],
+            isExpanded: false,
+            status: "error",
+            stepCount: 0,
+            startTime: Date.now(),
+            durationMs: 0,
+          };
+          setPromptHistory((prev) => [...prev, taskText]);
+          setThreads((prev) => [...prev, errThread]);
+          return;
+        }
+        requestBody = { provider: "openrouter", apiKey: arg };
+        initialMessage = "Validating OpenRouter API key...";
+      } else if (subCommand === "local" || subCommand === "ollama") {
+        targetProvider = "local";
+        requestBody = { provider: "local", baseUrl: arg || undefined };
+        initialMessage = "Connecting to local Ollama server...";
+      }
+
       const initialLoginThread: Thread = {
         id: loginThreadId,
         index: threads.length + 1,
         prompt: taskText,
-        response: "Opening Google authentication in your default browser...\nPlease complete sign-in and return to this terminal.",
+        response: initialMessage,
         isStreaming: false,
         steps: [],
         isExpanded: false,
@@ -861,28 +919,54 @@ export function App({
           ? `${neoBase}/auth/login`
           : `${neoBase}/v1/auth/login`;
 
-        const res = await fetch(loginUrl, { method: "POST" });
+        const res = await fetch(loginUrl, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(requestBody),
+        });
+
         if (res.ok) {
+          const resData = (await res.json()) as {
+            status?: string;
+            provider?: string;
+            auth?: { identity?: string; details?: Record<string, unknown> };
+          };
+          let successMessage = "";
+          if (targetProvider === "antigravity") {
+            successMessage = "Authentication successful! Google Cloud credentials have been refreshed and saved to macOS Keychain.";
+          } else if (targetProvider === "openrouter") {
+            const maskedKey = resData?.auth?.identity || "sk-or-v1-***";
+            successMessage = `Authentication successful! OpenRouter API key validated (\`${maskedKey}\`) and securely saved to macOS Keychain.`;
+          } else if (targetProvider === "local") {
+            const count = (resData?.auth?.details?.count as number) || 0;
+            successMessage = `Connected to local runtime successfully! Discovered ${count} local models from Ollama.`;
+          }
+
           setThreads((prev) =>
             prev.map((t) =>
               t.id === loginThreadId
                 ? {
                     ...t,
                     status: "completed",
-                    response: "Authentication successful! Google Cloud credentials have been refreshed and saved to macOS Keychain.",
+                    response: successMessage,
                   }
                 : t
             )
           );
         } else {
           const errText = await res.text();
+          let parsedErr = errText;
+          try {
+            const parsed = JSON.parse(errText);
+            if (parsed.error) parsedErr = typeof parsed.error === "string" ? parsed.error : parsed.error.message;
+          } catch {}
           setThreads((prev) =>
             prev.map((t) =>
               t.id === loginThreadId
                 ? {
                     ...t,
                     status: "error",
-                    response: `Authentication error (${res.status}): ${errText}`,
+                    response: `Authentication error (${res.status}): ${parsedErr}`,
                   }
                 : t
             )
@@ -912,16 +996,55 @@ export function App({
           ? `${neoBase}/auth/status`
           : `${neoBase}/v1/auth/status`;
 
-        const res = await fetch(statusUrl, { signal: AbortSignal.timeout(1500) });
+        const res = await fetch(statusUrl, { signal: AbortSignal.timeout(2000) });
         if (res.ok) {
           const info = (await res.json()) as {
-            authenticated: boolean;
+            authenticated?: boolean;
             email?: string;
             expiry?: string;
             service?: string;
             account?: string;
+            providers?: Array<{
+              provider: string;
+              name: string;
+              authType: string;
+              authenticated: boolean;
+              identity?: string;
+              expiry?: string;
+              details?: Record<string, unknown>;
+              error?: string;
+            }>;
           };
-          if (info.authenticated) {
+
+          if (info.providers && Array.isArray(info.providers)) {
+            const sections = info.providers.map((p) => {
+              if (p.authenticated) {
+                let detailLines = "";
+                if (p.identity) {
+                  detailLines += `\n• **Identity:** \`${p.identity}\``;
+                }
+                if (p.expiry) {
+                  detailLines += `\n• **Token Expiry:** \`${p.expiry}\``;
+                }
+                if (p.details?.count !== undefined) {
+                  detailLines += `\n• **Discovered Models:** \`${p.details.count}\``;
+                }
+                return `● **${p.name}**: Active${detailLines}`;
+              } else {
+                let hint = "";
+                if (p.provider === "antigravity") {
+                  hint = "Type `/login antigravity` to authenticate via Google OAuth.";
+                } else if (p.provider === "openrouter") {
+                  hint = "Type `/login openrouter <api-key>` to configure.";
+                } else if (p.provider === "local") {
+                  hint = "Start Ollama (`ollama serve`) or run `/login local [url]`.";
+                }
+                return `○ **${p.name}**: Not Active\n• *${p.error || "Unauthenticated"}*\n• ${hint}`;
+              }
+            });
+
+            authStatusText = `### Provider Authentication Status\n\n${sections.join("\n\n")}\n\n*Configure any provider with \`/login <provider>\`.*`;
+          } else if (info.authenticated) {
             authStatusText = `● **Authentication Active** (macOS Keychain)\n• **Account:** \`${info.email || "Active"}\`\n• **Keychain Target:** \`${info.service || "gemini"} / ${info.account || "antigravity"}\`\n• **Token Expiry:** \`${info.expiry || "Auto-refreshing"}\`\n\n*All Antigravity models route through this identity.*`;
           } else {
             authStatusText = `● **Authentication Missing**\nNo credentials found in macOS Keychain. Type \`/login\` to authenticate.`;
