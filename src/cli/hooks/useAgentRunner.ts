@@ -2,13 +2,19 @@
  * useAgentRunner: Hook managing agent execution turns, thread states, and stream callbacks.
  */
 
-import React, { useState, useRef, type MutableRefObject } from "react";
+import React, { useState, useRef, useEffect, type MutableRefObject } from "react";
 import { runAgent } from "../../core/agent.js";
 import type { ChatMessage, Finding, TokenUsage } from "../../core/types.js";
 import { isToolError } from "../../utils/errors.js";
 import type { Thread, ThreadStep, FileEditRecord, AppStatus } from "../types.js";
 import { extractDiffRecord } from "../utils/diffRecord.js";
 import { commandRegistry } from "../commands/registry.js";
+import {
+  generateSessionId,
+  saveSession,
+  loadSession,
+  loadLatestSession,
+} from "../../core/session.js";
 
 export interface AgentRunnerOptions {
   currentModel: string;
@@ -19,6 +25,7 @@ export interface AgentRunnerOptions {
   isVerbose?: boolean;
   maxSteps?: number;
   initialTask?: string;
+  resumeSessionId?: string | boolean;
   isUserScrolledRef: MutableRefObject<boolean>;
   setScrollOffset: React.Dispatch<React.SetStateAction<number>>;
   isRightUserScrolledRef: MutableRefObject<boolean>;
@@ -35,6 +42,7 @@ export function useAgentRunner({
   isVerbose = false,
   maxSteps,
   initialTask,
+  resumeSessionId,
   isUserScrolledRef,
   setScrollOffset,
   isRightUserScrolledRef,
@@ -49,10 +57,81 @@ export function useAgentRunner({
   const [fileEdits, setFileEdits] = useState<FileEditRecord[]>([]);
   const [history, setHistory] = useState<ChatMessage[]>([]);
   const [findings, setFindings] = useState<Finding[]>([]);
+  const [sessionId, setSessionId] = useState<string>(() => generateSessionId());
+  const [sessionTitle, setSessionTitle] = useState<string>("New Session");
 
   const abortControllerRef = useRef<AbortController | null>(null);
   const timerRef = useRef<NodeJS.Timeout | null>(null);
   const activeToolArgsRef = useRef<Record<string, unknown>>({});
+  const sessionCreatedAtRef = useRef<number>(Date.now());
+
+  /* Keep state refs to avoid closure staleness during async persistence */
+  const threadsRef = useRef(threads);
+  threadsRef.current = threads;
+  const historyRef = useRef(history);
+  historyRef.current = history;
+  const findingsRef = useRef(findings);
+  findingsRef.current = findings;
+  const fileEditsRef = useRef(fileEdits);
+  fileEditsRef.current = fileEdits;
+  const usageRef = useRef(usage);
+  usageRef.current = usage;
+
+  /* Resume session if requested on boot */
+  useEffect(() => {
+    if (!resumeSessionId) return;
+
+    const initResume = async () => {
+      let data = null;
+      if (typeof resumeSessionId === "string") {
+        data = await loadSession(resumeSessionId);
+      } else {
+        data = await loadLatestSession(process.cwd());
+      }
+
+      if (data) {
+        setSessionId(data.id);
+        setSessionTitle(data.title || "Resumed Session");
+        sessionCreatedAtRef.current = data.createdAt || Date.now();
+        if (data.model) setCurrentModel(data.model);
+        if (data.threads) setThreads(data.threads);
+        if (data.history) setHistory(data.history);
+        if (data.findings) setFindings(data.findings);
+        if (data.fileEdits) setFileEdits(data.fileEdits);
+        if (data.tokenUsage) setUsage(data.tokenUsage);
+      }
+    };
+
+    initResume();
+  }, [resumeSessionId]);
+
+  const loadSessionById = async (id: string): Promise<boolean> => {
+    const data = await loadSession(id);
+    if (!data) return false;
+
+    setSessionId(data.id);
+    setSessionTitle(data.title || "Resumed Session");
+    sessionCreatedAtRef.current = data.createdAt || Date.now();
+    if (data.model) setCurrentModel(data.model);
+    setThreads(data.threads || []);
+    setHistory(data.history || []);
+    setFindings(data.findings || []);
+    setFileEdits(data.fileEdits || []);
+    if (data.tokenUsage) setUsage(data.tokenUsage);
+    return true;
+  };
+
+  const resetSession = () => {
+    const newId = generateSessionId();
+    setSessionId(newId);
+    setSessionTitle("New Session");
+    sessionCreatedAtRef.current = Date.now();
+    setThreads([]);
+    setHistory([]);
+    setFindings([]);
+    setFileEdits([]);
+    setUsage(undefined);
+  };
 
   const abort = () => {
     if (status === "running") {
@@ -74,9 +153,24 @@ export function useAgentRunner({
       setThreads,
       setPromptHistory,
       threadsCount: threads.length,
+      sessionId,
+      setSessionId,
+      sessionTitle,
+      setHistory,
+      setFindings,
+      setFileEdits,
+      usage,
+      loadSessionById,
+      resetSession,
     });
 
     if (handled) return;
+
+    let currentTitle = sessionTitle;
+    if (sessionTitle === "New Session" || !sessionTitle) {
+      currentTitle = taskText.slice(0, 50).trim();
+      setSessionTitle(currentTitle);
+    }
 
     setStatus("running");
     setStepCount(0);
@@ -389,6 +483,23 @@ export function useAgentRunner({
       }
       setUsage(result.usage);
       setStatus(result.aborted ? "aborted" : "idle");
+
+      /* Auto-save session asynchronously after successful turn */
+      setTimeout(() => {
+        saveSession({
+          id: sessionId,
+          title: currentTitle,
+          cwd: process.cwd(),
+          createdAt: sessionCreatedAtRef.current,
+          updatedAt: Date.now(),
+          model: currentModel,
+          threads: threadsRef.current,
+          history: result.messages,
+          findings: result.findings || findingsRef.current,
+          fileEdits: fileEditsRef.current,
+          tokenUsage: result.usage || usageRef.current,
+        }).catch(() => {});
+      }, 50);
     } catch (err: unknown) {
       setStatus("error");
       const errMsg = err instanceof Error ? err.message : String(err);
@@ -418,6 +529,23 @@ export function useAgentRunner({
             : t
         )
       );
+
+      /* Auto-save session state even upon error */
+      setTimeout(() => {
+        saveSession({
+          id: sessionId,
+          title: currentTitle,
+          cwd: process.cwd(),
+          createdAt: sessionCreatedAtRef.current,
+          updatedAt: Date.now(),
+          model: currentModel,
+          threads: threadsRef.current,
+          history: historyRef.current,
+          findings: findingsRef.current,
+          fileEdits: fileEditsRef.current,
+          tokenUsage: usageRef.current,
+        }).catch(() => {});
+      }, 50);
     } finally {
       if (timerRef.current) {
         clearInterval(timerRef.current);
@@ -435,8 +563,16 @@ export function useAgentRunner({
     threads,
     setThreads,
     fileEdits,
+    setFileEdits,
     findings,
+    setFindings,
     history,
+    setHistory,
+    sessionId,
+    setSessionId,
+    sessionTitle,
+    loadSessionById,
+    resetSession,
     executeTask,
     abort,
   };

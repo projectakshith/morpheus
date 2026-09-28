@@ -29,6 +29,7 @@ export function App({
   isVerbose = false,
   initialTask,
   maxSteps,
+  resumeSessionId,
 }: AppProps) {
   const [currentModel, setCurrentModel] = useState(model);
   const [isModelSelectorOpen, setIsModelSelectorOpen] = useState(false);
@@ -39,7 +40,7 @@ export function App({
   const [collapsedThreadIds, setCollapsedThreadIds] = useState<Set<string>>(new Set());
   const [expandedFileEdits, setExpandedFileEdits] = useState<Set<string>>(new Set());
   const [rightScrollTop, setRightScrollTop] = useState(0);
-  const [isIntroActive, setIsIntroActive] = useState(!initialTask);
+  const [isIntroActive, setIsIntroActive] = useState(!initialTask && !resumeSessionId);
   const [introProgress, setIntroProgress] = useState(0);
   const [introTick, setIntroTick] = useState(0);
   const [matrixQuote] = useState(() => MATRIX_QUOTES[Math.floor(Math.random() * MATRIX_QUOTES.length)]);
@@ -85,6 +86,7 @@ export function App({
     isVerbose,
     maxSteps,
     initialTask,
+    resumeSessionId,
     isUserScrolledRef,
     setScrollOffset,
     isRightUserScrolledRef,

@@ -17,7 +17,11 @@ export class HelpCommand implements CommandHandler {
 • \`/login [provider] [args]\` - Authenticate with Antigravity, OpenRouter, or Local
 • \`/auth\` or \`/whoami\` - View active provider credentials & connection health
 • \`/diff\` - View current git working tree modifications against HEAD
-• \`/log\` or \`/session\` - Inspect recent agent execution and tool logs
+• \`/session\` - View active session details and token metrics
+• \`/sessions\` - List recent persistent sessions in this repository
+• \`/resume [id]\` - Restore past session and conversation history
+• \`/new\` - Start a fresh conversation session
+• \`/log\` - Inspect recent agent execution and tool logs
 • \`/help\` - Show this overview
 
 *Or simply type any instruction or question to run an agentic task.*`;

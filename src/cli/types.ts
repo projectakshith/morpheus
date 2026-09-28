@@ -39,6 +39,7 @@ export interface AppProps {
   isVerbose?: boolean;
   initialTask?: string;
   maxSteps?: number;
+  resumeSessionId?: string | boolean;
 }
 
 export interface FeedLine {

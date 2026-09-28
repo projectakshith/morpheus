@@ -48,3 +48,16 @@ test("parseCLIArgs handles --max-steps and -s flags", () => {
   assert.equal(parsed2.maxSteps, 6);
   assert.equal(parsed2.task, "explore repo");
 });
+
+test("parseCLIArgs handles -r and --resume flags", () => {
+  const parsed1 = parseCLIArgs(["-r"]);
+  assert.equal(parsed1.resumeSessionId, true);
+
+  const parsed2 = parseCLIArgs(["--resume", "sess_12345_abc"]);
+  assert.equal(parsed2.resumeSessionId, "sess_12345_abc");
+
+  const parsed3 = parseCLIArgs(["--session", "sess_67890_xyz", "continue task"]);
+  assert.equal(parsed3.resumeSessionId, "sess_67890_xyz");
+  assert.equal(parsed3.task, "continue task");
+});
+

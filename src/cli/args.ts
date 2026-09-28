@@ -1,3 +1,7 @@
+/*
+ * CLI argument parser: extracts model, flags, step limits, session resumption, and initial tasks.
+ */
+
 export interface ParsedCLIArgs {
   isVerbose: boolean;
   isLocal: boolean;
@@ -5,6 +9,7 @@ export interface ParsedCLIArgs {
   model?: string;
   baseURL?: string;
   maxSteps?: number;
+  resumeSessionId?: string | boolean;
   task: string;
 }
 
@@ -15,6 +20,7 @@ export function parseCLIArgs(args: string[] = process.argv.slice(2)): ParsedCLIA
   let model: string | undefined;
   let baseURL: string | undefined;
   let maxSteps: number | undefined;
+  let resumeSessionId: string | boolean | undefined;
   const remainingArgs: string[] = [];
 
   for (let i = 0; i < args.length; i++) {
@@ -41,6 +47,16 @@ export function parseCLIArgs(args: string[] = process.argv.slice(2)): ParsedCLIA
           maxSteps = parsedNum;
         }
       }
+    } else if (arg === "-r" || arg === "--resume") {
+      if (i + 1 < args.length && !args[i + 1].startsWith("-")) {
+        resumeSessionId = args[++i];
+      } else {
+        resumeSessionId = true;
+      }
+    } else if (arg === "--session") {
+      if (i + 1 < args.length) {
+        resumeSessionId = args[++i];
+      }
     } else {
       remainingArgs.push(arg);
     }
@@ -53,6 +69,7 @@ export function parseCLIArgs(args: string[] = process.argv.slice(2)): ParsedCLIA
     model,
     baseURL,
     maxSteps,
+    resumeSessionId,
     task: remainingArgs.join(" ").trim(),
   };
 }
