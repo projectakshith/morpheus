@@ -74,8 +74,16 @@ export class SessionCommand implements CommandHandler {
       return true;
     }
 
-    /* /sessions or /session list: list past sessions */
-    if (trimmed === "/sessions" || sub === "list" || sub === "ls") {
+    /* Open interactive session modal if available */
+    if (trimmed === "/sessions" || trimmed === "/session" || trimmed === "/resume" || sub === "list" || sub === "ls") {
+      if (ctx.openModal) {
+        ctx.openModal("session");
+        return true;
+      }
+    }
+
+    /* /sessions or /session list: list past sessions in text mode */
+    if (trimmed === "/sessions" || sub === "list" || sub === "ls" || trimmed === "/resume") {
       const summaries = await listSessions(process.cwd(), 10);
       if (summaries.length === 0) {
         this.createFeedbackThread(
@@ -106,6 +114,10 @@ export class SessionCommand implements CommandHandler {
     if (sub === "resume" || sub === "load") {
       const targetId = parts[0] === "/session" ? parts[2] : parts[1];
       if (!targetId) {
+        if (ctx.openModal) {
+          ctx.openModal("session");
+          return true;
+        }
         this.createFeedbackThread(
           ctx,
           "Usage: `/resume <session_id>` or `/session load <session_id>`\nType `/sessions` to list available sessions."

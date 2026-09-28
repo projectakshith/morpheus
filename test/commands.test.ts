@@ -73,4 +73,47 @@ describe("CommandRegistry", () => {
     const handled = await commandRegistry.dispatch("Refactor this component to be modular", ctx);
     assert.equal(handled, false);
   });
+
+  it("triggers settings modal on /settings dispatch", async () => {
+    let modalOpened: string | null = null;
+    const ctx: CommandContext = {
+      taskText: "/settings",
+      baseURL: "http://127.0.0.1:8787/v1",
+      currentModel: "flash",
+      setCurrentModel: () => {},
+      setIsModelSelectorOpen: () => {},
+      setThreads: () => {},
+      setPromptHistory: () => {},
+      threadsCount: 0,
+      openModal: (modal) => {
+        modalOpened = modal;
+      },
+    };
+
+    const handled = await commandRegistry.dispatch("/settings", ctx);
+    assert.equal(handled, true);
+    assert.equal(modalOpened, "settings");
+  });
+
+  it("triggers session modal on /sessions dispatch", async () => {
+    let modalOpened: string | null = null;
+    const ctx: CommandContext = {
+      taskText: "/sessions",
+      baseURL: "http://127.0.0.1:8787/v1",
+      currentModel: "flash",
+      setCurrentModel: () => {},
+      setIsModelSelectorOpen: () => {},
+      setThreads: () => {},
+      setPromptHistory: () => {},
+      threadsCount: 0,
+      openModal: (modal) => {
+        modalOpened = modal;
+      },
+    };
+
+    const handled = await commandRegistry.dispatch("/sessions", ctx);
+    assert.equal(handled, true);
+    assert.equal(modalOpened, "session");
+  });
 });
+

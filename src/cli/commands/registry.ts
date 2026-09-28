@@ -5,6 +5,7 @@ import { modelCommand } from "./model.js";
 import { loginCommand } from "./login.js";
 import { authCommand } from "./auth.js";
 import { helpCommand } from "./help.js";
+import { settingsCommand } from "./settings.js";
 
 export class CommandRegistry {
   private handlers: CommandHandler[] = [];
@@ -16,6 +17,7 @@ export class CommandRegistry {
     this.register(modelCommand);
     this.register(loginCommand);
     this.register(authCommand);
+    this.register(settingsCommand);
     this.register(helpCommand);
   }
 

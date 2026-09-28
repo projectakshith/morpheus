@@ -31,6 +31,8 @@ export interface AgentRunnerOptions {
   isRightUserScrolledRef: MutableRefObject<boolean>;
   setRightScrollTop: React.Dispatch<React.SetStateAction<number>>;
   setPromptHistory: React.Dispatch<React.SetStateAction<string[]>>;
+  openModal?: (modal: "model" | "session" | "settings") => void;
+  closeModal?: () => void;
 }
 
 export function useAgentRunner({
@@ -48,6 +50,8 @@ export function useAgentRunner({
   isRightUserScrolledRef,
   setRightScrollTop,
   setPromptHistory,
+  openModal,
+  closeModal,
 }: AgentRunnerOptions) {
   const [status, setStatus] = useState<AppStatus>(initialTask ? "running" : "idle");
   const [stepCount, setStepCount] = useState(0);
@@ -162,6 +166,8 @@ export function useAgentRunner({
       usage,
       loadSessionById,
       resetSession,
+      openModal,
+      closeModal,
     });
 
     if (handled) return;

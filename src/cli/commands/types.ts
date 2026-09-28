@@ -24,6 +24,8 @@ export interface CommandContext {
   usage?: TokenUsage;
   loadSessionById?: (id: string) => Promise<boolean>;
   resetSession?: () => void;
+  openModal?: (modal: "model" | "session" | "settings") => void;
+  closeModal?: () => void;
 }
 
 export interface CommandHandler {

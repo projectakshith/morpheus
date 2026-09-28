@@ -11,6 +11,11 @@ export class AuthCommand implements CommandHandler {
   }
 
   public async execute(_trimmed: string, ctx: CommandContext): Promise<boolean> {
+    if (ctx.openModal) {
+      ctx.openModal("settings");
+      return true;
+    }
+
     let authStatusText = "";
     try {
       const neoBase = ctx.baseURL || "http://127.0.0.1:8787/v1";

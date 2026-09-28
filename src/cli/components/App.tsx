@@ -1,6 +1,6 @@
 /*
  * App: Central interactive terminal UI for Morpheus.
- * Orchestrates layout, stream rendering, slash commands, and agent turns.
+ * Orchestrates layout, stream rendering, slash commands, modal selectors, and agent turns.
  */
 
 import React, { useState, useEffect, useRef, useMemo } from "react";
@@ -10,6 +10,8 @@ import { StatusBar } from "./StatusBar.js";
 import { DiffColumn, buildRightLines } from "./DiffColumn.js";
 import { InputBox } from "./InputBox.js";
 import { ModelSelector } from "./ModelSelector.js";
+import { SessionSelector } from "./SessionSelector.js";
+import { SettingsSelector } from "./SettingsSelector.js";
 import { gatherContext } from "../../core/context.js";
 import { MORPHEUS_VERSION } from "../../index.js";
 import { theme } from "../theme.js";
@@ -32,7 +34,7 @@ export function App({
   resumeSessionId,
 }: AppProps) {
   const [currentModel, setCurrentModel] = useState(model);
-  const [isModelSelectorOpen, setIsModelSelectorOpen] = useState(false);
+  const [activeModal, setActiveModal] = useState<"none" | "model" | "session" | "settings">("none");
   const [scrollOffset, setScrollOffset] = useState(0);
   const [promptHistory, setPromptHistory] = useState<string[]>([]);
   const [expandedToolIds, setExpandedToolIds] = useState<Set<string>>(new Set());
@@ -44,6 +46,11 @@ export function App({
   const [introProgress, setIntroProgress] = useState(0);
   const [introTick, setIntroTick] = useState(0);
   const [matrixQuote] = useState(() => MATRIX_QUOTES[Math.floor(Math.random() * MATRIX_QUOTES.length)]);
+
+  const isModelSelectorOpen = activeModal === "model";
+  const setIsModelSelectorOpen = (open: boolean) => setActiveModal(open ? "model" : "none");
+  const openModal = (m: "model" | "session" | "settings") => setActiveModal(m);
+  const closeModal = () => setActiveModal("none");
 
   const baseContext = useRef(gatherContext(process.cwd()));
   const initialTaskFired = useRef(false);
@@ -75,6 +82,9 @@ export function App({
     setThreads,
     fileEdits,
     findings,
+    sessionId,
+    loadSessionById,
+    resetSession,
     executeTask,
     abort,
   } = useAgentRunner({
@@ -92,6 +102,8 @@ export function App({
     isRightUserScrolledRef,
     setRightScrollTop,
     setPromptHistory,
+    openModal,
+    closeModal,
   });
 
   useEffect(() => {
@@ -138,7 +150,7 @@ export function App({
       setIsIntroActive(false);
       return;
     }
-    if (isModelSelectorOpen) {
+    if (activeModal !== "none") {
       return;
     }
     if (key.escape && status === "running") {
@@ -273,7 +285,7 @@ export function App({
       />
 
       <Box flexDirection="row" width={terminalWidth} height={workspaceHeight} overflow="hidden">
-        {isModelSelectorOpen ? (
+        {activeModal === "model" ? (
           <Box
             width={terminalWidth}
             height={workspaceHeight}
@@ -285,7 +297,7 @@ export function App({
               width={Math.min(terminalWidth, 80)}
               onSelect={(selectedId) => {
                 setCurrentModel(selectedId);
-                setIsModelSelectorOpen(false);
+                closeModal();
                 const switchThread: Thread = {
                   id: `thread_${Date.now()}`,
                   index: threads.length + 1,
@@ -301,9 +313,50 @@ export function App({
                 };
                 setThreads((prev) => [...prev, switchThread]);
               }}
-              onClose={() => {
-                setIsModelSelectorOpen(false);
+              onClose={closeModal}
+            />
+          </Box>
+        ) : activeModal === "session" ? (
+          <Box
+            width={terminalWidth}
+            height={workspaceHeight}
+            alignItems="center"
+            justifyContent="center"
+          >
+            <SessionSelector
+              currentSessionId={sessionId}
+              width={Math.min(terminalWidth, 80)}
+              onSelectSession={async (targetId) => {
+                closeModal();
+                await loadSessionById(targetId);
               }}
+              onNewSession={() => {
+                closeModal();
+                resetSession();
+              }}
+              onClose={closeModal}
+            />
+          </Box>
+        ) : activeModal === "settings" ? (
+          <Box
+            width={terminalWidth}
+            height={workspaceHeight}
+            alignItems="center"
+            justifyContent="center"
+          >
+            <SettingsSelector
+              currentModel={currentModel}
+              baseURL={baseURL}
+              width={Math.min(terminalWidth, 80)}
+              maxSteps={maxSteps}
+              sessionId={sessionId}
+              onOpenModelSelector={() => openModal("model")}
+              onOpenSessionSelector={() => openModal("session")}
+              onResetSession={() => {
+                resetSession();
+                closeModal();
+              }}
+              onClose={closeModal}
             />
           </Box>
         ) : (
@@ -350,10 +403,14 @@ export function App({
 
       <InputBox
         onSubmit={executeTask}
-        isDisabled={status === "running" || isModelSelectorOpen}
+        isDisabled={status === "running" || activeModal !== "none"}
         disabledMessage={
-          isModelSelectorOpen
+          activeModal === "model"
             ? "selecting model... (use [↑/↓] to navigate, [enter] to select, [esc] to cancel)"
+            : activeModal === "session"
+            ? "browsing sessions... (use [↑/↓] to navigate, [enter] to resume, [esc] to cancel)"
+            : activeModal === "settings"
+            ? "settings dashboard... (use [↑/↓] to navigate, [enter] to toggle, [esc] to cancel)"
             : undefined
         }
         history={promptHistory}
