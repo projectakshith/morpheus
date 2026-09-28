@@ -14,18 +14,16 @@ export async function runCLI(args: string[] = process.argv.slice(2)): Promise<vo
   let baseURL = parsed.baseURL;
   const initialTask = parsed.task;
 
-  if (parsed.isNeo) {
-    baseURL = baseURL || "http://127.0.0.1:8787/v1";
+  if (isLocal) {
+    baseURL = baseURL || "http://localhost:11434/v1";
     if (!model) {
-      model = process.env.MORPHEUS_NEO_MODEL || "flash";
+      model = process.env.MORPHEUS_LOCAL_MODEL || "qwen2.5-coder:7b";
     }
-  } else if (isLocal && !model) {
-    model = process.env.MORPHEUS_LOCAL_MODEL || "qwen2.5-coder:7b";
-  } else if (!model) {
-    model =
-      process.env.MORPHEUS_MODEL ||
-      process.env.OPENROUTER_MODEL ||
-      "stealth/space-bunny-alpha";
+  } else {
+    baseURL = baseURL || process.env.MORPHEUS_BASE_URL || "http://127.0.0.1:8787/v1";
+    if (!model) {
+      model = process.env.MORPHEUS_MODEL || "flash";
+    }
   }
 
   const { waitUntilExit } = render(

@@ -165,24 +165,20 @@ export class Operator {
     } else {
       this.baseURL =
         config.baseURL ||
-        (process.env.OPENROUTER_API_KEY
-          ? "https://openrouter.ai/api/v1"
-          : process.env.GROQ_API_KEY
-          ? "https://api.groq.com/openai/v1"
-          : "https://openrouter.ai/api/v1");
+        process.env.MORPHEUS_BASE_URL ||
+        "http://127.0.0.1:8787/v1";
 
       this.apiKey =
         config.apiKey ||
+        process.env.MORPHEUS_API_KEY ||
         process.env.OPENROUTER_API_KEY ||
-        process.env.GROQ_API_KEY ||
         process.env.OPENAI_API_KEY ||
-        "";
+        "neo";
 
       this.model =
         config.model ||
         process.env.MORPHEUS_MODEL ||
-        process.env.OPENROUTER_MODEL ||
-        "stealth/space-bunny-alpha";
+        "flash";
 
       this.numCtx =
         config.numCtx ||
