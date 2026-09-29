@@ -3,6 +3,7 @@ import { Box, Text } from "ink";
 import Spinner from "ink-spinner";
 import type { TokenUsage } from "../../core/types";
 import { theme } from "../theme";
+import { glyphs } from "../glyphs";
 
 export interface StatusBarProps {
   status: "idle" | "running" | "aborted" | "error";
@@ -48,14 +49,14 @@ export function StatusBar({
     status === "running"
       ? "RUNNING"
       : status === "aborted"
-      ? "● STOPPED"
+      ? `${glyphs.bullet} STOPPED`
       : status === "error"
-      ? "● ERROR"
-      : "● READY";
+      ? `${glyphs.error} ERROR`
+      : `${glyphs.bullet} READY`;
 
   const queueStr = queueCount > 0 ? ` · ⏳ ${queueCount} queued` : "";
-  const metricsStr = ` · ${timeStr} · step ${stepCount}/${maxSteps} · ctx ${peakCtx}/${limitCtx} · api ${totalTokens}${queueStr}`;
-  const scrollStr = scrollOffset > 0 ? ` · ▲ +${scrollOffset}` : "";
+  const metricsStr = ` · ${glyphs.clock} ${timeStr} · step ${stepCount}/${maxSteps} · ctx ${peakCtx}/${limitCtx} · api ${totalTokens}${queueStr}`;
+  const scrollStr = scrollOffset > 0 ? ` · ${glyphs.arrowUp} +${scrollOffset}` : "";
   const hintStr =
     scrollOffset > 0
       ? "[end] bottom · [esc] stop"

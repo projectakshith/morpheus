@@ -1,6 +1,7 @@
 import React from "react";
 import { Box, Text } from "ink";
 import Spinner from "ink-spinner";
+import { glyphs } from "../glyphs";
 
 export interface ToolCardProps {
   name: string;
@@ -9,6 +10,32 @@ export interface ToolCardProps {
   isError?: boolean;
   outputSummary?: string;
   outputPreview?: string[];
+}
+
+function getToolIcon(toolName: string): string {
+  switch (toolName) {
+    case "bash":
+      return glyphs.bash;
+    case "read_file":
+      return glyphs.file;
+    case "edit_file":
+    case "write_file":
+      return glyphs.fileEdit;
+    case "list_dir":
+      return glyphs.folder;
+    case "grep_code":
+      return glyphs.search;
+    case "outline_code":
+      return glyphs.outline;
+    case "http_request":
+      return glyphs.network;
+    case "record_finding":
+      return glyphs.brain;
+    case "load_skill":
+      return glyphs.skill;
+    default:
+      return glyphs.chip;
+  }
 }
 
 export function ToolCard({
@@ -22,6 +49,7 @@ export function ToolCard({
   const primaryArg =
     args.filePath ?? args.command ?? args.url ?? args.dirPath ?? args.query ?? "";
   const primaryArgStr = typeof primaryArg === "string" ? primaryArg : JSON.stringify(primaryArg);
+  const icon = getToolIcon(name);
 
   return (
     <Box flexDirection="column" marginY={0}>
@@ -32,6 +60,7 @@ export function ToolCard({
             <Text color="yellow">
               <Spinner type="dots" />{" "}
             </Text>
+            <Text color="yellow">{icon} </Text>
             <Text color="white" bold>
               {name}
             </Text>
@@ -39,7 +68,8 @@ export function ToolCard({
           </Box>
         ) : isError ? (
           <Box>
-            <Text color="red">✖ </Text>
+            <Text color="red">{glyphs.error} </Text>
+            <Text color="red">{icon} </Text>
             <Text color="white" bold>
               {name}
             </Text>
@@ -48,7 +78,8 @@ export function ToolCard({
           </Box>
         ) : (
           <Box>
-            <Text color="green">✔ </Text>
+            <Text color="green">{glyphs.success} </Text>
+            <Text color="blue">{icon} </Text>
             <Text color="white" bold>
               {name}
             </Text>

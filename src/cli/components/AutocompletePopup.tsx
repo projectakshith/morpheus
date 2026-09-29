@@ -7,6 +7,7 @@ import React from "react";
 import { Box, Text } from "ink";
 import { theme } from "../theme.js";
 import type { SuggestionItem, SuggestionCategory } from "../autocomplete/types.js";
+import { glyphs } from "../glyphs.js";
 
 export const POPUP_ROW_COUNT = 5;
 export const POPUP_TOTAL_HEIGHT = POPUP_ROW_COUNT + 2; // 5 rows + top border + bottom border = 7
@@ -74,13 +75,13 @@ export function AutocompletePopup({
 
   /* Top Border with Item Position and Up Arrow */
   const positionTag = total > 0 ? ` (${selectedIndex + 1}/${total}) ` : " ";
-  const upIndicator = hasMoreAbove ? "▲ " : "";
+  const upIndicator = hasMoreAbove ? `${glyphs.arrowUp} ` : "";
   const headerPrefix = `┌─ Suggestions${positionTag}${upIndicator}`;
   const headerPad = Math.max(0, width - headerPrefix.length - 1);
   const topBorder = `${headerPrefix}${"─".repeat(headerPad)}┐`;
 
   /* Bottom Border with Down Arrow and Key Hints */
-  const downIndicator = hasMoreBelow ? "▼ " : "";
+  const downIndicator = hasMoreBelow ? `${glyphs.arrowDown} ` : "";
   const footerHint = ` ${downIndicator}[Tab] accept · [↑↓] scroll · [Esc] close `;
   const footerPad = Math.max(0, width - footerHint.length - 2);
   const bottomBorder = `└─${"─".repeat(footerPad)}${footerHint}┘`;

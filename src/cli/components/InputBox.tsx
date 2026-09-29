@@ -3,6 +3,7 @@ import { Box, Text, useInput } from "ink";
 import { theme } from "../theme.js";
 import { computeAutocomplete, applySuggestion } from "../autocomplete/engine.js";
 import { AutocompletePopup, POPUP_TOTAL_HEIGHT } from "./AutocompletePopup.js";
+import { glyphs } from "../glyphs.js";
 
 export { POPUP_TOTAL_HEIGHT };
 
@@ -239,7 +240,7 @@ export function InputBox({
     }
   });
 
-  const promptPrefix = "▲ > ";
+  const promptPrefix = `${glyphs.prompt} > `;
   const availWidth = Math.max(10, width - promptPrefix.length - 2);
 
   if (isDisabled) {
@@ -249,9 +250,9 @@ export function InputBox({
       <Box height={1} width={width} overflow="hidden">
         <Text backgroundColor={theme.bg} wrap="truncate-end">
           <Text color={theme.accent} bold>
-            {promptPrefix.slice(0, 2)}
+            {glyphs.prompt}{" "}
           </Text>
-          <Text color={theme.muted}>{promptPrefix.slice(2)}</Text>
+          <Text color={theme.muted}>{"> "}</Text>
           <Text color={theme.muted}>{disabledMsg}</Text>
           {" ".repeat(pad)}
         </Text>
