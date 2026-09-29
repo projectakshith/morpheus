@@ -58,8 +58,8 @@ export const GLYPH_SETS: Record<GlyphMode, GlyphSet> = {
   nerd: {
     // Navigation & Prompts
     prompt: "❯",
-    bullet: "●",
-    bulletOpen: "○",
+    bullet: "◈",
+    bulletOpen: "◇",
     arrowUp: "▲",
     arrowDown: "▼",
     arrowRight: "→",
@@ -104,8 +104,8 @@ export const GLYPH_SETS: Record<GlyphMode, GlyphSet> = {
   unicode: {
     // Navigation & Prompts
     prompt: "▲",
-    bullet: "●",
-    bulletOpen: "○",
+    bullet: "◈",
+    bulletOpen: "◇",
     arrowUp: "▲",
     arrowDown: "▼",
     arrowRight: "→",

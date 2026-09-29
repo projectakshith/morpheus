@@ -199,9 +199,9 @@ export function SettingsSelector({
     key: "providers" | "execution" | "session";
     title: string;
   }> = [
-    { key: "providers", title: "● AI PROVIDERS & AUTHENTICATION" },
-    { key: "execution", title: "● EXECUTION & MODEL RUNTIME" },
-    { key: "session", title: "● SESSION & CONTEXT" },
+    { key: "providers", title: "▰ AI PROVIDERS & AUTHENTICATION" },
+    { key: "execution", title: "▰ EXECUTION & MODEL RUNTIME" },
+    { key: "session", title: "▰ SESSION & CONTEXT" },
   ];
 
   return (

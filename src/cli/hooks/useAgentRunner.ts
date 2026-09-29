@@ -345,7 +345,7 @@ export function useAgentRunner({
             id: threadId,
             index: threadsRef.current.length + (existingThreadId ? 0 : 1),
             prompt: taskText,
-            response: `● **Authentication Required for ${authData.name || providerId}**\n\n${authData.error || "Provider is not authenticated."}\n\n*${fixHint}*`,
+            response: `## Authentication Required for ${authData.name || providerId}\n\n${authData.error || "Provider is not authenticated."}\n\n*${fixHint}*`,
             isStreaming: false,
             steps: [],
             isExpanded: false,

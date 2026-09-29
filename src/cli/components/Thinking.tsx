@@ -32,7 +32,7 @@ export function Thinking({
           </Text>
         ) : (
           <Text color="gray">
-            <Text color="gray">●</Text> thinking ({seconds}s) ·{" "}
+            <Text color="gray">◈</Text> thinking ({seconds}s) ·{" "}
             <Text color="gray">{isExpanded ? "[tab to collapse]" : "[tab to expand]"}</Text>
           </Text>
         )}

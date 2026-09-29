@@ -115,7 +115,7 @@ export function buildRightLines(
     });
 
   if (totalTools === 0) {
-    const emptyPfx = "  ○ ";
+    const emptyPfx = "  - ";
     const emptyMsg = "no tool activity yet";
     const pad = Math.max(0, contentWidth - emptyPfx.length - emptyMsg.length);
     lines.push({
@@ -188,7 +188,7 @@ export function buildRightLines(
               <Text backgroundColor={bg} wrap="truncate-end">
                 {"  "}
                 {step.isRunning ? (
-                  <Text color={theme.accentBright}>● </Text>
+                  <Text color={theme.accentBright}>▶ </Text>
                 ) : (
                   <Text color={statusColor}>{statusIcon} </Text>
                 )}
@@ -334,7 +334,7 @@ export function buildRightLines(
   });
 
   if (consolidatedEdits.length === 0) {
-    const emptyPfx = "  ○ ";
+    const emptyPfx = "  - ";
     const emptyMsg = "no file modifications";
     const pad = Math.max(0, contentWidth - emptyPfx.length - emptyMsg.length);
     lines.push({

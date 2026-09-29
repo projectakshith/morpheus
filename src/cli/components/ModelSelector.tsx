@@ -130,9 +130,9 @@ export function ModelSelector({
     label: string;
     color: (s: string) => string;
   }> = [
-    { key: "antigravity", label: "● ANTIGRAVITY (Google Cloud Code)", color: pc.green },
-    { key: "local", label: "● LOCAL (Ollama 127.0.0.1:11434)", color: pc.yellow },
-    { key: "cloud", label: "● CLOUD (OpenRouter)", color: pc.blue },
+    { key: "antigravity", label: "▰ ANTIGRAVITY (Google Cloud Code)", color: pc.green },
+    { key: "local", label: "▰ LOCAL (Ollama 127.0.0.1:11434)", color: pc.yellow },
+    { key: "cloud", label: "▰ CLOUD (OpenRouter)", color: pc.blue },
   ];
 
   const boxWidth = Math.min(width - 4, 76);
@@ -190,7 +190,7 @@ export function ModelSelector({
                       color={isHighlighted ? "cyan" : undefined}
                       dimColor={!isHighlighted && !isActive}
                     >
-                      {isActive ? "● " : "○ "}
+                      {isActive ? "◈ " : "  "}
                       {m.name}
                     </Text>
                     {isActive && (

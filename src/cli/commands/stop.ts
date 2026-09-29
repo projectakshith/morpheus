@@ -19,7 +19,7 @@ export class StopCommand implements CommandHandler {
       id: `thread_${Date.now()}`,
       index: ctx.threadsCount + 1,
       prompt: ctx.taskText,
-      response: "● *Active execution stopped by user and pending queue cleared.*",
+      response: "*Active execution stopped by user and pending queue cleared.*",
       isStreaming: false,
       steps: [],
       isExpanded: false,

@@ -177,7 +177,7 @@ export function SessionSelector({
                   bold={isHighlighted}
                   color={isHighlighted ? theme.accentBright : isCurrent ? theme.secondary : undefined}
                 >
-                  {isCurrent ? "● " : "○ "}
+                  {isCurrent ? "◈ " : "  "}
                   {safeTitle}
                 </Text>
                 {isCurrent && (

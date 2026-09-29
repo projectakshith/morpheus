@@ -88,7 +88,7 @@ export class SessionCommand implements CommandHandler {
       if (summaries.length === 0) {
         this.createFeedbackThread(
           ctx,
-          "● **No Saved Sessions Found**\nNo previous sessions recorded in this repository."
+          "## No Saved Sessions Found\nNo previous sessions recorded in this repository."
         );
         return true;
       }
@@ -100,7 +100,7 @@ export class SessionCommand implements CommandHandler {
       });
 
       const message = [
-        "● **Recent Morpheus Sessions**",
+        "## Recent Morpheus Sessions",
         rows.join("\n"),
         "",
         "*Type `/resume <id>` or `/session load <id>` to restore a session.*",
@@ -155,7 +155,7 @@ export class SessionCommand implements CommandHandler {
 
       this.createFeedbackThread(
         ctx,
-        `● **Session Not Found**\nCould not find session \`${targetId}\`. Type \`/sessions\` to list valid IDs.`
+        `## Session Not Found\nCould not find session \`${targetId}\`. Type \`/sessions\` to list valid IDs.`
       );
       return true;
     }
@@ -169,7 +169,7 @@ export class SessionCommand implements CommandHandler {
       : "0 tokens";
 
     const infoMsg = [
-      "● **Active Session Details**",
+      "## Active Session Details",
       `- **Session ID:** \`${currentId}\``,
       `- **Title:** ${currentTitle}`,
       `- **Model:** \`${ctx.currentModel}\``,

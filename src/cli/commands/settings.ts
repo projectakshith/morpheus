@@ -24,7 +24,7 @@ export class SettingsCommand implements CommandHandler {
       id: `thread_${Date.now()}`,
       index: ctx.threadsCount + 1,
       prompt: ctx.taskText,
-      response: `● **Settings Overview**\n- Active Model: \`${ctx.currentModel}\`\n- Session: \`${ctx.sessionId || "active"}\`\n- Router: \`${ctx.baseURL}\``,
+      response: `## Settings Overview\n- Active Model: \`${ctx.currentModel}\`\n- Session: \`${ctx.sessionId || "active"}\`\n- Router: \`${ctx.baseURL}\``,
       isStreaming: false,
       steps: [],
       isExpanded: false,

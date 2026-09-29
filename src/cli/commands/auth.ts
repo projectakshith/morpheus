@@ -56,7 +56,7 @@ export class AuthCommand implements CommandHandler {
               if (p.details?.count !== undefined) {
                 detailLines += `\n• **Discovered Models:** \`${p.details.count}\``;
               }
-              return `● **${p.name}**: Active${detailLines}`;
+              return `- **${p.name}**: Active${detailLines}`;
             } else {
               let hint = "";
               if (p.provider === "antigravity") {
@@ -66,19 +66,19 @@ export class AuthCommand implements CommandHandler {
               } else if (p.provider === "local") {
                 hint = "Start Ollama (`ollama serve`) or run `/login local [url]`.";
               }
-              return `○ **${p.name}**: Not Active\n• *${p.error || "Unauthenticated"}*\n• ${hint}`;
+              return `- **${p.name}**: Inactive\n  - *${p.error || "Unauthenticated"}*\n  - ${hint}`;
             }
           });
 
           authStatusText = `### Provider Authentication Status\n\n${sections.join("\n\n")}\n\n*Configure any provider with \`/login <provider>\`.*`;
         } else if (info.authenticated) {
-          authStatusText = `● **Authentication Active** (macOS Keychain)\n• **Account:** \`${info.email || "Active"}\`\n• **Keychain Target:** \`${info.service || "gemini"} / ${info.account || "antigravity"}\`\n• **Token Expiry:** \`${info.expiry || "Auto-refreshing"}\`\n\n*All Antigravity models route through this identity.*`;
+          authStatusText = `## Authentication Active (macOS Keychain)\n- **Account:** \`${info.email || "Active"}\`\n- **Keychain Target:** \`${info.service || "gemini"} / ${info.account || "antigravity"}\`\n- **Token Expiry:** \`${info.expiry || "Auto-refreshing"}\`\n\n*All Antigravity models route through this identity.*`;
         } else {
-          authStatusText = `● **Authentication Missing**\nNo credentials found in macOS Keychain. Type \`/login\` to authenticate.`;
+          authStatusText = `## Authentication Missing\nNo credentials found in macOS Keychain. Type \`/login\` to authenticate.`;
         }
       }
     } catch {
-      authStatusText = `● **Neo Router Offline**\nCould not connect to Neo on port 8787. Ensure Neo is active.`;
+      authStatusText = `## Neo Router Offline\nCould not connect to Neo on port 8787. Ensure Neo is active.`;
     }
 
     const authThread: Thread = {

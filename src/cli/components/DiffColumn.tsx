@@ -41,7 +41,16 @@ export function DiffColumn({ width, height, lines, statusInfo }: DiffColumnProps
   const stepStr = `step ${statusInfo?.stepCount ?? 0}/${statusInfo?.maxSteps ?? 25}`;
   const hintStr = isRunning ? "[esc] stop" : "[ctrl+c] exit";
 
-  const statusBadgeLength = isRunning ? 10 : isAborted ? 11 : isError ? 9 : 11;
+  const statusTag = isRunning ? "EXEC" : isAborted ? "STOP" : isError ? "FAIL" : "IDLE";
+  const statusColor = isRunning
+    ? theme.accentBright
+    : isAborted
+    ? theme.warning
+    : isError
+    ? theme.diffRemove
+    : theme.muted;
+
+  const statusBadgeLength = 8;
   const line2VisLen =
     1 +
     statusBadgeLength +
@@ -94,23 +103,11 @@ export function DiffColumn({ width, height, lines, statusInfo }: DiffColumnProps
           <Box height={1} overflow="hidden">
             <Text backgroundColor={theme.bg} wrap="truncate-end">
               {" "}
-              {isRunning ? (
-                <Text color={theme.accent}>
-                  <Text color={theme.border}>[ </Text><Text color={theme.accentBright}>●</Text> BUSY<Text color={theme.border}> ]</Text>
-                </Text>
-              ) : isAborted ? (
-                <Text color={theme.accent}>
-                  <Text color={theme.border}>[ </Text>STOPPED<Text color={theme.border}> ]</Text>
-                </Text>
-              ) : isError ? (
-                <Text color={theme.diffRemove}>
-                  <Text color={theme.border}>[ </Text>ERROR<Text color={theme.border}> ]</Text>
-                </Text>
-              ) : (
-                <Text color={theme.muted}>
-                  <Text color={theme.border}>[ </Text><Text color={theme.accent}>●</Text> READY<Text color={theme.border}> ]</Text>
-                </Text>
-              )}
+              <Text color={theme.border}>[ </Text>
+              <Text color={statusColor} bold>
+                {statusTag}
+              </Text>
+              <Text color={theme.border}> ]</Text>
               <Text color={theme.secondary}> · {stepStr} · {timeStr}{queueStr}</Text>
               {" ".repeat(padLine2)}
             </Text>

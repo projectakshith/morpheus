@@ -18,7 +18,7 @@ export class LoginCommand implements CommandHandler {
 
     /* Handle /login help or unknown subcommand */
     if (subCommand && !["antigravity", "agy", "google", "openrouter", "local", "ollama"].includes(subCommand)) {
-      const helpText = `● **Modular Authentication Providers**\n\n• \`/login antigravity\` - Authenticate Google Cloud Code via browser OAuth\n• \`/login openrouter <api-key>\` - Validate and store OpenRouter API key\n• \`/login local [baseUrl]\` - Connect to local Ollama server (default: http://127.0.0.1:11434)\n• \`/auth\` - View real-time status across all providers`;
+      const helpText = `## Modular Authentication Providers\n\n- \`/login antigravity\` - Authenticate Google Cloud Code via browser OAuth\n- \`/login openrouter <api-key>\` - Validate and store OpenRouter API key\n- \`/login local [baseUrl]\` - Connect to local Ollama server (default: http://127.0.0.1:11434)\n- \`/auth\` - View real-time status across all providers`;
       const helpThread: Thread = {
         id: loginThreadId,
         index: ctx.threadsCount + 1,

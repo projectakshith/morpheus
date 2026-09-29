@@ -18,16 +18,16 @@ export class QueueCommand implements CommandHandler {
       if (ctx.clearQueue) {
         ctx.clearQueue();
       }
-      responseText = "● *Cleared all queued tasks.*";
+      responseText = "*Cleared all queued tasks.*";
     } else {
       const queue = ctx.getQueue ? ctx.getQueue() : [];
       if (queue.length === 0) {
         responseText = ctx.isAgentRunning
-          ? "● Agent is currently working. No additional prompts are queued.\n*Type any prompt to queue it behind the active task.*"
-          : "● Queue is empty. Agent is ready for tasks.";
+          ? "Agent is currently working. No additional prompts are queued.\n*Type any prompt to queue it behind the active task.*"
+          : "Queue is empty. Agent is ready for tasks.";
       } else {
         const items = queue.map((q, idx) => `  ${idx + 1}. \`${q.replace(/`/g, "")}\``).join("\n");
-        responseText = `● **Queued Prompts (${queue.length}):**\n${items}\n\n*Type \`/clear-queue\` to remove pending items or \`/stop\` to abort everything.*`;
+        responseText = `## Queued Prompts (${queue.length})\n${items}\n\n*Type \`/clear-queue\` to remove pending items or \`/stop\` to abort everything.*`;
       }
     }
 
