@@ -75,7 +75,7 @@ export function ThreadCard({ thread, isThinkingExpanded = false }: ThreadCardPro
 
       {thread.status === "queued" ? (
         <Box marginLeft={2} marginY={0}>
-          <Text color="yellow">⏳ [queued behind active task · waiting for turn]</Text>
+          <Text color="yellow">[queued behind active task · waiting for turn]</Text>
         </Box>
       ) : thread.status === "running" ? (
         <Box flexDirection="column" marginLeft={2} marginY={0}>

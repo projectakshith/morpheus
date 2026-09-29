@@ -5,6 +5,7 @@ import type { FeedLine, Thread } from "../types.js";
 import { MarkdownFormatter } from "../format.js";
 import { wrapLine } from "../utils/text.js";
 import { buildHeroFeedLines } from "./MatrixIntro.js";
+import { CyberPulse } from "./CyberPulse.js";
 import { theme } from "../theme.js";
 
 export interface BuildFeedOptions {
@@ -12,7 +13,8 @@ export interface BuildFeedOptions {
   leftWidth: number;
   feedHeight: number;
   maxLineWidth: number;
-  collapsedThinkingIds: Set<string>;
+  expandedThinkingIds?: Set<string>;
+  collapsedThinkingIds?: Set<string>;
   matrixQuote?: string;
 }
 
@@ -21,6 +23,7 @@ export function buildThreadFeedLines({
   leftWidth,
   feedHeight,
   maxLineWidth,
+  expandedThinkingIds,
   collapsedThinkingIds,
   matrixQuote,
 }: BuildFeedOptions): FeedLine[] {
@@ -47,10 +50,11 @@ export function buildThreadFeedLines({
       threadId: thread.id,
       node: (
         <Text backgroundColor={theme.bg} wrap="truncate-end">
+          <Text color={theme.accent}>❯ </Text>
           <Text color={theme.secondary} bold>
-            ▲ you
+            you
           </Text>
-          {" ".repeat(Math.max(0, leftWidth - 5))}
+          {" ".repeat(Math.max(0, leftWidth - 6))}
         </Text>
       ),
     });
@@ -75,59 +79,137 @@ export function buildThreadFeedLines({
     });
 
     const thinkingSteps = thread.steps.filter((s) => s.type === "thinking");
+    const hasFollowingContent =
+      thinkingSteps.length > 0 ||
+      Boolean(thread.response) ||
+      Boolean(thread.isStreaming) ||
+      thread.status === "running" ||
+      thread.status === "queued";
+
+    if (hasFollowingContent) {
+      lines.push({
+        id: `${thread.id}_prompt_spacer`,
+        threadId: thread.id,
+        node: (
+          <Text backgroundColor={theme.bg}>
+            {" ".repeat(leftWidth)}
+          </Text>
+        ),
+      });
+    }
+
     thinkingSteps.forEach((tStep) => {
-      const isCollapsed = collapsedThinkingIds.has(tStep.id);
+      const isExpanded = expandedThinkingIds
+        ? expandedThinkingIds.has(tStep.id)
+        : collapsedThinkingIds
+        ? !collapsedThinkingIds.has(tStep.id)
+        : false;
+
       const rawMs = tStep.isRunning
         ? (tStep.startTime ? Date.now() - tStep.startTime : (tStep.durationMs || 0))
         : (tStep.durationMs || 0);
       const sec = (rawMs / 1000).toFixed(1);
-      const arrow = isCollapsed ? "▶" : "▼";
-      const toggle = isCollapsed ? " · [+]" : " · [-]";
-      const hdrText = `${arrow} reasoning (${sec}s)${toggle}`;
-      const visLen = tStep.isRunning ? hdrText.length + 3 : hdrText.length;
-      const pad = Math.max(0, leftWidth - visLen);
-      lines.push({
-        id: `${tStep.id}_think_hdr`,
-        threadId: thread.id,
-        stepId: tStep.id,
-        node: (
-          <Text backgroundColor={theme.bg} wrap="truncate-end">
-            {tStep.isRunning ? (
-              <Text color={theme.accentBright}>
-                <Spinner type="dots" />{" "}
-              </Text>
-            ) : null}
-            <Text color={tStep.isRunning ? theme.secondary : theme.muted} italic>
-              {hdrText}
-            </Text>
-            {" ".repeat(pad)}
-          </Text>
-        ),
-      });
 
-      if (!isCollapsed && tStep.content) {
-        const rawThinkLines = tStep.content.trim().split("\n");
-        rawThinkLines.forEach((rLine) => {
-          const wrapped = wrapLine(rLine, maxLineWidth);
-          wrapped.forEach((wLine) => {
-            const visLen = 4 + wLine.length;
-            const pad = Math.max(0, leftWidth - visLen);
-            lines.push({
-              id: `${tStep.id}_think_${lines.length}`,
-              threadId: thread.id,
-              stepId: tStep.id,
-              node: (
-                <Text backgroundColor={theme.bg} wrap="truncate-end">
-                  <Text color={theme.border}>  │ </Text>
-                  <Text color={theme.secondary} italic>
-                    {wLine}
+      if (tStep.isRunning) {
+        const label = `thinking (${sec}s)...`;
+        const visLen = 2 + 5 + label.length;
+        const pad = Math.max(0, leftWidth - visLen);
+        lines.push({
+          id: `${tStep.id}_think_hdr`,
+          threadId: thread.id,
+          stepId: tStep.id,
+          node: (
+            <Text backgroundColor={theme.bg} wrap="truncate-end">
+              {"  "}
+              <CyberPulse />
+              <Text color={theme.secondary} italic>
+                {label}
+              </Text>
+              {" ".repeat(pad)}
+            </Text>
+          ),
+        });
+        return;
+      }
+
+      if (!isExpanded) {
+        let glimpse = "";
+        if (tStep.content) {
+          const firstLine = tStep.content
+            .trim()
+            .split("\n")[0]
+            ?.replace(/^#+\s*/, "")
+            ?.replace(/[`*_]/g, "")
+            ?.trim();
+          if (firstLine) {
+            glimpse = firstLine.length > 28 ? `${firstLine.slice(0, 27)}…` : firstLine;
+          }
+        }
+
+        const tag = `  ◇ thought (${sec}s)`;
+        const glimpsePart = glimpse ? ` · "${glimpse}"` : "";
+        const togglePart = " [+]";
+        const visLen = tag.length + glimpsePart.length + togglePart.length;
+        const pad = Math.max(0, leftWidth - visLen);
+
+        lines.push({
+          id: `${tStep.id}_think_hdr`,
+          threadId: thread.id,
+          stepId: tStep.id,
+          node: (
+            <Text backgroundColor={theme.bg} wrap="truncate-end">
+              <Text color={theme.muted}>{tag}</Text>
+              {glimpse ? (
+                <Text color={theme.muted} italic>{glimpsePart}</Text>
+              ) : null}
+              <Text color={theme.border}>{togglePart}</Text>
+              {" ".repeat(pad)}
+            </Text>
+          ),
+        });
+      } else {
+        const tag = `  ◆ thought (${sec}s)`;
+        const togglePart = " [-]";
+        const visLen = tag.length + togglePart.length;
+        const pad = Math.max(0, leftWidth - visLen);
+
+        lines.push({
+          id: `${tStep.id}_think_hdr`,
+          threadId: thread.id,
+          stepId: tStep.id,
+          node: (
+            <Text backgroundColor={theme.bg} wrap="truncate-end">
+              <Text color={theme.secondary}>{tag}</Text>
+              <Text color={theme.accent}>{togglePart}</Text>
+              {" ".repeat(pad)}
+            </Text>
+          ),
+        });
+
+        if (tStep.content) {
+          const rawThinkLines = tStep.content.trim().split("\n");
+          rawThinkLines.forEach((rLine) => {
+            const wrapped = wrapLine(rLine, maxLineWidth);
+            wrapped.forEach((wLine) => {
+              const visLen = 4 + wLine.length;
+              const padLine = Math.max(0, leftWidth - visLen);
+              lines.push({
+                id: `${tStep.id}_think_${lines.length}`,
+                threadId: thread.id,
+                stepId: tStep.id,
+                node: (
+                  <Text backgroundColor={theme.bg} wrap="truncate-end">
+                    <Text color={theme.borderSubtle}>  │ </Text>
+                    <Text color={theme.muted} italic>
+                      {wLine}
+                    </Text>
+                    {" ".repeat(padLine)}
                   </Text>
-                  {" ".repeat(pad)}
-                </Text>
-              ),
+                ),
+              });
             });
           });
-        });
+        }
       }
     });
 
@@ -137,13 +219,47 @@ export function buildThreadFeedLines({
         threadId: thread.id,
         node: (
           <Text backgroundColor={theme.bg} wrap="truncate-end">
-            <Text color={theme.warning}>  ⏳ [queued behind active task · waiting for turn]</Text>
-            {" ".repeat(Math.max(0, leftWidth - 52))}
+            <Text color={theme.warning}>  [queued behind active task · waiting for turn]</Text>
+            {" ".repeat(Math.max(0, leftWidth - 50))}
+          </Text>
+        ),
+      });
+    } else if (
+      thread.status === "running" &&
+      thread.steps.length === 0 &&
+      !thread.response &&
+      !thread.isStreaming
+    ) {
+      const runningLabel = "morpheus is thinking...";
+      const pad = Math.max(0, leftWidth - runningLabel.length - 8);
+      lines.push({
+        id: `${thread.id}_thinking_indicator`,
+        threadId: thread.id,
+        node: (
+          <Text backgroundColor={theme.bg} wrap="truncate-end">
+            {"  "}
+            <CyberPulse />
+            <Text color={theme.secondary} italic>
+              {runningLabel}
+            </Text>
+            {" ".repeat(pad)}
           </Text>
         ),
       });
     } else if (thread.response || thread.isStreaming) {
-      const asstHdr = "▲ morpheus";
+      if (thinkingSteps.length > 0) {
+        lines.push({
+          id: `${thread.id}_asst_spacer`,
+          threadId: thread.id,
+          node: (
+            <Text backgroundColor={theme.bg}>
+              {" ".repeat(leftWidth)}
+            </Text>
+          ),
+        });
+      }
+
+      const asstHdr = "▰ morpheus";
       const padHdr = Math.max(0, leftWidth - asstHdr.length);
       lines.push({
         id: `${thread.id}_asst_hdr`,
@@ -187,15 +303,22 @@ export function buildThreadFeedLines({
     }
 
     if (tIdx < threads.length - 1) {
-      const dots = "  " + "· ".repeat(Math.min(16, Math.max(4, Math.floor(leftWidth / 6))));
-      const padDots = Math.max(0, leftWidth - dots.length);
       lines.push({
         id: `${thread.id}_spacer_1`,
         threadId: thread.id,
         node: (
+          <Text backgroundColor={theme.bg}>
+            {" ".repeat(leftWidth)}
+          </Text>
+        ),
+      });
+      const sep = "  " + "─".repeat(Math.max(4, leftWidth - 4));
+      lines.push({
+        id: `${thread.id}_turn_divider`,
+        threadId: thread.id,
+        node: (
           <Text backgroundColor={theme.bg} wrap="truncate-end">
-            <Text color={theme.border}>{dots}</Text>
-            {" ".repeat(padDots)}
+            <Text color={theme.borderSubtle}>{sep}</Text>
           </Text>
         ),
       });

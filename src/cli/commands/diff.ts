@@ -5,13 +5,18 @@ import type { Thread } from "../types.js";
 export class DiffCommand implements CommandHandler {
   public readonly name = "diff";
   public readonly description = "View git diff against HEAD";
-  public readonly aliases = ["/diff"];
+  public readonly aliases = ["/diff", "/changes"];
 
   public matches(trimmed: string): boolean {
-    return trimmed === "/diff";
+    return trimmed === "/diff" || trimmed === "/changes";
   }
 
   public async execute(trimmed: string, ctx: CommandContext): Promise<boolean> {
+    if (ctx.openModal) {
+      ctx.openModal("diff");
+      return true;
+    }
+
     let diffOut = "";
     try {
       diffOut = execSync("git diff HEAD", { encoding: "utf-8", stdio: ["ignore", "pipe", "pipe"] });

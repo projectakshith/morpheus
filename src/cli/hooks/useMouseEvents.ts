@@ -19,10 +19,12 @@ export interface MouseEventsOptions {
   currentRightScrollRef: MutableRefObject<number>;
   setScrollOffset: Dispatch<SetStateAction<number>>;
   setRightScrollTop: Dispatch<SetStateAction<number>>;
-  setCollapsedThinkingIds: Dispatch<SetStateAction<Set<string>>>;
+  setCollapsedThinkingIds?: Dispatch<SetStateAction<Set<string>>>;
+  setExpandedThinkingIds?: Dispatch<SetStateAction<Set<string>>>;
   setCollapsedThreadIds: Dispatch<SetStateAction<Set<string>>>;
   setExpandedFileEdits: Dispatch<SetStateAction<Set<string>>>;
   setExpandedToolIds: Dispatch<SetStateAction<Set<string>>>;
+  onOpenFileDiff?: (filePath: string) => void;
 }
 
 export function useMouseEvents({
@@ -40,9 +42,11 @@ export function useMouseEvents({
   setScrollOffset,
   setRightScrollTop,
   setCollapsedThinkingIds,
+  setExpandedThinkingIds,
   setCollapsedThreadIds,
   setExpandedFileEdits,
   setExpandedToolIds,
+  onOpenFileDiff,
 }: MouseEventsOptions): void {
   useEffect(() => {
     try {
@@ -69,20 +73,11 @@ export function useMouseEvents({
 
         if (isSplitLayout && col > leftWidth) {
           if (button === 64) {
-            setRightScrollTop((prev) => {
-              const base = isRightUserScrolledRef.current ? prev : maxRightScrollRef.current;
-              return Math.max(0, base - 2);
-            });
+            setRightScrollTop((prev) => Math.max(0, prev - 2));
             isRightUserScrolledRef.current = true;
           } else if (button === 65) {
-            setRightScrollTop((prev) => {
-              const base = isRightUserScrolledRef.current ? prev : maxRightScrollRef.current;
-              const next = Math.min(maxRightScrollRef.current, base + 2);
-              if (next >= maxRightScrollRef.current) {
-                isRightUserScrolledRef.current = false;
-              }
-              return next;
-            });
+            setRightScrollTop((prev) => Math.min(maxRightScrollRef.current, prev + 2));
+            isRightUserScrolledRef.current = true;
           } else if (button === 0 && !isRelease) {
             const workspaceRow = row - 3;
             if (workspaceRow >= 0 && workspaceRow < visibleRightLinesRef.current.length) {
@@ -102,17 +97,21 @@ export function useMouseEvents({
                 });
               } else if (clickedLine?.editFilePath) {
                 const fp = clickedLine.editFilePath;
-                setRightScrollTop(currentRightScrollRef.current);
-                isRightUserScrolledRef.current = true;
-                setExpandedFileEdits((prev) => {
-                  const next = new Set(prev);
-                  if (next.has(fp)) {
-                    next.delete(fp);
-                  } else {
-                    next.add(fp);
-                  }
-                  return next;
-                });
+                if (onOpenFileDiff) {
+                  onOpenFileDiff(fp);
+                } else {
+                  setRightScrollTop(currentRightScrollRef.current);
+                  isRightUserScrolledRef.current = true;
+                  setExpandedFileEdits((prev) => {
+                    const next = new Set(prev);
+                    if (next.has(fp)) {
+                      next.delete(fp);
+                    } else {
+                      next.add(fp);
+                    }
+                    return next;
+                  });
+                }
               } else if (clickedLine?.toolId) {
                 const clickedId = clickedLine.toolId;
                 setRightScrollTop(currentRightScrollRef.current);
@@ -147,7 +146,7 @@ export function useMouseEvents({
               const clickedLine = visibleLinesRef.current[workspaceRow];
               if (clickedLine?.stepId) {
                 const sId = clickedLine.stepId;
-                setCollapsedThinkingIds((prev) => {
+                const toggle = (prev: Set<string>) => {
                   const next = new Set(prev);
                   if (next.has(sId)) {
                     next.delete(sId);
@@ -155,7 +154,12 @@ export function useMouseEvents({
                     next.add(sId);
                   }
                   return next;
-                });
+                };
+                if (setExpandedThinkingIds) {
+                  setExpandedThinkingIds(toggle);
+                } else if (setCollapsedThinkingIds) {
+                  setCollapsedThinkingIds(toggle);
+                }
               }
             }
           }

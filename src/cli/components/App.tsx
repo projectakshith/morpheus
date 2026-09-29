@@ -12,6 +12,7 @@ import { InputBox, POPUP_TOTAL_HEIGHT } from "./InputBox.js";
 import { ModelSelector, AVAILABLE_MODELS } from "./ModelSelector.js";
 import { SessionSelector } from "./SessionSelector.js";
 import { SettingsSelector } from "./SettingsSelector.js";
+import { DiffModal } from "./DiffModal.js";
 import { gatherContext } from "../../core/context.js";
 import { MORPHEUS_VERSION } from "../../index.js";
 import { theme } from "../theme.js";
@@ -34,11 +35,12 @@ export function App({
   resumeSessionId,
 }: AppProps) {
   const [currentModel, setCurrentModel] = useState(model);
-  const [activeModal, setActiveModal] = useState<"none" | "model" | "session" | "settings">("none");
+  const [activeModal, setActiveModal] = useState<"none" | "model" | "session" | "settings" | "diff">("none");
+  const [selectedDiffFile, setSelectedDiffFile] = useState<string | null>(null);
   const [scrollOffset, setScrollOffset] = useState(0);
   const [promptHistory, setPromptHistory] = useState<string[]>([]);
   const [expandedToolIds, setExpandedToolIds] = useState<Set<string>>(new Set());
-  const [collapsedThinkingIds, setCollapsedThinkingIds] = useState<Set<string>>(new Set());
+  const [expandedThinkingIds, setExpandedThinkingIds] = useState<Set<string>>(new Set());
   const [collapsedThreadIds, setCollapsedThreadIds] = useState<Set<string>>(new Set());
   const [expandedFileEdits, setExpandedFileEdits] = useState<Set<string>>(new Set());
   const [rightScrollTop, setRightScrollTop] = useState(0);
@@ -49,8 +51,15 @@ export function App({
 
   const isModelSelectorOpen = activeModal === "model";
   const setIsModelSelectorOpen = (open: boolean) => setActiveModal(open ? "model" : "none");
-  const openModal = (m: "model" | "session" | "settings") => setActiveModal(m);
-  const closeModal = () => setActiveModal("none");
+  const openModal = (m: "model" | "session" | "settings" | "diff") => setActiveModal(m);
+  const closeModal = () => {
+    setActiveModal("none");
+    setSelectedDiffFile(null);
+  };
+  const openDiffModal = (filePath?: string) => {
+    if (filePath) setSelectedDiffFile(filePath);
+    setActiveModal("diff");
+  };
 
   const baseContext = useRef(gatherContext(process.cwd()));
   const initialTaskFired = useRef(false);
@@ -61,22 +70,6 @@ export function App({
   const maxRightScrollRef = useRef(0);
   const visibleRightLinesRef = useRef<RightLine[]>([]);
   const currentRightScrollRef = useRef(0);
-
-  const {
-    terminalWidth,
-    terminalHeight,
-    isSplitLayout,
-    leftWidth,
-    rightWidth,
-    workspaceHeight,
-    feedHeight,
-    maxLineWidth,
-  } = useTerminalLayout();
-
-  const [isPopupOpen, setIsPopupOpen] = useState(false);
-  const popupHeight = isPopupOpen ? POPUP_TOTAL_HEIGHT : 0;
-  const effectiveWorkspaceHeight = Math.max(4, workspaceHeight - popupHeight);
-  const effectiveFeedHeight = effectiveWorkspaceHeight;
 
   const {
     status,
@@ -112,6 +105,22 @@ export function App({
     closeModal,
   });
 
+  const {
+    terminalWidth,
+    terminalHeight,
+    isSplitLayout,
+    leftWidth,
+    rightWidth,
+    workspaceHeight,
+    feedHeight,
+    maxLineWidth,
+  } = useTerminalLayout();
+
+  const [isPopupOpen, setIsPopupOpen] = useState(false);
+  const popupHeight = isPopupOpen ? POPUP_TOTAL_HEIGHT : 0;
+  const effectiveWorkspaceHeight = Math.max(4, workspaceHeight - popupHeight);
+  const effectiveFeedHeight = effectiveWorkspaceHeight;
+
   useEffect(() => {
     if (!isIntroActive) return;
     const startTime = Date.now();
@@ -145,10 +154,11 @@ export function App({
     currentRightScrollRef,
     setScrollOffset,
     setRightScrollTop,
-    setCollapsedThinkingIds,
+    setExpandedThinkingIds,
     setCollapsedThreadIds,
     setExpandedFileEdits,
     setExpandedToolIds,
+    onOpenFileDiff: openDiffModal,
   });
 
   useInput((input, key) => {
@@ -203,10 +213,10 @@ export function App({
       leftWidth,
       feedHeight,
       maxLineWidth,
-      collapsedThinkingIds,
+      expandedThinkingIds,
       matrixQuote,
     });
-  }, [threads, leftWidth, maxLineWidth, feedHeight, collapsedThinkingIds, matrixQuote]);
+  }, [threads, leftWidth, maxLineWidth, feedHeight, expandedThinkingIds, matrixQuote]);
 
   const maxScroll = Math.max(0, allFeedLines.length - effectiveFeedHeight);
   maxScrollRef.current = maxScroll;
@@ -239,17 +249,16 @@ export function App({
     );
   }, [threads, fileEdits, findings, expandedToolIds, collapsedThreadIds, expandedFileEdits, rightContentWidth]);
 
-  const maxRightScroll = Math.max(0, allRightLines.length - effectiveWorkspaceHeight);
+  const rightColumnVisibleHeight = Math.max(1, effectiveWorkspaceHeight - 3);
+  const maxRightScroll = Math.max(0, allRightLines.length - rightColumnVisibleHeight);
   maxRightScrollRef.current = maxRightScroll;
 
-  const effectiveRightScroll = isRightUserScrolledRef.current
-    ? Math.min(rightScrollTop, maxRightScroll)
-    : maxRightScroll;
+  const effectiveRightScroll = Math.min(rightScrollTop, maxRightScroll);
   currentRightScrollRef.current = effectiveRightScroll;
 
   const visibleRightLines = useMemo(() => {
-    return allRightLines.slice(effectiveRightScroll, effectiveRightScroll + effectiveWorkspaceHeight);
-  }, [allRightLines, effectiveRightScroll, effectiveWorkspaceHeight]);
+    return allRightLines.slice(effectiveRightScroll, effectiveRightScroll + rightColumnVisibleHeight);
+  }, [allRightLines, effectiveRightScroll, rightColumnVisibleHeight]);
 
   visibleRightLinesRef.current = visibleRightLines;
 
@@ -365,6 +374,21 @@ export function App({
               onClose={closeModal}
             />
           </Box>
+        ) : activeModal === "diff" ? (
+          <Box
+            width={terminalWidth}
+            height={effectiveWorkspaceHeight}
+            alignItems="center"
+            justifyContent="center"
+          >
+            <DiffModal
+              fileEdits={fileEdits}
+              selectedFilePath={selectedDiffFile}
+              width={Math.min(terminalWidth, 100)}
+              height={effectiveWorkspaceHeight}
+              onClose={closeModal}
+            />
+          </Box>
         ) : (
           <>
             <Box
@@ -391,22 +415,32 @@ export function App({
                 width={rightWidth}
                 height={effectiveWorkspaceHeight}
                 lines={visibleRightLines}
+                statusInfo={{
+                  status,
+                  stepCount,
+                  maxSteps,
+                  usage,
+                  elapsedSeconds,
+                  queueCount: queuedCount,
+                }}
               />
             )}
           </>
         )}
       </Box>
 
-      <StatusBar
-        status={status}
-        stepCount={stepCount}
-        maxSteps={maxSteps}
-        usage={usage}
-        elapsedSeconds={elapsedSeconds}
-        width={terminalWidth}
-        scrollOffset={scrollOffset}
-        queueCount={queuedCount}
-      />
+      {!isSplitLayout && (
+        <StatusBar
+          status={status}
+          stepCount={stepCount}
+          maxSteps={maxSteps}
+          usage={usage}
+          elapsedSeconds={elapsedSeconds}
+          width={terminalWidth}
+          scrollOffset={scrollOffset}
+          queueCount={queuedCount}
+        />
+      )}
 
       <InputBox
         onSubmit={executeTask}
@@ -418,6 +452,8 @@ export function App({
             ? "browsing sessions... (use [↑/↓] to navigate, [enter] to resume, [esc] to cancel)"
             : activeModal === "settings"
             ? "settings dashboard... (use [↑/↓] to navigate, [enter] to toggle, [esc] to cancel)"
+            : activeModal === "diff"
+            ? "code & diff inspector... (use [←/→] to switch files, [↑/↓] to scroll, [esc] to close)"
             : undefined
         }
         placeholder={

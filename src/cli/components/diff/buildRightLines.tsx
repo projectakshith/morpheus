@@ -118,11 +118,12 @@ export function buildRightLines(
       ),
     });
   } else {
-    threads.forEach((thread) => {
+    threads.forEach((thread, tIdx) => {
       const toolSteps = thread.steps.filter((s) => s.type === "tool");
       if (toolSteps.length === 0) return;
 
-      const isThreadCollapsed = collapsedThreadIds.has(thread.id);
+      const isLatestTurn = tIdx === threads.length - 1;
+      const isThreadCollapsed = collapsedThreadIds.has(thread.id) || (!isLatestTurn && !collapsedThreadIds.has(`expand_${thread.id}`));
       const thArrow = isThreadCollapsed ? "▶" : "▼";
       const thPfx = `  ${thArrow} turn #${thread.index} (${toolSteps.length})`;
       const thPad = Math.max(0, contentWidth - thPfx.length);
@@ -254,8 +255,43 @@ export function buildRightLines(
     ),
   });
 
+  // Consolidate edits per unique file path to eliminate duplication fatigue
+  interface ConsolidatedEdit {
+    filePath: string;
+    relPath: string;
+    linesAdded: number;
+    linesRemoved: number;
+    diffLines: string[];
+    count: number;
+  }
+
+  const consolidatedMap = new Map<string, ConsolidatedEdit>();
+  edits.forEach((edit) => {
+    const existing = consolidatedMap.get(edit.filePath);
+    const relPath = toRel(edit.filePath, cwd);
+    if (!existing) {
+      consolidatedMap.set(edit.filePath, {
+        filePath: edit.filePath,
+        relPath,
+        linesAdded: edit.linesAdded,
+        linesRemoved: edit.linesRemoved,
+        diffLines: edit.diffLines ? [...edit.diffLines] : [],
+        count: 1,
+      });
+    } else {
+      existing.linesAdded += edit.linesAdded;
+      existing.linesRemoved += edit.linesRemoved;
+      existing.count += 1;
+      if (edit.diffLines && edit.diffLines.length > 0) {
+        existing.diffLines = edit.diffLines;
+      }
+    }
+  });
+
+  const consolidatedEdits = Array.from(consolidatedMap.values());
+
   const eLeft = "  FILES CHANGED";
-  const eCount = String(edits.length);
+  const eCount = String(consolidatedEdits.length);
   const ePad = Math.max(0, contentWidth - eLeft.length - eCount.length);
 
   lines.push({
@@ -271,7 +307,7 @@ export function buildRightLines(
     ),
   });
 
-  if (edits.length === 0) {
+  if (consolidatedEdits.length === 0) {
     const emptyPfx = "  ○ ";
     const emptyMsg = "no file modifications";
     const pad = Math.max(0, contentWidth - emptyPfx.length - emptyMsg.length);
@@ -288,14 +324,13 @@ export function buildRightLines(
       ),
     });
   } else {
-    edits.forEach((edit) => {
+    consolidatedEdits.forEach((edit) => {
       const isExpanded = expandedFileEdits.has(edit.filePath);
-      const relPath = toRel(edit.filePath, cwd);
-      const expandIcon = isExpanded ? "[-]" : "[+]";
+      const expandIcon = isExpanded ? "[-]" : "[view]";
       const statsStr = `+${edit.linesAdded} -${edit.linesRemoved} ${expandIcon}`;
       const availPath = Math.max(0, contentWidth - 6 - statsStr.length);
       const trimmedPath =
-        relPath.length > availPath ? `${relPath.slice(0, Math.max(0, availPath - 1))}…` : relPath;
+        edit.relPath.length > availPath ? `${edit.relPath.slice(0, Math.max(0, availPath - 1))}…` : edit.relPath;
       const pad = Math.max(0, contentWidth - 6 - trimmedPath.length - statsStr.length);
 
       lines.push({
@@ -310,13 +345,13 @@ export function buildRightLines(
             {" ".repeat(pad)}
             <Text color={theme.secondary}>+{edit.linesAdded} </Text>
             <Text color={theme.error}>-{edit.linesRemoved} </Text>
-            <Text color={theme.muted}>{expandIcon}</Text>
+            <Text color={theme.accent}>{expandIcon}</Text>
           </Text>
         ),
       });
 
       if (isExpanded && edit.diffLines && edit.diffLines.length > 0) {
-        edit.diffLines.slice(0, 10).forEach((dLine, dIdx) => {
+        edit.diffLines.slice(0, 4).forEach((dLine, dIdx) => {
           const isAdd = dLine.startsWith("+");
           const isRem = dLine.startsWith("-");
           const col = isAdd ? theme.secondary : isRem ? theme.error : theme.muted;
@@ -332,6 +367,20 @@ export function buildRightLines(
               </Text>
             ),
           });
+        });
+
+        lines.push({
+          id: `diff_${edit.filePath}_hint`,
+          editFilePath: edit.filePath,
+          node: (
+            <Text backgroundColor={bg} wrap="truncate-end">
+              <Text color={theme.border}>      </Text>
+              <Text color={theme.muted} italic>
+                [type /diff or click to inspect full window]
+              </Text>
+              {" ".repeat(Math.max(0, contentWidth - 48))}
+            </Text>
+          ),
         });
       }
     });

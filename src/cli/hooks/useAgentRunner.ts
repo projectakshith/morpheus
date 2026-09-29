@@ -31,7 +31,7 @@ export interface AgentRunnerOptions {
   isRightUserScrolledRef: MutableRefObject<boolean>;
   setRightScrollTop: React.Dispatch<React.SetStateAction<number>>;
   setPromptHistory: React.Dispatch<React.SetStateAction<string[]>>;
-  openModal?: (modal: "model" | "session" | "settings") => void;
+  openModal?: (modal: "model" | "session" | "settings" | "diff") => void;
   closeModal?: () => void;
 }
 

@@ -1,19 +1,46 @@
-/*
- * DiffColumn: Right side panel displaying active tools, diffs, findings, and status.
- */
-
 import React from "react";
 import { Box, Text } from "ink";
 import { theme } from "../theme.js";
+import { glyphs } from "../glyphs.js";
+import { CyberPulse } from "./CyberPulse.js";
 import type { RightLine, DiffColumnProps, FileEditRecord, ToolStepRecord } from "../types.js";
 import { buildRightLines } from "./diff/buildRightLines.js";
 
 export type { RightLine, DiffColumnProps, FileEditRecord, ToolStepRecord };
 export { buildRightLines };
 
-export function DiffColumn({ width, height, lines }: DiffColumnProps) {
-  const visible = lines.slice(0, height);
-  const padCount = Math.max(0, height - visible.length);
+export function DiffColumn({ width, height, lines, statusInfo }: DiffColumnProps) {
+  const hasFooter = Boolean(statusInfo);
+  const footerHeight = hasFooter ? 3 : 0;
+  const contentHeight = Math.max(1, height - footerHeight);
+
+  const visible = lines.slice(0, contentHeight);
+  const padCount = Math.max(0, contentHeight - visible.length);
+  const innerWidth = Math.max(16, width - 1);
+
+  const mins = Math.floor((statusInfo?.elapsedSeconds ?? 0) / 60)
+    .toString()
+    .padStart(2, "0");
+  const secs = ((statusInfo?.elapsedSeconds ?? 0) % 60).toString().padStart(2, "0");
+  const timeStr = `${mins}:${secs}`;
+
+  const peakCtx = statusInfo?.usage?.peakContextTokens
+    ? `${(statusInfo.usage.peakContextTokens / 1000).toFixed(1)}k`
+    : "0k";
+  const limitCtx = statusInfo?.usage?.contextLimit
+    ? `${Math.round(statusInfo.usage.contextLimit / 1000)}k`
+    : "128k";
+  const totalTokens = statusInfo?.usage?.totalTokens
+    ? `${(statusInfo.usage.totalTokens / 1000).toFixed(0)}k`
+    : "0k";
+
+  const isRunning = statusInfo?.status === "running";
+  const isAborted = statusInfo?.status === "aborted";
+  const isError = statusInfo?.status === "error";
+
+  const queueStr = (statusInfo?.queueCount ?? 0) > 0 ? ` +${statusInfo!.queueCount}q` : "";
+  const stepStr = `step ${statusInfo?.stepCount ?? 0}/${statusInfo?.maxSteps ?? 25}`;
+  const hintStr = isRunning ? "[esc] stop" : "[ctrl+c] exit";
 
   return (
     <Box
@@ -37,10 +64,52 @@ export function DiffColumn({ width, height, lines }: DiffColumnProps) {
       {Array.from({ length: padCount }).map((_, idx) => (
         <Box key={`pad_${idx}`} height={1} overflow="hidden">
           <Text backgroundColor={theme.bgColumn}>
-            {" ".repeat(Math.max(16, width - 1))}
+            {" ".repeat(innerWidth)}
           </Text>
         </Box>
       ))}
+
+      {hasFooter && (
+        <Box flexDirection="column" height={3} overflow="hidden">
+          <Box height={1} overflow="hidden">
+            <Text backgroundColor={theme.bgColumn} color={theme.border}>
+              {"─".repeat(innerWidth)}
+            </Text>
+          </Box>
+          <Box height={1} overflow="hidden">
+            <Text backgroundColor={theme.bgColumn} wrap="truncate-end">
+              {" "}
+              {isRunning ? (
+                <Text color={theme.accentBright} bold>
+                  <CyberPulse />RUNNING
+                </Text>
+              ) : isAborted ? (
+                <Text color={theme.accent}>
+                  {glyphs.bullet} STOPPED
+                </Text>
+              ) : isError ? (
+                <Text color={theme.diffRemove}>
+                  {glyphs.error} ERROR
+                </Text>
+              ) : (
+                <Text color={theme.muted}>
+                  {glyphs.bullet} READY
+                </Text>
+              )}
+              <Text color={theme.secondary}> · {stepStr} · {timeStr}{queueStr}</Text>
+            </Text>
+          </Box>
+          <Box height={1} overflow="hidden">
+            <Text backgroundColor={theme.bgColumn} wrap="truncate-end">
+              {" "}
+              <Text color={theme.secondary}>ctx {peakCtx}/{limitCtx} · api {totalTokens}</Text>
+              <Text color={theme.border}> · </Text>
+              <Text color={theme.muted}>{hintStr}</Text>
+            </Text>
+          </Box>
+        </Box>
+      )}
     </Box>
   );
 }
+

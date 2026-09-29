@@ -79,9 +79,21 @@ export interface RightLine {
   node: ReactNode;
 }
 
+import type { TokenUsage } from "../core/types.js";
+
+export interface ColumnStatusInfo {
+  status: "idle" | "running" | "aborted" | "error";
+  stepCount: number;
+  maxSteps?: number;
+  usage?: TokenUsage;
+  elapsedSeconds: number;
+  queueCount?: number;
+}
+
 export interface DiffColumnProps {
   width: number;
   height: number;
   lines: RightLine[];
+  statusInfo?: ColumnStatusInfo;
 }
 

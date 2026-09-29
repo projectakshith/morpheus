@@ -17,6 +17,8 @@ export interface InputBoxProps {
   availableModels?: string[];
   cwd?: string;
   onPopupOpenChange?: (isOpen: boolean) => void;
+  isThinking?: boolean;
+  thinkingText?: string;
 }
 
 export function InputBox({
@@ -29,6 +31,8 @@ export function InputBox({
   availableModels = [],
   cwd,
   onPopupOpenChange,
+  isThinking = false,
+  thinkingText,
 }: InputBoxProps) {
   const [value, setValue] = useState("");
   const [cursorPos, setCursorPos] = useState(0);
@@ -253,62 +257,80 @@ export function InputBox({
     }
   });
 
-  const promptPrefix = `${glyphs.prompt} > `;
-  const availWidth = Math.max(10, width - promptPrefix.length - 2);
+  const promptPrefix = `${glyphs.prompt} `;
+  const innerWidth = Math.max(10, width - 4);
+  const availWidth = Math.max(10, innerWidth - promptPrefix.length);
+
+  const boxBorderColor = isDisabled
+    ? theme.borderSubtle
+    : value.length > 0
+    ? theme.accentBright
+    : theme.border;
 
   if (isDisabled) {
-    const disabledMsg = disabledMessage || "processing task... (press [esc] to stop)";
-    const pad = Math.max(0, width - promptPrefix.length - disabledMsg.length);
+    const disabledMsg = disabledMessage || "processing task... [esc] to stop";
     return (
-      <Box height={1} width={width} overflow="hidden">
+      <Box
+        height={3}
+        width={width}
+        borderStyle="round"
+        borderColor={theme.borderSubtle}
+        paddingX={1}
+        overflow="hidden"
+      >
         <Text backgroundColor={theme.bg} wrap="truncate-end">
-          <Text color={theme.accent} bold>
-            {glyphs.prompt}{" "}
+          <Text color={theme.muted} bold>
+            {promptPrefix}
           </Text>
-          <Text color={theme.muted}>{"> "}</Text>
           <Text color={theme.muted}>{disabledMsg}</Text>
-          {" ".repeat(pad)}
         </Text>
       </Box>
     );
   }
+
+  let contentNode: React.ReactNode;
 
   if (value.length === 0) {
-    const placeholder = customPlaceholder ?? " ask a question or describe a task...";
-    const pad = Math.max(0, width - promptPrefix.length - 1 - placeholder.length);
-    return (
-      <Box height={1} width={width} overflow="hidden">
-        <Text backgroundColor={theme.bg} wrap="truncate-end">
-          <Text color={theme.accent} bold>
-            {promptPrefix.slice(0, 2)}
-          </Text>
-          <Text color={theme.muted}>{promptPrefix.slice(2)}</Text>
-          <Text backgroundColor={theme.text} color={theme.bg}>
-            {" "}
-          </Text>
-          <Text color={theme.muted}>{placeholder}</Text>
-          {" ".repeat(pad)}
+    const placeholder = customPlaceholder ?? "ask a question or describe a task...";
+    const cleanPlaceholder = placeholder.trimStart();
+    contentNode = (
+      <Text backgroundColor={theme.bg} wrap="truncate-end">
+        <Text color={theme.accentBright} bold>
+          {promptPrefix}
         </Text>
-      </Box>
+        <Text backgroundColor={theme.text} color={theme.bg}>
+          {" "}
+        </Text>
+        <Text color={theme.muted}> {cleanPlaceholder}</Text>
+      </Text>
+    );
+  } else {
+    const viewStart = Math.max(0, cursorPos - availWidth + 1);
+    const visibleText = value.slice(viewStart, viewStart + availWidth);
+    const relCursor = cursorPos - viewStart;
+    const beforeCursor = visibleText.slice(0, relCursor);
+    const cursorChar = visibleText[relCursor] || " ";
+    const afterCursor = visibleText.slice(relCursor + 1);
+
+    const showGhostText = Boolean(ghostText && cursorPos === value.length);
+
+    contentNode = (
+      <Text backgroundColor={theme.bg} wrap="truncate-end">
+        <Text color={theme.accentBright} bold>
+          {promptPrefix}
+        </Text>
+        <Text color={theme.text}>{beforeCursor}</Text>
+        <Text backgroundColor={theme.text} color={theme.bg}>
+          {cursorChar}
+        </Text>
+        {showGhostText && ghostText ? (
+          <Text color={theme.muted}>{ghostText}</Text>
+        ) : (
+          <Text color={theme.text}>{afterCursor}</Text>
+        )}
+      </Text>
     );
   }
-
-  const viewStart = Math.max(0, cursorPos - availWidth + 1);
-  const visibleText = value.slice(viewStart, viewStart + availWidth);
-  const relCursor = cursorPos - viewStart;
-  const beforeCursor = visibleText.slice(0, relCursor);
-  const cursorChar = visibleText[relCursor] || " ";
-  const afterCursor = visibleText.slice(relCursor + 1);
-
-  /* Render inline dim ghost text right in the typing space when cursor is at the end */
-  const showGhostText = Boolean(ghostText && cursorPos === value.length);
-
-  const renderedLen =
-    promptPrefix.length +
-    beforeCursor.length +
-    1 +
-    (showGhostText && ghostText ? ghostText.length : afterCursor.length);
-  const pad = Math.max(0, width - renderedLen);
 
   return (
     <Box flexDirection="column" width={width}>
@@ -320,23 +342,15 @@ export function InputBox({
         />
       )}
 
-      <Box height={1} width={width} overflow="hidden">
-        <Text backgroundColor={theme.bg} wrap="truncate-end">
-          <Text color={theme.accent} bold>
-            {promptPrefix.slice(0, 2)}
-          </Text>
-          <Text color={theme.muted}>{promptPrefix.slice(2)}</Text>
-          <Text color={theme.text}>{beforeCursor}</Text>
-          <Text backgroundColor={theme.text} color={theme.bg}>
-            {cursorChar}
-          </Text>
-          {showGhostText && ghostText ? (
-            <Text color={theme.muted}>{ghostText}</Text>
-          ) : (
-            <Text color={theme.text}>{afterCursor}</Text>
-          )}
-          {" ".repeat(pad)}
-        </Text>
+      <Box
+        height={3}
+        width={width}
+        borderStyle="round"
+        borderColor={boxBorderColor}
+        paddingX={1}
+        overflow="hidden"
+      >
+        {contentNode}
       </Box>
     </Box>
   );
