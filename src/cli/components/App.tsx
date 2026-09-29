@@ -410,20 +410,13 @@ export function App({
             />
           </Box>
         ) : activeModal === "diff" ? (
-          <Box
+          <DiffModal
+            fileEdits={fileEdits}
+            selectedFilePath={selectedDiffFile}
             width={terminalWidth}
             height={effectiveWorkspaceHeight}
-            alignItems="center"
-            justifyContent="center"
-          >
-            <DiffModal
-              fileEdits={fileEdits}
-              selectedFilePath={selectedDiffFile}
-              width={Math.min(terminalWidth, 100)}
-              height={effectiveWorkspaceHeight}
-              onClose={closeModal}
-            />
-          </Box>
+            onClose={closeModal}
+          />
         ) : (
           <>
             <Box
@@ -488,7 +481,7 @@ export function App({
             : activeModal === "settings"
             ? "settings dashboard... (use [↑/↓] to navigate, [enter] to toggle, [esc] to cancel)"
             : activeModal === "diff"
-            ? "code & diff inspector... (use [←/→] to switch files, [↑/↓] to scroll, [esc] to close)"
+            ? "code & diff inspector... (use [Tab] to toggle pane, [↑/↓] to scroll/select, [←/→] switch files, [esc] to close)"
             : undefined
         }
         placeholder={
