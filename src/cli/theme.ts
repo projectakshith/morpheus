@@ -2,6 +2,10 @@ export interface ThemeColors {
   bg: string;
   bgFeed: string;
   bgColumn: string;
+  bgUser: string;
+  bgCode: string;
+  bgDiffAdd: string;
+  bgDiffRemove: string;
   text: string;
   secondary: string;
   accent: string;
@@ -36,6 +40,10 @@ export const PALETTE = {
   diffAdd: "#85c483",
   diffRemove: "#e06c52",
   diffHunk: "#70b0ff",
+  bgUser: "#1b211a",
+  bgCode: "#121011",
+  bgDiffAdd: "#152414",
+  bgDiffRemove: "#261313",
 };
 
 export const BUILTIN_THEMES: Record<string, ThemeColors> = {
@@ -43,6 +51,10 @@ export const BUILTIN_THEMES: Record<string, ThemeColors> = {
     bg: PALETTE.dynamicBlack,
     bgFeed: PALETTE.dynamicBlack,
     bgColumn: PALETTE.dynamicBlack,
+    bgUser: PALETTE.bgUser,
+    bgCode: PALETTE.bgCode,
+    bgDiffAdd: PALETTE.bgDiffAdd,
+    bgDiffRemove: PALETTE.bgDiffRemove,
     text: PALETTE.honeyBeige,
     secondary: PALETTE.eggLiqueur,
     accent: PALETTE.sapGreen,
@@ -61,6 +73,10 @@ export const BUILTIN_THEMES: Record<string, ThemeColors> = {
     bg: "#0d0208",
     bgFeed: "#0d0208",
     bgColumn: "#0d0208",
+    bgUser: "#0d1a0d",
+    bgCode: "#070205",
+    bgDiffAdd: "#00240d",
+    bgDiffRemove: "#240000",
     text: "#00ff41",
     secondary: "#008f11",
     accent: "#008f11",
@@ -79,6 +95,10 @@ export const BUILTIN_THEMES: Record<string, ThemeColors> = {
     bg: "#050814",
     bgFeed: "#050814",
     bgColumn: "#050814",
+    bgUser: "#0c1529",
+    bgCode: "#040610",
+    bgDiffAdd: "#002c1c",
+    bgDiffRemove: "#330011",
     text: "#e0e6ed",
     secondary: "#ffe600",
     accent: "#00f0ff",
@@ -97,6 +117,10 @@ export const BUILTIN_THEMES: Record<string, ThemeColors> = {
     bg: "#282a36",
     bgFeed: "#282a36",
     bgColumn: "#282a36",
+    bgUser: "#323545",
+    bgCode: "#1e1f29",
+    bgDiffAdd: "#1e382b",
+    bgDiffRemove: "#3d1f24",
     text: "#f8f8f2",
     secondary: "#f1fa8c",
     accent: "#bd93f9",
@@ -194,6 +218,18 @@ export const theme = {
   },
   get bgColumn() {
     return (THEMES[activeThemeName] || BUILTIN_THEMES.morpheus).bgColumn;
+  },
+  get bgUser() {
+    return (THEMES[activeThemeName] || BUILTIN_THEMES.morpheus).bgUser;
+  },
+  get bgCode() {
+    return (THEMES[activeThemeName] || BUILTIN_THEMES.morpheus).bgCode;
+  },
+  get bgDiffAdd() {
+    return (THEMES[activeThemeName] || BUILTIN_THEMES.morpheus).bgDiffAdd;
+  },
+  get bgDiffRemove() {
+    return (THEMES[activeThemeName] || BUILTIN_THEMES.morpheus).bgDiffRemove;
   },
   get text() {
     return (THEMES[activeThemeName] || BUILTIN_THEMES.morpheus).text;

@@ -240,7 +240,7 @@ export async function runAgent(
         parsedArgs = { raw: toolCall.function.arguments };
       }
 
-      options.onToolCall?.(toolName, parsedArgs);
+      options.onToolCall?.(toolName, parsedArgs, toolCall.id);
       await logger.logToolCall(stepCount, toolName, parsedArgs);
 
       const targetTool = tools[toolName];
@@ -287,7 +287,7 @@ export async function runAgent(
         isError = executed.isError;
       }
 
-      options.onToolResult?.(toolName, { output: outputStr, metadata: { isError } });
+      options.onToolResult?.(toolName, { output: outputStr, metadata: { isError } }, toolCall.id);
       await logger.logToolResult(stepCount, toolName, outputStr, isError);
 
       if (!isError && (toolName === "edit_file" || toolName === "write_file")) {

@@ -1,6 +1,7 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
 import { MarkdownFormatter } from "../src/cli/format";
+import { wrapLine, visibleLength, stripAnsi } from "../src/cli/utils/text";
 
 describe("MarkdownFormatter", () => {
   it("strips raw backticks and applies cyan styling to inline code", () => {
@@ -23,7 +24,7 @@ describe("MarkdownFormatter", () => {
     assert.ok(result !== null);
     assert.ok(!result.includes("**"), "Raw double asterisks should not remain");
     assert.ok(!result.includes("`"), "Raw backticks should not remain");
-    assert.ok(result.includes("1. "), "Number should remain");
+    assert.ok(stripAnsi(result).includes("1. "), "Number should remain");
     assert.ok(result.includes("morpheus"), "Project name should remain");
   });
 
@@ -50,7 +51,8 @@ describe("MarkdownFormatter", () => {
 
     const code = formatter.formatSingleLine("const answer = 42;");
     assert.ok(code !== null && code.includes("│"), "Code line should have gutter");
-    assert.ok(code.includes("const answer = 42;"), "Code line content should be preserved");
+    assert.ok(stripAnsi(code).includes("const answer = 42;"), "Code line content should be preserved");
+    assert.ok(code.includes("\x1b["), "Code should have syntax highlighting ANSI codes");
 
     const footer = formatter.formatSingleLine("```");
     assert.ok(footer !== null && footer.includes("└"), "Bottom corner should be present");
@@ -118,8 +120,6 @@ describe("MarkdownFormatter", () => {
     assert.ok(p2 !== null && p2.includes("[ P2 ]") && p2.includes("Missing docstring in helper"));
   });
 });
-
-import { wrapLine, visibleLength, stripAnsi } from "../src/cli/utils/text";
 
 describe("ANSI-aware wrapLine", () => {
   it("does not prematurely wrap lines containing ANSI escape sequences", () => {

@@ -224,10 +224,14 @@ export function DiffModal({
                 ? theme.warning
                 : theme.text;
 
+              const bgCol = isAdd ? theme.bgDiffAdd : isRem ? theme.bgDiffRemove : undefined;
+              const contentPad = bgCol ? Math.max(0, width - 4 - line.length) : 0;
+
               return (
                 <Box key={`diff_l_${scrollOffset + idx}`} height={1} overflow="hidden">
-                  <Text color={col} wrap="truncate-end">
+                  <Text color={col} backgroundColor={bgCol} wrap="truncate-end">
                     {line}
+                    {bgCol && contentPad > 0 ? " ".repeat(contentPad) : ""}
                   </Text>
                 </Box>
               );

@@ -4,7 +4,7 @@
 
 import React, { useState, useRef, useEffect, type MutableRefObject } from "react";
 import { runAgent } from "../../core/agent.js";
-import type { ChatMessage, Finding, TokenUsage } from "../../core/types.js";
+import type { ChatMessage, Finding, TokenUsage, ToolResult } from "../../core/types.js";
 import { isToolError } from "../../utils/errors.js";
 import type { Thread, ThreadStep, FileEditRecord, AppStatus } from "../types.js";
 import { extractDiffRecord } from "../utils/diffRecord.js";
@@ -454,7 +454,7 @@ export function useAgentRunner({
             );
           }
         },
-        onToolCall: (name, toolArgs, callId) => {
+        onToolCall: (name: string, toolArgs: Record<string, unknown>, callId?: string) => {
           if (!isUserScrolledRef.current) {
             setScrollOffset(0);
           }
@@ -492,7 +492,7 @@ export function useAgentRunner({
             )
           );
         },
-        onToolResult: (name, res, callId) => {
+        onToolResult: (name: string, res: ToolResult, callId?: string) => {
           if (!isUserScrolledRef.current) {
             setScrollOffset(0);
           }

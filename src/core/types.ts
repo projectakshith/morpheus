@@ -94,8 +94,8 @@ export interface AgentOptions {
   onStepStart?: (stepNumber: number) => void;
   onTextDelta?: (delta: string) => void;
   onReasoningDelta?: (delta: string) => void;
-  onToolCall?: (toolName: string, args: Record<string, unknown>) => void;
-  onToolResult?: (toolName: string, result: ToolResult) => void;
+  onToolCall?: (toolName: string, args: Record<string, unknown>, callId?: string) => void;
+  onToolResult?: (toolName: string, result: ToolResult, callId?: string) => void;
   onUsage?: (usage: TokenUsage) => void;
   verbose?: boolean;
 }

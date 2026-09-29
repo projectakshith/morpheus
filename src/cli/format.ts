@@ -1,15 +1,19 @@
-import pc from "picocolors";
+import picocolors from "picocolors";
+const pc = picocolors.createColors(true);
+import { highlightCode } from "./highlight.js";
 
 /**
  * Terminal markdown formatter with streaming table buffering and ANSI styling.
  */
 export class MarkdownFormatter {
   private inCodeBlock = false;
+  private codeBlockLang = "";
   private tableBuffer: string[] = [];
   private activeListIndent: string | null = null;
 
   reset() {
     this.inCodeBlock = false;
+    this.codeBlockLang = "";
     this.tableBuffer = [];
     this.activeListIndent = null;
   }
@@ -126,18 +130,20 @@ export class MarkdownFormatter {
       this.activeListIndent = null;
       if (this.inCodeBlock) {
         this.inCodeBlock = false;
+        this.codeBlockLang = "";
         return pc.dim("  └──────────────────────────────────────");
       } else {
         this.inCodeBlock = true;
-        const lang = trimmed.slice(3).trim();
-        const header = lang ? `── ${lang} ` : "───";
+        this.codeBlockLang = trimmed.slice(3).trim();
+        const header = this.codeBlockLang ? `── ${this.codeBlockLang} ` : "───";
         const fill = "─".repeat(Math.max(5, 38 - header.length));
         return pc.dim(`  ┌${header}${fill}`);
       }
     }
 
     if (this.inCodeBlock) {
-      return `  ${pc.dim("│")} ${raw}`;
+      const highlighted = highlightCode(raw, this.codeBlockLang);
+      return `  ${pc.dim("│")} ${highlighted}`;
     }
 
     if (!trimmed) {

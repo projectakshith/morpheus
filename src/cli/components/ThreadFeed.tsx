@@ -8,6 +8,7 @@ import { wrapLine, visibleLength } from "../utils/text.js";
 import { buildHeroFeedLines } from "./MatrixIntro.js";
 import { CyberPulse } from "./CyberPulse.js";
 import { theme } from "../theme.js";
+import { glyphs } from "../glyphs.js";
 
 export interface BuildFeedOptions {
   threads: Thread[];
@@ -167,8 +168,8 @@ export function buildThreadFeedLines({
       id: `${thread.id}_user_hdr`,
       threadId: thread.id,
       node: (
-        <Text backgroundColor={theme.bg} wrap="truncate-end">
-          <Text color={theme.accent}>❯ </Text>
+        <Text backgroundColor={theme.bgUser} wrap="truncate-end">
+          <Text color={theme.accent}>{glyphs.prompt} </Text>
           <Text color={theme.secondary} bold>
             you
           </Text>
@@ -187,7 +188,7 @@ export function buildThreadFeedLines({
           id: `${thread.id}_prompt_${lines.length}`,
           threadId: thread.id,
           node: (
-            <Text backgroundColor={theme.bg} wrap="truncate-end">
+            <Text backgroundColor={theme.bgUser} wrap="truncate-end">
               <Text color={theme.text} bold>  {wLine}</Text>
               {" ".repeat(pad)}
             </Text>

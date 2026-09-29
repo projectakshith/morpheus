@@ -387,15 +387,16 @@ export function buildRightLines(
 
       if (isExpanded && edit.diffLines && edit.diffLines.length > 0) {
         edit.diffLines.slice(0, 5).forEach((dLine, dIdx) => {
-          const isAdd = dLine.startsWith("+");
-          const isRem = dLine.startsWith("-");
+          const isAdd = dLine.startsWith("+") && !dLine.startsWith("+++");
+          const isRem = dLine.startsWith("-") && !dLine.startsWith("---");
           const col = isAdd ? theme.diffAdd : isRem ? theme.diffRemove : theme.muted;
+          const lineBg = isAdd ? theme.bgDiffAdd : isRem ? theme.bgDiffRemove : bg;
           const padDiff = Math.max(0, contentWidth - 4 - dLine.length);
           lines.push({
             id: `diff_${edit.filePath}_${dIdx}`,
             editFilePath: edit.filePath,
             node: (
-              <Text backgroundColor={bg} wrap="truncate-end">
+              <Text backgroundColor={lineBg} wrap="truncate-end">
                 <Text color={theme.border}>  │ </Text>
                 <Text color={col} bold={isAdd || isRem}>{dLine}</Text>
                 {" ".repeat(padDiff)}
