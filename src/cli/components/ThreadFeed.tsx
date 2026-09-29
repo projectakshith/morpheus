@@ -31,7 +31,7 @@ function toRel(filePath: string, cwd: string = process.cwd()): string {
 
 export function getCoolActionLabel(step?: ThreadStep, cwd: string = process.cwd()): string {
   if (!step) {
-    return "morpheus is locked in...";
+    return "cooking...";
   }
 
   const rawMs = step.isRunning
@@ -41,7 +41,7 @@ export function getCoolActionLabel(step?: ThreadStep, cwd: string = process.cwd(
   const timeSuffix = step.isRunning ? ` (${sec}s)...` : ` (${sec}s)`;
 
   if (step.type === "thinking") {
-    return `overclocking neural net${timeSuffix}`;
+    return `thinking rn${timeSuffix}`;
   }
 
   const name = step.name || "";
@@ -53,32 +53,32 @@ export function getCoolActionLabel(step?: ThreadStep, cwd: string = process.cwd(
       const pattern = typeof args.pattern === "string" ? args.pattern : "";
       const cleanPat = pattern.length > 20 ? `${pattern.slice(0, 18)}…` : pattern;
       return cleanPat
-        ? `sweeping matrix for "${cleanPat}"${timeSuffix}`
-        : `sweeping codebase${timeSuffix}`;
+        ? `searching for "${cleanPat}"${timeSuffix}`
+        : `searching code${timeSuffix}`;
     }
 
     case "read_file": {
       const fp = typeof args.filePath === "string" ? toRel(args.filePath, cwd) : "";
       const cleanFp = fp.length > 26 ? `${fp.slice(0, 24)}…` : fp;
       return cleanFp
-        ? `jacking into: ${cleanFp}${timeSuffix}`
-        : `decrypting construct${timeSuffix}`;
+        ? `reading: ${cleanFp}${timeSuffix}`
+        : `reading file${timeSuffix}`;
     }
 
     case "write_file": {
       const fp = typeof args.filePath === "string" ? toRel(args.filePath, cwd) : "";
       const cleanFp = fp.length > 26 ? `${fp.slice(0, 24)}…` : fp;
       return cleanFp
-        ? `synthesizing: ${cleanFp}${timeSuffix}`
-        : `synthesizing construct${timeSuffix}`;
+        ? `writing: ${cleanFp}${timeSuffix}`
+        : `writing file${timeSuffix}`;
     }
 
     case "edit_file": {
       const fp = typeof args.filePath === "string" ? toRel(args.filePath, cwd) : "";
       const cleanFp = fp.length > 26 ? `${fp.slice(0, 24)}…` : fp;
       return cleanFp
-        ? `rewiring construct: ${cleanFp}${timeSuffix}`
-        : `patching construct${timeSuffix}`;
+        ? `editing: ${cleanFp}${timeSuffix}`
+        : `editing file${timeSuffix}`;
     }
 
     case "bash": {
@@ -87,8 +87,8 @@ export function getCoolActionLabel(step?: ThreadStep, cwd: string = process.cwd(
       else if (cmd.startsWith(`cd "${cwd}" && `)) cmd = cmd.slice(`cd "${cwd}" && `.length);
       const cleanCmd = cmd.length > 24 ? `${cmd.slice(0, 22)}…` : cmd;
       return cleanCmd
-        ? `breaching shell: ${cleanCmd}${timeSuffix}`
-        : `executing payload${timeSuffix}`;
+        ? `running: ${cleanCmd}${timeSuffix}`
+        : `running command${timeSuffix}`;
     }
 
     case "list_dir":
@@ -96,8 +96,8 @@ export function getCoolActionLabel(step?: ThreadStep, cwd: string = process.cwd(
       const dp = typeof args.dirPath === "string" ? toRel(args.dirPath, cwd) : "";
       const cleanDp = dp.length > 24 ? `${dp.slice(0, 22)}…` : dp;
       return cleanDp
-        ? `mapping perimeter: ${cleanDp}${timeSuffix}`
-        : `mapping construct perimeter${timeSuffix}`;
+        ? `looking through: ${cleanDp}${timeSuffix}`
+        : `checking folders${timeSuffix}`;
     }
 
     case "outline_code":
@@ -105,35 +105,35 @@ export function getCoolActionLabel(step?: ThreadStep, cwd: string = process.cwd(
       const fp = typeof args.filePath === "string" ? toRel(args.filePath, cwd) : "";
       const cleanFp = fp.length > 24 ? `${fp.slice(0, 22)}…` : fp;
       return cleanFp
-        ? `deconstructing ast: ${cleanFp}${timeSuffix}`
-        : `analyzing neural symbols${timeSuffix}`;
+        ? `peeking at: ${cleanFp}${timeSuffix}`
+        : `inspecting code${timeSuffix}`;
     }
 
     case "http_request": {
       const url = typeof args.url === "string" ? args.url : "";
       const cleanUrl = url.length > 24 ? `${url.slice(0, 22)}…` : url;
       return cleanUrl
-        ? `uplink ping: ${cleanUrl}${timeSuffix}`
-        : `tapping external uplink${timeSuffix}`;
+        ? `pinging: ${cleanUrl}${timeSuffix}`
+        : `pinging link${timeSuffix}`;
     }
 
     case "load_skill": {
       const skillName = typeof args.name === "string" ? args.name : "";
       return skillName
-        ? `loading combat playbook: ${skillName}${timeSuffix}`
-        : `downloading skill construct${timeSuffix}`;
+        ? `loading: ${skillName}${timeSuffix}`
+        : `loading skill${timeSuffix}`;
     }
 
     case "record_finding": {
       const topic = typeof args.topic === "string" ? args.topic : "";
       const cleanTopic = topic.length > 22 ? `${topic.slice(0, 20)}…` : topic;
       return cleanTopic
-        ? `logging intel: ${cleanTopic}${timeSuffix}`
-        : `archiving construct intel${timeSuffix}`;
+        ? `noting down: ${cleanTopic}${timeSuffix}`
+        : `taking notes${timeSuffix}`;
     }
 
     default: {
-      return `running ${name || "action"}${timeSuffix}`;
+      return `running: ${name || "something"}${timeSuffix}`;
     }
   }
 }
@@ -233,24 +233,6 @@ export function buildThreadFeedLines({
       const sec = (rawMs / 1000).toFixed(1);
 
       if (tStep.isRunning) {
-        const label = getCoolActionLabel(tStep);
-        const visLen = 2 + 5 + label.length;
-        const pad = Math.max(0, leftWidth - visLen);
-        lines.push({
-          id: `${tStep.id}_think_hdr`,
-          threadId: thread.id,
-          stepId: tStep.id,
-          node: (
-            <Text backgroundColor={theme.bg} wrap="truncate-end">
-              {"  "}
-              <CyberPulse />
-              <Text color={theme.accentBright} italic>
-                {label}
-              </Text>
-              {" ".repeat(pad)}
-            </Text>
-          ),
-        });
         return;
       }
 
@@ -432,106 +414,59 @@ export function buildThreadFeedLines({
           });
         });
       });
+    }
 
+    if (thread.status === "queued") {
+      lines.push({
+        id: `${thread.id}_queued_line`,
+        threadId: thread.id,
+        node: (
+          <Text backgroundColor={theme.bg} wrap="truncate-end">
+            <Text color={theme.warning}>  [queued behind active task · waiting for turn]</Text>
+            {" ".repeat(Math.max(0, leftWidth - 50))}
+          </Text>
+        ),
+      });
+    } else if (thread.status === "running") {
+      const activeToolStep = thread.steps.find((s) => s.type === "tool" && s.isRunning);
+      const activeThinkingStep = thread.steps.find((s) => s.type === "thinking" && s.isRunning);
+      const rawSec = ((Date.now() - (thread.startTime || Date.now())) / 1000).toFixed(1);
+
+      let activeLabel = "";
       if (activeToolStep) {
-        const label = getCoolActionLabel(activeToolStep);
-        const visLen = 2 + 5 + label.length;
-        const pad = Math.max(0, leftWidth - visLen);
-        lines.push({
-          id: `${activeToolStep.id}_tool_running`,
-          threadId: thread.id,
-          stepId: activeToolStep.id,
-          node: (
-            <Text backgroundColor={theme.bg} wrap="truncate-end">
-              {"  "}
-              <CyberPulse />
-              <Text color={theme.accentBright} italic>
-                {label}
-              </Text>
-              {" ".repeat(pad)}
-            </Text>
-          ),
-        });
-      } else if (thread.status === "running") {
-        const rawSec = ((Date.now() - (thread.startTime || Date.now())) / 1000).toFixed(1);
-        const liveLabel = thread.isStreaming
-          ? `transmitting stream (${rawSec}s)...`
-          : thread.stepCount && thread.stepCount > 1
-          ? `synthesizing next move (${rawSec}s)...`
-          : `synthesizing construct (${rawSec}s)...`;
-        const visLen = 2 + 5 + liveLabel.length;
-        const pad = Math.max(0, leftWidth - visLen);
-        lines.push({
-          id: `${thread.id}_asst_running_pulse`,
-          threadId: thread.id,
-          node: (
-            <Text backgroundColor={theme.bg} wrap="truncate-end">
-              {"  "}
-              <CyberPulse />
-              <Text color={theme.accentBright} italic>
-                {liveLabel}
-              </Text>
-              {" ".repeat(pad)}
-            </Text>
-          ),
-        });
+        activeLabel = getCoolActionLabel(activeToolStep);
+      } else if (activeThinkingStep) {
+        activeLabel = getCoolActionLabel(activeThinkingStep);
+      } else if (thread.isStreaming) {
+        activeLabel = `typing it out (${rawSec}s)...`;
+      } else if (thread.steps.length === 0) {
+        activeLabel = thread.stepCount && thread.stepCount > 1
+          ? `thinking rn (${rawSec}s)...`
+          : `cooking (${rawSec}s)...`;
+      } else {
+        activeLabel = `working on it (${rawSec}s)...`;
       }
-    } else {
-      if (activeToolStep) {
-        const label = getCoolActionLabel(activeToolStep);
-        const visLen = 2 + 5 + label.length;
-        const pad = Math.max(0, leftWidth - visLen);
-        lines.push({
-          id: `${activeToolStep.id}_tool_running`,
-          threadId: thread.id,
-          stepId: activeToolStep.id,
-          node: (
-            <Text backgroundColor={theme.bg} wrap="truncate-end">
-              {"  "}
-              <CyberPulse />
-              <Text color={theme.accentBright} italic>
-                {label}
-              </Text>
-              {" ".repeat(pad)}
+
+      const visLen = 2 + 5 + activeLabel.length;
+      const pad = Math.max(0, leftWidth - visLen);
+      const lineId = (thread.response || thread.isStreaming)
+        ? `${thread.id}_asst_running_pulse`
+        : `${thread.id}_thinking_indicator`;
+
+      lines.push({
+        id: lineId,
+        threadId: thread.id,
+        node: (
+          <Text backgroundColor={theme.bg} wrap="truncate-end">
+            {"  "}
+            <CyberPulse />
+            <Text color={theme.accentBright} italic>
+              {activeLabel}
             </Text>
-          ),
-        });
-      } else if (thread.status === "queued") {
-        lines.push({
-          id: `${thread.id}_queued_line`,
-          threadId: thread.id,
-          node: (
-            <Text backgroundColor={theme.bg} wrap="truncate-end">
-              <Text color={theme.warning}>  [queued behind active task · waiting for turn]</Text>
-              {" ".repeat(Math.max(0, leftWidth - 50))}
-            </Text>
-          ),
-        });
-      } else if (thread.status === "running" && !thinkingSteps.some((s) => s.isRunning)) {
-        const rawSec = ((Date.now() - (thread.startTime || Date.now())) / 1000).toFixed(1);
-        const runningLabel =
-          thread.steps.length === 0
-            ? (thread.stepCount && thread.stepCount > 1
-                ? `evaluating construct (${rawSec}s)...`
-                : `morpheus is locked in (${rawSec}s)...`)
-            : `synthesizing next move (${rawSec}s)...`;
-        const visLen = 2 + 5 + runningLabel.length;
-        const pad = Math.max(0, leftWidth - visLen);
-        lines.push({
-          id: `${thread.id}_thinking_indicator`,
-          threadId: thread.id,
-          node: (
-            <Text backgroundColor={theme.bg} wrap="truncate-end">
-              {"  "}
-              <CyberPulse />
-              <Text color={theme.secondary} italic>
-                {runningLabel}
-              </Text>
-              {" ".repeat(pad)}
-            </Text>
-          ),
-        });
-      }
+            {" ".repeat(pad)}
+          </Text>
+        ),
+      });
     }
 
     if (tIdx < threads.length - 1) {

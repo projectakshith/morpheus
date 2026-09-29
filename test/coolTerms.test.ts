@@ -3,13 +3,13 @@ import assert from "node:assert/strict";
 import { getCoolActionLabel, buildThreadFeedLines } from "../src/cli/components/ThreadFeed";
 import type { Thread, ThreadStep } from "../src/cli/types";
 
-describe("Cool Action Labels (Matrix / Cyberpunk Aesthetic)", () => {
-  it("defaults to 'morpheus is locked in...' when no step is active", () => {
+describe("Cool Action Labels (Chill Friend / Gen-Z Aesthetic)", () => {
+  it("defaults to 'cooking...' when no step is active", () => {
     const label = getCoolActionLabel(undefined);
-    assert.equal(label, "morpheus is locked in...");
+    assert.equal(label, "cooking...");
   });
 
-  it("formats running thinking step as 'overclocking neural net'", () => {
+  it("formats running thinking step as 'thinking rn'", () => {
     const step: ThreadStep = {
       id: "think_1",
       type: "thinking",
@@ -17,10 +17,10 @@ describe("Cool Action Labels (Matrix / Cyberpunk Aesthetic)", () => {
       startTime: Date.now() - 1200,
     };
     const label = getCoolActionLabel(step);
-    assert.ok(label.startsWith("overclocking neural net (1.2s)...") || label.includes("overclocking neural net"));
+    assert.ok(label.startsWith("thinking rn (1.2s)...") || label.includes("thinking rn"));
   });
 
-  it("formats search / grep_code as 'sweeping matrix'", () => {
+  it("formats search / grep_code as 'searching for'", () => {
     const step: ThreadStep = {
       id: "tool_1",
       type: "tool",
@@ -30,10 +30,10 @@ describe("Cool Action Labels (Matrix / Cyberpunk Aesthetic)", () => {
       startTime: Date.now() - 500,
     };
     const label = getCoolActionLabel(step);
-    assert.ok(label.includes("sweeping matrix for \"wrapLine\""));
+    assert.ok(label.includes("searching for \"wrapLine\""));
   });
 
-  it("formats read_file as 'jacking into'", () => {
+  it("formats read_file as 'reading:'", () => {
     const step: ThreadStep = {
       id: "tool_2",
       type: "tool",
@@ -43,10 +43,10 @@ describe("Cool Action Labels (Matrix / Cyberpunk Aesthetic)", () => {
       startTime: Date.now() - 300,
     };
     const label = getCoolActionLabel(step, "/test");
-    assert.ok(label.includes("jacking into: src/index.ts"));
+    assert.ok(label.includes("reading: src/index.ts"));
   });
 
-  it("formats write_file as 'synthesizing'", () => {
+  it("formats write_file as 'writing:'", () => {
     const step: ThreadStep = {
       id: "tool_3",
       type: "tool",
@@ -56,10 +56,10 @@ describe("Cool Action Labels (Matrix / Cyberpunk Aesthetic)", () => {
       startTime: Date.now() - 400,
     };
     const label = getCoolActionLabel(step, "/test");
-    assert.ok(label.includes("synthesizing: src/bundle.js"));
+    assert.ok(label.includes("writing: src/bundle.js"));
   });
 
-  it("formats edit_file as 'rewiring construct'", () => {
+  it("formats edit_file as 'editing:'", () => {
     const step: ThreadStep = {
       id: "tool_4",
       type: "tool",
@@ -69,10 +69,10 @@ describe("Cool Action Labels (Matrix / Cyberpunk Aesthetic)", () => {
       startTime: Date.now() - 200,
     };
     const label = getCoolActionLabel(step, "/test");
-    assert.ok(label.includes("rewiring construct: src/app.ts"));
+    assert.ok(label.includes("editing: src/app.ts"));
   });
 
-  it("formats bash execution as 'breaching shell'", () => {
+  it("formats bash execution as 'running:'", () => {
     const step: ThreadStep = {
       id: "tool_5",
       type: "tool",
@@ -82,10 +82,10 @@ describe("Cool Action Labels (Matrix / Cyberpunk Aesthetic)", () => {
       startTime: Date.now() - 1500,
     };
     const label = getCoolActionLabel(step);
-    assert.ok(label.includes("breaching shell: npm test"));
+    assert.ok(label.includes("running: npm test"));
   });
 
-  it("formats list_dir as 'mapping perimeter'", () => {
+  it("formats list_dir as 'looking through:'", () => {
     const step: ThreadStep = {
       id: "tool_6",
       type: "tool",
@@ -95,10 +95,10 @@ describe("Cool Action Labels (Matrix / Cyberpunk Aesthetic)", () => {
       startTime: Date.now() - 100,
     };
     const label = getCoolActionLabel(step, "/test");
-    assert.ok(label.includes("mapping perimeter: src/cli"));
+    assert.ok(label.includes("looking through: src/cli"));
   });
 
-  it("formats outline_code as 'deconstructing ast'", () => {
+  it("formats outline_code as 'peeking at:'", () => {
     const step: ThreadStep = {
       id: "tool_7",
       type: "tool",
@@ -108,10 +108,10 @@ describe("Cool Action Labels (Matrix / Cyberpunk Aesthetic)", () => {
       startTime: Date.now() - 250,
     };
     const label = getCoolActionLabel(step, "/test");
-    assert.ok(label.includes("deconstructing ast: src/agent.ts"));
+    assert.ok(label.includes("peeking at: src/agent.ts"));
   });
 
-  it("formats http_request as 'uplink ping'", () => {
+  it("formats http_request as 'pinging:'", () => {
     const step: ThreadStep = {
       id: "tool_8",
       type: "tool",
@@ -121,10 +121,10 @@ describe("Cool Action Labels (Matrix / Cyberpunk Aesthetic)", () => {
       startTime: Date.now() - 600,
     };
     const label = getCoolActionLabel(step);
-    assert.ok(label.includes("uplink ping: https://api.github.com"));
+    assert.ok(label.includes("pinging: https://api.github.com"));
   });
 
-  it("formats load_skill as 'loading combat playbook'", () => {
+  it("formats load_skill as 'loading:'", () => {
     const step: ThreadStep = {
       id: "tool_9",
       type: "tool",
@@ -134,7 +134,7 @@ describe("Cool Action Labels (Matrix / Cyberpunk Aesthetic)", () => {
       startTime: Date.now() - 50,
     };
     const label = getCoolActionLabel(step);
-    assert.ok(label.includes("loading combat playbook: matrix-combat"));
+    assert.ok(label.includes("loading: matrix-combat"));
   });
 });
 
@@ -203,5 +203,42 @@ describe("ThreadFeed Continuous UI Activity", () => {
     });
     const hasPulse = lines.some((l) => l.id.includes("asst_running_pulse") || l.id.includes("thinking_indicator"));
     assert.ok(!hasPulse, "Must not show running indicators when thread is completed");
+  });
+
+  it("enforces strictly ONE active loader even when tools and thinking steps are active", () => {
+    const thread: Thread = {
+      id: "t4",
+      index: 1,
+      prompt: "run multi-step task",
+      response: "Here is partial output.",
+      isStreaming: false,
+      steps: [
+        {
+          id: "step_think",
+          type: "thinking",
+          isRunning: true,
+          startTime: Date.now() - 500,
+        },
+        {
+          id: "step_tool",
+          type: "tool",
+          name: "read_file",
+          args: { filePath: "/src/index.ts" },
+          isRunning: true,
+          startTime: Date.now() - 200,
+        },
+      ],
+      status: "running",
+      stepCount: 2,
+      startTime: Date.now() - 3000,
+    };
+    const lines = buildThreadFeedLines({
+      threads: [thread],
+      leftWidth: 80,
+      feedHeight: 20,
+      maxLineWidth: 76,
+    });
+    const loaderLines = lines.filter((l) => l.id.includes("running_pulse") || l.id.includes("thinking_indicator") || l.id.includes("tool_running"));
+    assert.equal(loaderLines.length, 1, "Must never render more than 1 loader at any time");
   });
 });
