@@ -50,13 +50,13 @@ function extractActiveAnsi(text: string): string {
  */
 function getHangingIndent(firstLine: string): string {
   const clean = stripAnsi(firstLine);
-  if (/^\s*[•◇\-*+]\s+/.test(clean)) {
-    const match = clean.match(/^(\s*[•◇\-*+]\s+)/);
-    return " ".repeat(match ? match[1].length : 4);
+  const bulletTagMatch = clean.match(/^(\s*[•◇\-*+]\s+(?:\[[^\]]+\]\s+)?)/);
+  if (bulletTagMatch) {
+    return " ".repeat(bulletTagMatch[1].length);
   }
-  if (/^\s*\d+\.\s+/.test(clean)) {
-    const match = clean.match(/^(\s*\d+\.\s+)/);
-    return " ".repeat(match ? match[1].length : 5);
+  const numTagMatch = clean.match(/^(\s*\d+\.\s+(?:\[[^\]]+\]\s+)?)/);
+  if (numTagMatch) {
+    return " ".repeat(numTagMatch[1].length);
   }
   if (/^\s*│\s*/.test(clean)) {
     return "  │ ";

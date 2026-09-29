@@ -6,10 +6,12 @@ import pc from "picocolors";
 export class MarkdownFormatter {
   private inCodeBlock = false;
   private tableBuffer: string[] = [];
+  private activeListIndent: string | null = null;
 
   reset() {
     this.inCodeBlock = false;
     this.tableBuffer = [];
+    this.activeListIndent = null;
   }
 
   /**
@@ -121,6 +123,7 @@ export class MarkdownFormatter {
     const trimmed = raw.trim();
 
     if (trimmed.startsWith("```")) {
+      this.activeListIndent = null;
       if (this.inCodeBlock) {
         this.inCodeBlock = false;
         return pc.dim("  └──────────────────────────────────────");
@@ -137,21 +140,39 @@ export class MarkdownFormatter {
       return `  ${pc.dim("│")} ${raw}`;
     }
 
+    if (!trimmed) {
+      this.activeListIndent = null;
+      return "";
+    }
+
     if (/^(?:---|===|\*\*\*|___)\s*$/.test(trimmed)) {
+      this.activeListIndent = null;
       return pc.dim("  ────────────────────────────────────────");
     }
 
     const h1 = raw.match(/^#\s+(.+)$/);
-    if (h1) return pc.bold(pc.white(`▰ ${this.formatInline(h1[1])}`));
+    if (h1) {
+      this.activeListIndent = null;
+      return pc.bold(pc.white(`▰ ${this.formatInline(h1[1])}`));
+    }
 
     const h2 = raw.match(/^##\s+(.+)$/);
-    if (h2) return pc.bold(pc.green(`◈ ${this.formatInline(h2[1])}`));
+    if (h2) {
+      this.activeListIndent = null;
+      return pc.bold(pc.green(`◈ ${this.formatInline(h2[1])}`));
+    }
 
     const h3 = raw.match(/^###+\s+(.+)$/);
-    if (h3) return pc.bold(pc.cyan(`◆ ${this.formatInline(h3[1])}`));
+    if (h3) {
+      this.activeListIndent = null;
+      return pc.bold(pc.cyan(`◆ ${this.formatInline(h3[1])}`));
+    }
 
     const bq = raw.match(/^>\s*(.+)$/);
-    if (bq) return `  ${pc.dim("│")} ${pc.italic(this.formatInline(bq[1]))}`;
+    if (bq) {
+      this.activeListIndent = null;
+      return `  ${pc.dim("│")} ${pc.italic(this.formatInline(bq[1]))}`;
+    }
 
     // Priority and callout badges (P0, P1, P2, CRITICAL, WARN, NOTE, FIX)
     const badge = raw.match(/^(\s*)(?:[-*+]\s+)?(?:\*\*|\[)?(P[0-3]|CRITICAL|SECURITY|WARN|WARNING|NOTE|FIX)(?:\*\*|\])?\s*[-:]\s*(.+)$/i);
@@ -169,6 +190,7 @@ export class MarkdownFormatter {
       } else {
         badgeStyled = pc.bold(pc.magenta(`[ ${tag} ]`));
       }
+      this.activeListIndent = (indent || "") + "    ";
       return `${indent}  ${badgeStyled} ${this.formatInline(content)}`;
     }
 
@@ -178,17 +200,24 @@ export class MarkdownFormatter {
       const num = boldNum[2];
       const title = boldNum[3];
       const rest = boldNum[4];
+      this.activeListIndent = (indent || "") + " ".repeat(num.length + 4);
       return `${indent}  ${pc.bold(pc.white(num + "."))} ${pc.bold(this.formatInline(title))}${this.formatInline(rest)}`;
     }
 
     const num = raw.match(/^(\s*)(\d+)\.\s+(.+)$/);
     if (num) {
+      this.activeListIndent = (num[1] || "") + " ".repeat(num[2].length + 4);
       return `${num[1]}  ${pc.bold(pc.green(num[2] + "."))} ${this.formatInline(num[3])}`;
     }
 
     const bullet = raw.match(/^(\s*)[-*+]\s+(.+)$/);
     if (bullet) {
+      this.activeListIndent = (bullet[1] || "") + "    ";
       return `${bullet[1]}  • ${this.formatInline(bullet[2])}`;
+    }
+
+    if (this.activeListIndent && !raw.startsWith(" ")) {
+      return `${this.activeListIndent}${this.formatInline(trimmed)}`;
     }
 
     return this.formatInline(raw);

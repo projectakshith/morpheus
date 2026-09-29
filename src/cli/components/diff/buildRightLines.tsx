@@ -208,52 +208,61 @@ export function buildRightLines(
           });
 
           if (isExpanded) {
-            if (step.args && Object.keys(step.args).length > 0) {
-              const argLines = JSON.stringify(step.args, null, 2).split("\n").slice(0, 8);
-              argLines.forEach((aLine, aIdx) => {
-                const visLen = 6 + aLine.length;
-                const padArg = Math.max(0, contentWidth - visLen);
-                lines.push({
-                  id: `tool_${step.id}_arg_${aIdx}`,
-                  toolId: step.id,
-                  node: (
-                    <Text backgroundColor={bg} wrap="truncate-end">
-                      <Text color={theme.border}>  │ </Text>
-                      <Text color={theme.muted}>in </Text>
-                      <Text color={theme.secondary}>{aLine}</Text>
-                      {" ".repeat(padArg)}
-                    </Text>
-                  ),
-                });
-              });
-            }
-
             if (step.outputPreview && step.outputPreview.length > 0) {
-              step.outputPreview.slice(0, 6).forEach((oLine, oIdx) => {
-                const visLen = 4 + oLine.length;
+              const previewLines = step.outputPreview.slice(0, 8);
+              previewLines.forEach((oLine, oIdx) => {
+                const visLen = 6 + oLine.length;
                 const padOut = Math.max(0, contentWidth - visLen);
                 lines.push({
                   id: `tool_${step.id}_out_${oIdx}`,
                   toolId: step.id,
                   node: (
                     <Text backgroundColor={bg} wrap="truncate-end">
-                      <Text color={theme.border}>  │ </Text>
-                      <Text color={step.isError ? theme.error : theme.text}>{oLine}</Text>
+                      <Text color={theme.border}>    │ </Text>
+                      <Text color={step.isError ? theme.error : theme.muted}>{oLine}</Text>
                       {" ".repeat(padOut)}
                     </Text>
                   ),
                 });
               });
+              if (step.outputSummary && step.outputSummary !== previewLines[0]) {
+                const visLen = 6 + step.outputSummary.length;
+                const padSum = Math.max(0, contentWidth - visLen);
+                lines.push({
+                  id: `tool_${step.id}_summary`,
+                  toolId: step.id,
+                  node: (
+                    <Text backgroundColor={bg} wrap="truncate-end">
+                      <Text color={theme.border}>    └ </Text>
+                      <Text color={step.isError ? theme.error : theme.secondary} italic>
+                        {step.outputSummary}
+                      </Text>
+                      {" ".repeat(padSum)}
+                    </Text>
+                  ),
+                });
+              } else {
+                lines.push({
+                  id: `tool_${step.id}_summary`,
+                  toolId: step.id,
+                  node: (
+                    <Text backgroundColor={bg} wrap="truncate-end">
+                      <Text color={theme.border}>    └</Text>
+                      {" ".repeat(Math.max(0, contentWidth - 5))}
+                    </Text>
+                  ),
+                });
+              }
             } else if (step.outputSummary) {
-              const visLen = 4 + step.outputSummary.length;
+              const visLen = 6 + step.outputSummary.length;
               const padSum = Math.max(0, contentWidth - visLen);
               lines.push({
                 id: `tool_${step.id}_summary`,
                 toolId: step.id,
                 node: (
                   <Text backgroundColor={bg} wrap="truncate-end">
-                    <Text color={theme.border}>  └ </Text>
-                    <Text color={theme.muted} italic>
+                    <Text color={theme.border}>    └ </Text>
+                    <Text color={step.isError ? theme.error : theme.secondary} italic>
                       {step.outputSummary}
                     </Text>
                     {" ".repeat(padSum)}
@@ -491,30 +500,6 @@ export function buildRightLines(
       ),
     });
   }
-
-  lines.push({
-    id: "log_div",
-    node: (
-      <Text backgroundColor={bg} color={theme.border}>
-        {"──" + "─".repeat(Math.max(0, contentWidth - 2))}
-      </Text>
-    ),
-  });
-
-  const logHint = "~/.morpheus/logs [type /log]";
-  const logAvail = Math.max(0, contentWidth - 5);
-  const logTrimmed = logHint.length > logAvail ? `${logHint.slice(0, Math.max(0, logAvail - 1))}…` : logHint;
-  const lPad = Math.max(0, contentWidth - 4 - logTrimmed.length);
-  lines.push({
-    id: "log_info",
-    node: (
-      <Text backgroundColor={bg} wrap="truncate-end">
-        <Text color={theme.border}>  ≡ </Text>
-        <Text color={theme.muted}>{logTrimmed}</Text>
-        {" ".repeat(lPad)}
-      </Text>
-    ),
-  });
 
   return lines;
 }

@@ -308,7 +308,26 @@ export function buildThreadFeedLines({
 
         if (tStep.content) {
           const rawThinkLines = tStep.content.trim().split("\n");
-          rawThinkLines.forEach((rLine) => {
+          const cappedLines = rawThinkLines.slice(-12);
+          const hiddenCount = rawThinkLines.length - cappedLines.length;
+
+          if (hiddenCount > 0) {
+            const hidText = `  │ ... [${hiddenCount} earlier lines hidden]`;
+            const padHid = Math.max(0, leftWidth - hidText.length);
+            lines.push({
+              id: `${tStep.id}_think_hidden`,
+              threadId: thread.id,
+              stepId: tStep.id,
+              node: (
+                <Text backgroundColor={theme.bg} wrap="truncate-end">
+                  <Text color={theme.borderSubtle}>{hidText}</Text>
+                  {" ".repeat(padHid)}
+                </Text>
+              ),
+            });
+          }
+
+          cappedLines.forEach((rLine) => {
             const wrapped = wrapLine(rLine, maxLineWidth);
             wrapped.forEach((wLine) => {
               const visLen = 4 + visibleLength(wLine);
@@ -328,6 +347,18 @@ export function buildThreadFeedLines({
                 ),
               });
             });
+          });
+
+          lines.push({
+            id: `${tStep.id}_think_footer`,
+            threadId: thread.id,
+            stepId: tStep.id,
+            node: (
+              <Text backgroundColor={theme.bg} wrap="truncate-end">
+                <Text color={theme.borderSubtle}>  └</Text>
+                {" ".repeat(Math.max(0, leftWidth - 3))}
+              </Text>
+            ),
           });
         }
       }
