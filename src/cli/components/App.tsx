@@ -141,6 +141,7 @@ export function App({
   }, [isIntroActive]);
 
   useMouseEvents({
+    activeModal,
     isIntroActive,
     setIsIntroActive,
     isSplitLayout,

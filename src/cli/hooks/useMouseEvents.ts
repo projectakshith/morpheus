@@ -6,6 +6,7 @@ import { useEffect, type MutableRefObject, type Dispatch, type SetStateAction } 
 import type { FeedLine, RightLine } from "../types.js";
 
 export interface MouseEventsOptions {
+  activeModal?: string;
   isIntroActive: boolean;
   setIsIntroActive: Dispatch<SetStateAction<boolean>>;
   isSplitLayout: boolean;
@@ -28,6 +29,7 @@ export interface MouseEventsOptions {
 }
 
 export function useMouseEvents({
+  activeModal,
   isIntroActive,
   setIsIntroActive,
   isSplitLayout,
@@ -68,6 +70,10 @@ export function useMouseEvents({
           if (button === 0 && !isRelease) {
             setIsIntroActive(false);
           }
+          return;
+        }
+
+        if (activeModal && activeModal !== "none") {
           return;
         }
 

@@ -3,7 +3,6 @@ import { Box, Text, useInput } from "ink";
 import path from "node:path";
 import { execSync } from "node:child_process";
 import { theme } from "../theme.js";
-import { glyphs } from "../glyphs.js";
 import { highlightCode, getLangFromPath } from "../highlight.js";
 import { visibleLength } from "../utils/text.js";
 import type { FileEditRecord } from "../types.js";
@@ -212,7 +211,6 @@ export function DiffModal({
   }, [selectedFilePath, consolidatedFiles]);
 
   const [activeFileIndex, setActiveFileIndex] = useState(initialIndex);
-  const [focusedPane, setFocusedPane] = useState<"code" | "files">("code");
   const [scrollOffset, setScrollOffset] = useState(0);
   const [fileScrollOffset, setFileScrollOffset] = useState(0);
 
@@ -224,41 +222,100 @@ export function DiffModal({
     [diffLines]
   );
 
-  // Layout geometry: Full screen split pane
-  // Overhead: Top bar (1) + Top divider (1) + Bottom divider (1) + Bottom status (1) = 4 lines
+  // Layout sizing:
+  // Overhead: Top bar (1) + Top border (1) + Bottom border (1) + Bottom bar (1) = 4 lines
   const bodyHeight = Math.max(4, height - 4);
-  const rightWidth = Math.max(26, Math.min(38, Math.floor(width * 0.28)));
+  const rightWidth = Math.max(26, Math.min(36, Math.floor(width * 0.26)));
   const leftWidth = Math.max(30, width - rightWidth - 1);
 
-  // Left code pane vertical allocation
-  // Subheader (1) + Gutter header (1) = 2 lines
-  const codeViewHeight = Math.max(2, bodyHeight - 2);
+  // Code view height is full body height (maximum code area)
+  const codeViewHeight = bodyHeight;
   const maxScroll = Math.max(0, parsedLines.length - codeViewHeight);
 
-  // Right files pane vertical allocation
-  const showFileDetails = bodyHeight >= 14;
-  const fileDetailsHeight = showFileDetails ? 6 : 0;
-  // Header (1) + Divider (1) + Details card = 2 + fileDetailsHeight
-  const filesListHeight = Math.max(2, bodyHeight - 2 - fileDetailsHeight);
-  const maxFileScroll = Math.max(0, consolidatedFiles.length - filesListHeight);
+  // Files list height: bodyHeight - 2 (header + separator)
+  const filesListHeight = Math.max(2, bodyHeight - 2);
 
-  // Keep file scroll offset in sync with active index
+  // Auto-scroll file list so active file is visible
   useEffect(() => {
     if (activeFileIndex < fileScrollOffset) {
       setFileScrollOffset(activeFileIndex);
     } else if (activeFileIndex >= fileScrollOffset + filesListHeight) {
       setFileScrollOffset(Math.max(0, activeFileIndex - filesListHeight + 1));
     }
-  }, [activeFileIndex, filesListHeight]);
+  }, [activeFileIndex, fileScrollOffset, filesListHeight]);
 
+  // Terminal mouse / trackpad scroll handler
+  useEffect(() => {
+    const onData = (chunk: Buffer | string) => {
+      const str = typeof chunk === "string" ? chunk : chunk.toString("utf-8");
+      const mouseMatches = str.matchAll(/\x1b\[<(\d+);(\d+);(\d+)([Mm])/g);
+
+      for (const match of mouseMatches) {
+        const button = parseInt(match[1], 10);
+        const col = parseInt(match[2], 10);
+        const row = parseInt(match[3], 10);
+        const isRelease = match[4] === "m";
+
+        if (button === 64) {
+          // Scroll Up
+          if (col > leftWidth) {
+            setActiveFileIndex((prev) => {
+              const next = Math.max(0, prev - 1);
+              if (next !== prev) setScrollOffset(0);
+              return next;
+            });
+          } else {
+            setScrollOffset((prev) => Math.max(0, prev - 3));
+          }
+        } else if (button === 65) {
+          // Scroll Down
+          if (col > leftWidth) {
+            setActiveFileIndex((prev) => {
+              const next = Math.min(consolidatedFiles.length - 1, prev + 1);
+              if (next !== prev) setScrollOffset(0);
+              return next;
+            });
+          } else {
+            setScrollOffset((prev) => Math.min(maxScroll, prev + 3));
+          }
+        } else if (button === 0 && !isRelease && col > leftWidth) {
+          // Click on a file in right pane (files start around row 4)
+          const targetIndex = row - 4 + fileScrollOffset;
+          if (targetIndex >= 0 && targetIndex < consolidatedFiles.length) {
+            setActiveFileIndex(targetIndex);
+            setScrollOffset(0);
+          }
+        }
+      }
+    };
+
+    process.stdin.on("data", onData);
+    return () => {
+      process.stdin.off("data", onData);
+    };
+  }, [leftWidth, consolidatedFiles.length, maxScroll, fileScrollOffset]);
+
+  // Keyboard navigation
   useInput((input, key) => {
     if (key.escape || input === "q") {
       onClose();
       return;
     }
 
-    if (key.tab) {
-      setFocusedPane((prev) => (prev === "code" ? "files" : "code"));
+    // File switching: Left/Right arrows, h/l, p/n, [/], Tab
+    if (key.leftArrow || input === "h" || input === "p" || input === "[") {
+      if (consolidatedFiles.length > 0) {
+        setActiveFileIndex((prev) => (prev > 0 ? prev - 1 : consolidatedFiles.length - 1));
+        setScrollOffset(0);
+      }
+      return;
+    }
+
+    if (key.rightArrow || input === "l" || input === "n" || input === "]" || key.tab) {
+      if (consolidatedFiles.length > 0) {
+        setActiveFileIndex((prev) => (prev < consolidatedFiles.length - 1 ? prev + 1 : 0));
+        setScrollOffset(0);
+      }
       return;
     }
 
@@ -272,107 +329,41 @@ export function DiffModal({
       }
     }
 
-    if (focusedPane === "code") {
-      if (key.upArrow || input === "k") {
-        setScrollOffset((prev) => Math.max(0, prev - 1));
-        return;
-      }
+    // Code scrolling: Up/Down, k/j, w/s
+    if (key.upArrow || input === "k" || input === "w") {
+      setScrollOffset((prev) => Math.max(0, prev - 1));
+      return;
+    }
 
-      if (key.downArrow || input === "j") {
-        setScrollOffset((prev) => Math.min(maxScroll, prev + 1));
-        return;
-      }
+    if (key.downArrow || input === "j" || input === "s") {
+      setScrollOffset((prev) => Math.min(maxScroll, prev + 1));
+      return;
+    }
 
-      if (key.pageUp || input === "u") {
-        setScrollOffset((prev) => Math.max(0, prev - Math.max(5, Math.floor(codeViewHeight / 2))));
-        return;
-      }
+    // Page scrolling: PageUp/PageDown, Ctrl+U/Ctrl+D, Space, b/f
+    if (key.pageUp || (key.ctrl && input === "u") || input === "b") {
+      setScrollOffset((prev) => Math.max(0, prev - Math.max(4, Math.floor(codeViewHeight / 2))));
+      return;
+    }
 
-      if (key.pageDown || input === "d") {
-        setScrollOffset((prev) => Math.min(maxScroll, prev + Math.max(5, Math.floor(codeViewHeight / 2))));
-        return;
-      }
+    if (key.pageDown || (key.ctrl && input === "d") || input === " " || input === "f") {
+      setScrollOffset((prev) => Math.min(maxScroll, prev + Math.max(4, Math.floor(codeViewHeight / 2))));
+      return;
+    }
 
-      if (input === "g") {
-        setScrollOffset(0);
-        return;
-      }
+    if (input === "g" || key.home) {
+      setScrollOffset(0);
+      return;
+    }
 
-      if (input === "G") {
-        setScrollOffset(maxScroll);
-        return;
-      }
+    if (input === "G" || key.end) {
+      setScrollOffset(maxScroll);
+      return;
+    }
 
-      if (key.leftArrow || input === "h") {
-        if (consolidatedFiles.length > 0) {
-          setActiveFileIndex((prev) => (prev > 0 ? prev - 1 : consolidatedFiles.length - 1));
-          setScrollOffset(0);
-        }
-        return;
-      }
-
-      if (key.rightArrow || input === "l") {
-        if (consolidatedFiles.length > 0) {
-          setActiveFileIndex((prev) => (prev < consolidatedFiles.length - 1 ? prev + 1 : 0));
-          setScrollOffset(0);
-        }
-        return;
-      }
-
-      if (key.return) {
-        onClose();
-        return;
-      }
-    } else {
-      // Files pane navigation
-      if (key.upArrow || input === "k") {
-        if (consolidatedFiles.length > 0) {
-          setActiveFileIndex((prev) => (prev > 0 ? prev - 1 : consolidatedFiles.length - 1));
-          setScrollOffset(0);
-        }
-        return;
-      }
-
-      if (key.downArrow || input === "j") {
-        if (consolidatedFiles.length > 0) {
-          setActiveFileIndex((prev) => (prev < consolidatedFiles.length - 1 ? prev + 1 : 0));
-          setScrollOffset(0);
-        }
-        return;
-      }
-
-      if (key.pageUp) {
-        if (consolidatedFiles.length > 0) {
-          setActiveFileIndex((prev) => Math.max(0, prev - 5));
-          setScrollOffset(0);
-        }
-        return;
-      }
-
-      if (key.pageDown) {
-        if (consolidatedFiles.length > 0) {
-          setActiveFileIndex((prev) => Math.min(consolidatedFiles.length - 1, prev + 5));
-          setScrollOffset(0);
-        }
-        return;
-      }
-
-      if (input === "g") {
-        setActiveFileIndex(0);
-        setScrollOffset(0);
-        return;
-      }
-
-      if (input === "G") {
-        setActiveFileIndex(Math.max(0, consolidatedFiles.length - 1));
-        setScrollOffset(0);
-        return;
-      }
-
-      if (key.return || input === " " || key.leftArrow || input === "h") {
-        setFocusedPane("code");
-        return;
-      }
+    if (key.return) {
+      onClose();
+      return;
     }
   });
 
@@ -403,31 +394,26 @@ export function DiffModal({
       overflow="hidden"
       backgroundColor={theme.bg}
     >
-      {/* Top Header Bar */}
+      {/* Minimal Top Header: File info on left, line range and close on right */}
       <Box height={1} width={width} justifyContent="space-between" overflow="hidden">
         <Text wrap="truncate-end">
-          <Text color={theme.accentBright} bold>
-            {glyphs.prompt} MORPHEUS CODE & DIFF INSPECTOR
+          <Text color={theme.accent} bold>◈ </Text>
+          <Text color={theme.text} bold>
+            {activeFile?.relPath || "No modified files"}
           </Text>
-          <Text color={theme.muted}> · </Text>
-          <Text
-            backgroundColor={focusedPane === "code" ? theme.accent : theme.bgColumn}
-            color={focusedPane === "code" ? theme.bg : theme.secondary}
-            bold
-          >
-            {" "}CODE{" "}
-          </Text>
-          <Text color={theme.muted}> / </Text>
-          <Text
-            backgroundColor={focusedPane === "files" ? theme.accent : theme.bgColumn}
-            color={focusedPane === "files" ? theme.bg : theme.secondary}
-            bold
-          >
-            {" "}FILES{" "}
-          </Text>
+          {lang ? <Text color={theme.muted}> [{lang.toUpperCase()}]</Text> : null}
+          {activeFile ? (
+            <Text>
+              {" "}
+              <Text color={theme.diffAdd} bold>+{activeFile.linesAdded} </Text>
+              <Text color={theme.diffRemove} bold>-{activeFile.linesRemoved}</Text>
+            </Text>
+          ) : null}
         </Text>
         <Text color={theme.muted} wrap="truncate-end">
-          [Tab] toggle pane · [↑/↓] {focusedPane === "code" ? "scroll code" : "select file"} · [←/→] switch file · [1-9] jump · [esc] close
+          lines {scrollOffset + 1}–{Math.min(parsedLines.length, scrollOffset + codeViewHeight)} of {parsedLines.length}
+          {maxScroll > 0 ? ` (${Math.round((scrollOffset / maxScroll) * 100)}%)` : ""}
+          {" · "}<Text color={theme.accent}>[esc]</Text> close
         </Text>
       </Box>
 
@@ -436,9 +422,9 @@ export function DiffModal({
         <Text color={theme.border}>{"─".repeat(width)}</Text>
       </Box>
 
-      {/* Middle Body: Split Pane (Left: Code, Divider: │, Right: Files) */}
+      {/* Split Body: Left = Code Diff, Center = Divider, Right = Files */}
       <Box flexDirection="row" width={width} height={bodyHeight} overflow="hidden">
-        {/* Left Column: Code & Diff Pane */}
+        {/* Left: Code Pane */}
         <Box flexDirection="column" width={leftWidth} height={bodyHeight} overflow="hidden">
           {consolidatedFiles.length === 0 ? (
             <Box height={bodyHeight} alignItems="center" justifyContent="center">
@@ -447,209 +433,158 @@ export function DiffModal({
               </Text>
             </Box>
           ) : (
-            <>
-              {/* Code Pane Subheader */}
-              <Box height={1} width={leftWidth} justifyContent="space-between" overflow="hidden">
-                <Text wrap="truncate-end">
-                  <Text color={theme.accent}>◈ </Text>
-                  <Text color={theme.text} bold>
-                    {activeFile?.relPath}
-                  </Text>
-                  <Text color={theme.muted}> [{lang ? lang.toUpperCase() : "TEXT"}] </Text>
-                  <Text color={theme.diffAdd} bold>
-                    +{activeFile?.linesAdded}{" "}
-                  </Text>
-                  <Text color={theme.diffRemove} bold>
-                    -{activeFile?.linesRemoved}
-                  </Text>
-                </Text>
-                <Text color={theme.muted} wrap="truncate-end">
-                  lines {scrollOffset + 1}–{Math.min(parsedLines.length, scrollOffset + codeViewHeight)} of {parsedLines.length}
-                  {maxScroll > 0 ? ` (${Math.round((scrollOffset / maxScroll) * 100)}%)` : ""}
-                </Text>
-              </Box>
+            visibleDiffLines.map((pLine, idx) => {
+              const sanitizedCode = pLine.codeText.replace(/\t/g, "  ");
 
-              {/* Code Gutter Header */}
-              <Box height={1} width={leftWidth} overflow="hidden">
-                <Text backgroundColor={theme.bgColumn} wrap="truncate-end">
-                  {isDualColumn ? (
-                    <>
-                      <Text color={theme.muted}>{" ".repeat(Math.max(0, numWidth - 3))}OLD</Text>
-                      <Text color={theme.border}> │ </Text>
-                      <Text color={theme.muted}>{" ".repeat(Math.max(0, numWidth - 3))}NEW</Text>
-                      <Text color={theme.border}> │ </Text>
-                      <Text color={theme.muted}>±</Text>
-                      <Text color={theme.border}> │ </Text>
-                    </>
-                  ) : (
-                    <>
-                      <Text color={theme.muted}>{" ".repeat(Math.max(0, numWidth - 4))}LINE</Text>
-                      <Text color={theme.border}> │ </Text>
-                      <Text color={theme.muted}>±</Text>
-                      <Text color={theme.border}> │ </Text>
-                    </>
-                  )}
-                  <Text color={theme.muted} bold>CODE</Text>
-                  <Text color={theme.border}>{" ─".repeat(Math.max(2, Math.floor((availableCodeWidth - 6) / 2)))}</Text>
-                </Text>
-              </Box>
-
-              {/* Code Diff Lines */}
-              <Box flexDirection="column" height={codeViewHeight} overflow="hidden">
-                {visibleDiffLines.map((pLine, idx) => {
-                  const sanitizedCode = pLine.codeText.replace(/\t/g, "  ");
-
-                  if (pLine.type === "hunk") {
-                    const oldGutter = " ".repeat(Math.max(0, numWidth - 2)) + "@@";
-                    const newGutter = "@@" + " ".repeat(Math.max(0, numWidth - 2));
-                    const padHunk = Math.max(0, availableCodeWidth - visibleLength(sanitizedCode));
-                    return (
-                      <Box key={`diff_l_${scrollOffset + idx}`} height={1} overflow="hidden">
-                        <Text backgroundColor={theme.bgColumn} wrap="truncate-end">
-                          {isDualColumn ? (
-                            <>
-                              <Text color={theme.accent}>{oldGutter}</Text>
-                              <Text color={theme.border}> │ </Text>
-                              <Text color={theme.accent}>{newGutter}</Text>
-                              <Text color={theme.border}> │ </Text>
-                              <Text color={theme.accent}>~</Text>
-                              <Text color={theme.border}> │ </Text>
-                            </>
-                          ) : (
-                            <>
-                              <Text color={theme.accent}>{" ".repeat(Math.max(0, numWidth - 2))}@@</Text>
-                              <Text color={theme.border}> │ </Text>
-                              <Text color={theme.accent}>~</Text>
-                              <Text color={theme.border}> │ </Text>
-                            </>
-                          )}
-                          <Text color={theme.accentBright} bold italic>
-                            {sanitizedCode}
-                            {" ".repeat(padHunk)}
-                          </Text>
-                        </Text>
-                      </Box>
-                    );
-                  }
-
-                  if (pLine.type === "header") {
-                    const padHdr = Math.max(0, leftWidth - visibleLength(pLine.raw));
-                    return (
-                      <Box key={`diff_l_${scrollOffset + idx}`} height={1} overflow="hidden">
-                        <Text color={theme.warning} wrap="truncate-end">
-                          {pLine.raw}
-                          {" ".repeat(padHdr)}
-                        </Text>
-                      </Box>
-                    );
-                  }
-
-                  if (pLine.type === "add") {
-                    const oldStr = " ".repeat(numWidth);
-                    const newStr = String(pLine.newNum ?? "").padStart(numWidth, " ");
-                    const highlighted = highlightCode(sanitizedCode, lang);
-                    const padCode = Math.max(0, availableCodeWidth - visibleLength(sanitizedCode));
-                    return (
-                      <Box key={`diff_l_${scrollOffset + idx}`} height={1} overflow="hidden">
-                        <Text backgroundColor={theme.bgDiffAdd} wrap="truncate-end">
-                          {isDualColumn ? (
-                            <>
-                              <Text color={theme.muted}>{oldStr}</Text>
-                              <Text color={theme.border}> │ </Text>
-                              <Text color={theme.diffAdd} bold>{newStr}</Text>
-                              <Text color={theme.border}> │ </Text>
-                              <Text color={theme.diffAdd} bold>+</Text>
-                              <Text color={theme.border}> │ </Text>
-                            </>
-                          ) : (
-                            <>
-                              <Text color={theme.diffAdd} bold>{newStr}</Text>
-                              <Text color={theme.border}> │ </Text>
-                              <Text color={theme.diffAdd} bold>+</Text>
-                              <Text color={theme.border}> │ </Text>
-                            </>
-                          )}
-                          {highlighted}
-                          {" ".repeat(padCode)}
-                        </Text>
-                      </Box>
-                    );
-                  }
-
-                  if (pLine.type === "rem") {
-                    const oldStr = String(pLine.oldNum ?? "").padStart(numWidth, " ");
-                    const newStr = " ".repeat(numWidth);
-                    const highlighted = highlightCode(sanitizedCode, lang);
-                    const padCode = Math.max(0, availableCodeWidth - visibleLength(sanitizedCode));
-                    return (
-                      <Box key={`diff_l_${scrollOffset + idx}`} height={1} overflow="hidden">
-                        <Text backgroundColor={theme.bgDiffRemove} wrap="truncate-end">
-                          {isDualColumn ? (
-                            <>
-                              <Text color={theme.diffRemove} bold>{oldStr}</Text>
-                              <Text color={theme.border}> │ </Text>
-                              <Text color={theme.muted}>{newStr}</Text>
-                              <Text color={theme.border}> │ </Text>
-                              <Text color={theme.diffRemove} bold>-</Text>
-                              <Text color={theme.border}> │ </Text>
-                            </>
-                          ) : (
-                            <>
-                              <Text color={theme.diffRemove} bold>{oldStr}</Text>
-                              <Text color={theme.border}> │ </Text>
-                              <Text color={theme.diffRemove} bold>-</Text>
-                              <Text color={theme.border}> │ </Text>
-                            </>
-                          )}
-                          {highlighted}
-                          {" ".repeat(padCode)}
-                        </Text>
-                      </Box>
-                    );
-                  }
-
-                  // Context line
-                  const oldStr = String(pLine.oldNum ?? "").padStart(numWidth, " ");
-                  const newStr = String(pLine.newNum ?? "").padStart(numWidth, " ");
-                  const highlighted = highlightCode(sanitizedCode, lang);
-                  const padCode = Math.max(0, availableCodeWidth - visibleLength(sanitizedCode));
-                  return (
-                    <Box key={`diff_l_${scrollOffset + idx}`} height={1} overflow="hidden">
-                      <Text wrap="truncate-end">
-                        {isDualColumn ? (
-                          <>
-                            <Text color={theme.muted}>{oldStr}</Text>
-                            <Text color={theme.border}> │ </Text>
-                            <Text color={theme.muted}>{newStr}</Text>
-                            <Text color={theme.border}> │ </Text>
-                            <Text color={theme.muted}> </Text>
-                            <Text color={theme.border}> │ </Text>
-                          </>
-                        ) : (
-                          <>
-                            <Text color={theme.muted}>{newStr || oldStr}</Text>
-                            <Text color={theme.border}> │ </Text>
-                            <Text color={theme.muted}> </Text>
-                            <Text color={theme.border}> │ </Text>
-                          </>
-                        )}
-                        {highlighted}
-                        {" ".repeat(padCode)}
+              if (pLine.type === "hunk") {
+                const oldGutter = " ".repeat(Math.max(0, numWidth - 2)) + "@@";
+                const newGutter = "@@" + " ".repeat(Math.max(0, numWidth - 2));
+                const padHunk = Math.max(0, availableCodeWidth - visibleLength(sanitizedCode));
+                return (
+                  <Box key={`diff_l_${scrollOffset + idx}`} height={1} overflow="hidden">
+                    <Text backgroundColor={theme.bgColumn} wrap="truncate-end">
+                      {isDualColumn ? (
+                        <>
+                          <Text color={theme.accent}>{oldGutter}</Text>
+                          <Text color={theme.border}> │ </Text>
+                          <Text color={theme.accent}>{newGutter}</Text>
+                          <Text color={theme.border}> │ </Text>
+                          <Text color={theme.accent}>~</Text>
+                          <Text color={theme.border}> │ </Text>
+                        </>
+                      ) : (
+                        <>
+                          <Text color={theme.accent}>{" ".repeat(Math.max(0, numWidth - 2))}@@</Text>
+                          <Text color={theme.border}> │ </Text>
+                          <Text color={theme.accent}>~</Text>
+                          <Text color={theme.border}> │ </Text>
+                        </>
+                      )}
+                      <Text color={theme.accentBright} bold italic>
+                        {sanitizedCode}
+                        {" ".repeat(padHunk)}
                       </Text>
-                    </Box>
-                  );
-                })}
-                {Array.from({ length: Math.max(0, codeViewHeight - visibleDiffLines.length) }).map((_, idx) => (
-                  <Box key={`pad_code_${idx}`} height={1}>
-                    <Text color={theme.muted}> </Text>
+                    </Text>
                   </Box>
-                ))}
-              </Box>
-            </>
+                );
+              }
+
+              if (pLine.type === "header") {
+                const padHdr = Math.max(0, leftWidth - visibleLength(pLine.raw));
+                return (
+                  <Box key={`diff_l_${scrollOffset + idx}`} height={1} overflow="hidden">
+                    <Text color={theme.warning} wrap="truncate-end">
+                      {pLine.raw}
+                      {" ".repeat(padHdr)}
+                    </Text>
+                  </Box>
+                );
+              }
+
+              if (pLine.type === "add") {
+                const oldStr = " ".repeat(numWidth);
+                const newStr = String(pLine.newNum ?? "").padStart(numWidth, " ");
+                const highlighted = highlightCode(sanitizedCode, lang);
+                const padCode = Math.max(0, availableCodeWidth - visibleLength(sanitizedCode));
+                return (
+                  <Box key={`diff_l_${scrollOffset + idx}`} height={1} overflow="hidden">
+                    <Text backgroundColor={theme.bgDiffAdd} wrap="truncate-end">
+                      {isDualColumn ? (
+                        <>
+                          <Text color={theme.muted}>{oldStr}</Text>
+                          <Text color={theme.border}> │ </Text>
+                          <Text color={theme.diffAdd} bold>{newStr}</Text>
+                          <Text color={theme.border}> │ </Text>
+                          <Text color={theme.diffAdd} bold>+</Text>
+                          <Text color={theme.border}> │ </Text>
+                        </>
+                      ) : (
+                        <>
+                          <Text color={theme.diffAdd} bold>{newStr}</Text>
+                          <Text color={theme.border}> │ </Text>
+                          <Text color={theme.diffAdd} bold>+</Text>
+                          <Text color={theme.border}> │ </Text>
+                        </>
+                      )}
+                      {highlighted}
+                      {" ".repeat(padCode)}
+                    </Text>
+                  </Box>
+                );
+              }
+
+              if (pLine.type === "rem") {
+                const oldStr = String(pLine.oldNum ?? "").padStart(numWidth, " ");
+                const newStr = " ".repeat(numWidth);
+                const highlighted = highlightCode(sanitizedCode, lang);
+                const padCode = Math.max(0, availableCodeWidth - visibleLength(sanitizedCode));
+                return (
+                  <Box key={`diff_l_${scrollOffset + idx}`} height={1} overflow="hidden">
+                    <Text backgroundColor={theme.bgDiffRemove} wrap="truncate-end">
+                      {isDualColumn ? (
+                        <>
+                          <Text color={theme.diffRemove} bold>{oldStr}</Text>
+                          <Text color={theme.border}> │ </Text>
+                          <Text color={theme.muted}>{newStr}</Text>
+                          <Text color={theme.border}> │ </Text>
+                          <Text color={theme.diffRemove} bold>-</Text>
+                          <Text color={theme.border}> │ </Text>
+                        </>
+                      ) : (
+                        <>
+                          <Text color={theme.diffRemove} bold>{oldStr}</Text>
+                          <Text color={theme.border}> │ </Text>
+                          <Text color={theme.diffRemove} bold>-</Text>
+                          <Text color={theme.border}> │ </Text>
+                        </>
+                      )}
+                      {highlighted}
+                      {" ".repeat(padCode)}
+                    </Text>
+                  </Box>
+                );
+              }
+
+              // Context line
+              const oldStr = String(pLine.oldNum ?? "").padStart(numWidth, " ");
+              const newStr = String(pLine.newNum ?? "").padStart(numWidth, " ");
+              const highlighted = highlightCode(sanitizedCode, lang);
+              const padCode = Math.max(0, availableCodeWidth - visibleLength(sanitizedCode));
+              return (
+                <Box key={`diff_l_${scrollOffset + idx}`} height={1} overflow="hidden">
+                  <Text wrap="truncate-end">
+                    {isDualColumn ? (
+                      <>
+                        <Text color={theme.muted}>{oldStr}</Text>
+                        <Text color={theme.border}> │ </Text>
+                        <Text color={theme.muted}>{newStr}</Text>
+                        <Text color={theme.border}> │ </Text>
+                        <Text color={theme.muted}> </Text>
+                        <Text color={theme.border}> │ </Text>
+                      </>
+                    ) : (
+                      <>
+                        <Text color={theme.muted}>{newStr || oldStr}</Text>
+                        <Text color={theme.border}> │ </Text>
+                        <Text color={theme.muted}> </Text>
+                        <Text color={theme.border}> │ </Text>
+                      </>
+                    )}
+                    {highlighted}
+                    {" ".repeat(padCode)}
+                  </Text>
+                </Box>
+              );
+            })
           )}
+          {Array.from({ length: Math.max(0, codeViewHeight - visibleDiffLines.length) }).map((_, idx) => (
+            <Box key={`pad_code_${idx}`} height={1}>
+              <Text color={theme.muted}> </Text>
+            </Box>
+          ))}
         </Box>
 
-        {/* Center Vertical Divider */}
+        {/* Center Divider */}
         <Box width={1} height={bodyHeight} flexDirection="column" overflow="hidden">
           {Array.from({ length: bodyHeight }).map((_, i) => (
             <Box key={`div_${i}`} height={1}>
@@ -658,30 +593,24 @@ export function DiffModal({
           ))}
         </Box>
 
-        {/* Right Column: Changed Files Navigator */}
+        {/* Right: Clean File List */}
         <Box flexDirection="column" width={rightWidth} height={bodyHeight} overflow="hidden">
-          {/* Files Header */}
+          {/* Header */}
           <Box height={1} width={rightWidth} justifyContent="space-between" overflow="hidden">
-            <Text wrap="truncate-end">
-              <Text color={focusedPane === "files" ? theme.accentBright : theme.secondary} bold>
-                [ ▰ CHANGED FILES ]
-              </Text>
+            <Text color={theme.secondary} bold wrap="truncate-end">
+              CHANGED FILES
             </Text>
-            <Text wrap="truncate-end">
-              <Text color={theme.muted}>[ </Text>
-              <Text color={theme.accentBright} bold>
-                {consolidatedFiles.length > 0 ? `${activeFileIndex + 1}/${consolidatedFiles.length}` : "0"}
-              </Text>
-              <Text color={theme.muted}> ]</Text>
+            <Text color={theme.accentBright} bold wrap="truncate-end">
+              {consolidatedFiles.length}
             </Text>
           </Box>
 
-          {/* Files Divider */}
+          {/* Sub-divider */}
           <Box height={1} width={rightWidth} overflow="hidden">
             <Text color={theme.border}>{"─".repeat(rightWidth)}</Text>
           </Box>
 
-          {/* Files List */}
+          {/* File Items */}
           <Box flexDirection="column" height={filesListHeight} overflow="hidden">
             {consolidatedFiles.length === 0 ? (
               <Box height={1}>
@@ -693,7 +622,6 @@ export function DiffModal({
               visibleFiles.map((file, idx) => {
                 const actualIndex = fileScrollOffset + idx;
                 const isSelected = actualIndex === activeFileIndex;
-                const isFilesFocus = focusedPane === "files";
                 const tabName = formatTabName(file.relPath, allPaths);
                 const addStr = `+${file.linesAdded}`;
                 const remStr = `-${file.linesRemoved}`;
@@ -713,24 +641,21 @@ export function DiffModal({
                 if (isSelected) {
                   return (
                     <Box key={file.filePath} height={1} overflow="hidden">
-                      <Text
-                        backgroundColor={isFilesFocus ? theme.accent : theme.bgColumn}
-                        wrap="truncate-end"
-                      >
-                        <Text color={isFilesFocus ? theme.bg : theme.accentBright} bold>
+                      <Text backgroundColor={theme.bgColumn} wrap="truncate-end">
+                        <Text color={theme.accentBright} bold>
                           {prefix}
                         </Text>
-                        <Text color={isFilesFocus ? theme.bg : theme.accent} bold>
+                        <Text color={theme.accent} bold>
                           {numStr}
                         </Text>
-                        <Text color={isFilesFocus ? theme.bg : theme.text} bold>
+                        <Text color={theme.text} bold>
                           {displayName}
                         </Text>
                         {" ".repeat(pad)}
-                        <Text color={isFilesFocus ? theme.bg : theme.diffAdd} bold>
+                        <Text color={theme.diffAdd} bold>
                           {addStr}{" "}
                         </Text>
-                        <Text color={isFilesFocus ? theme.bg : theme.diffRemove} bold>
+                        <Text color={theme.diffRemove} bold>
                           {remStr}
                         </Text>
                       </Text>
@@ -740,7 +665,7 @@ export function DiffModal({
 
                 return (
                   <Box key={file.filePath} height={1} overflow="hidden">
-                    <Text backgroundColor={theme.bg} wrap="truncate-end">
+                    <Text wrap="truncate-end">
                       <Text color={theme.muted}>
                         {prefix}{numStr}
                       </Text>
@@ -759,42 +684,6 @@ export function DiffModal({
               </Box>
             ))}
           </Box>
-
-          {/* Optional File Details Card (shown on taller terminals) */}
-          {showFileDetails && (
-            <Box flexDirection="column" width={rightWidth} height={fileDetailsHeight} overflow="hidden">
-              <Box height={1} width={rightWidth} overflow="hidden">
-                <Text color={theme.border}>{"─".repeat(rightWidth)}</Text>
-              </Box>
-              <Box height={1} width={rightWidth} overflow="hidden">
-                <Text color={theme.accent} bold wrap="truncate-end">
-                  ◈ {activeFile ? (activeFile.relPath.length > rightWidth - 4 ? `…${activeFile.relPath.slice(-(rightWidth - 5))}` : activeFile.relPath) : "No file"}
-                </Text>
-              </Box>
-              <Box height={1} width={rightWidth} overflow="hidden">
-                <Text wrap="truncate-end">
-                  <Text color={theme.muted}>Type: </Text>
-                  <Text color={theme.secondary} bold>{lang ? lang.toUpperCase() : "TEXT"}</Text>
-                  <Text color={theme.muted}> · </Text>
-                  <Text color={theme.diffAdd} bold>+{activeFile?.linesAdded ?? 0} </Text>
-                  <Text color={theme.diffRemove} bold>-{activeFile?.linesRemoved ?? 0}</Text>
-                </Text>
-              </Box>
-              <Box height={1} width={rightWidth} overflow="hidden">
-                <Text color={theme.muted} wrap="truncate-end">
-                  Diff: {parsedLines.length} lines · {parsedLines.filter(p => p.type === "hunk").length} hunks
-                </Text>
-              </Box>
-              <Box height={1} width={rightWidth} overflow="hidden">
-                <Text color={theme.muted} wrap="truncate-end">
-                  Total: <Text color={theme.diffAdd} bold>+{totalAdded}</Text> <Text color={theme.diffRemove} bold>-{totalRemoved}</Text> in {consolidatedFiles.length} {consolidatedFiles.length === 1 ? "file" : "files"}
-                </Text>
-              </Box>
-              <Box height={1} width={rightWidth} overflow="hidden">
-                <Text color={theme.border}>{"─".repeat(rightWidth)}</Text>
-              </Box>
-            </Box>
-          )}
         </Box>
       </Box>
 
@@ -803,21 +692,15 @@ export function DiffModal({
         <Text color={theme.border}>{"─".repeat(width)}</Text>
       </Box>
 
-      {/* Bottom Status Bar */}
+      {/* Minimal Bottom Bar */}
       <Box height={1} width={width} justifyContent="space-between" overflow="hidden">
-        <Text wrap="truncate-end">
-          <Text color={theme.muted}>Focus: </Text>
-          <Text color={theme.accent} bold>[{focusedPane.toUpperCase()}] </Text>
-          <Text color={theme.muted}>· Press </Text>
-          <Text color={theme.accent}>[Esc]</Text>
-          <Text color={theme.muted}> or </Text>
-          <Text color={theme.accent}>[q]</Text>
-          <Text color={theme.muted}> to return to chat</Text>
+        <Text color={theme.muted} wrap="truncate-end">
+          <Text color={theme.accent}>[↑/↓]</Text> scroll code · <Text color={theme.accent}>[←/→]</Text> file · <Text color={theme.accent}>[1-9]</Text> jump · <Text color={theme.accent}>[q]</Text> exit
         </Text>
         <Text wrap="truncate-end">
           <Text color={theme.diffAdd} bold>+{totalAdded} </Text>
           <Text color={theme.diffRemove} bold>-{totalRemoved} </Text>
-          <Text color={theme.muted}>· {consolidatedFiles.length} {consolidatedFiles.length === 1 ? "file" : "files"} changed</Text>
+          <Text color={theme.muted}>across {consolidatedFiles.length} {consolidatedFiles.length === 1 ? "file" : "files"}</Text>
         </Text>
       </Box>
     </Box>
