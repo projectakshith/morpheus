@@ -174,5 +174,49 @@ describe("CommandRegistry", () => {
     assert.equal(handledClear, true);
     assert.equal(queueCleared, true);
   });
+
+  it("resolves prefix slash commands like /sess and /mod automatically", async () => {
+    let threadCreated: Thread | null = null;
+    const ctx: CommandContext = {
+      taskText: "/sess",
+      baseURL: "http://127.0.0.1:8787/v1",
+      currentModel: "flash",
+      setCurrentModel: () => {},
+      setIsModelSelectorOpen: () => {},
+      setThreads: (updater) => {
+        const next = typeof updater === "function" ? updater([]) : updater;
+        threadCreated = next[0] || null;
+      },
+      setPromptHistory: () => {},
+      threadsCount: 0,
+    };
+
+    // Typing /sess should resolve to session command rather than falling through to LLM chat
+    const handled = await commandRegistry.dispatch("/sess", ctx);
+    assert.equal(handled, true, "Prefix command /sess should be handled by CommandRegistry");
+    assert.ok(threadCreated, "Should create a response thread for /sess");
+  });
+
+  it("intercepts unrecognized slash commands and prevents leaking to LLM", async () => {
+    let threadCreated: Thread | null = null;
+    const ctx: CommandContext = {
+      taskText: "/nonexistentcommand",
+      baseURL: "http://127.0.0.1:8787/v1",
+      currentModel: "flash",
+      setCurrentModel: () => {},
+      setIsModelSelectorOpen: () => {},
+      setThreads: (updater) => {
+        const next = typeof updater === "function" ? updater([]) : updater;
+        threadCreated = next[0] || null;
+      },
+      setPromptHistory: () => {},
+      threadsCount: 0,
+    };
+
+    const handled = await commandRegistry.dispatch("/nonexistentcommand", ctx);
+    assert.equal(handled, true, "Unrecognized slash command should be intercepted");
+    assert.ok(threadCreated);
+    assert.ok((threadCreated as Thread).response.includes("Unknown command"));
+  });
 });
 

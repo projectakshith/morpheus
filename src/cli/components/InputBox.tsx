@@ -104,7 +104,20 @@ export function InputBox({
     }
 
     if (key.return) {
-      const trimmed = value.trim();
+      let submitVal = value;
+      // If user is typing a command or mention with active autocomplete suggestions,
+      // Enter auto-completes the selected suggestion before executing!
+      if (isCommandOrMention && !isPopupDismissed && suggestions.length > 0) {
+        const activeItem = suggestions[autoResult.selectedIndex] || suggestions[0];
+        if (activeItem) {
+          const applied = applySuggestion(value, cursorPos, activeItem);
+          submitVal = applied.newValue;
+        }
+      } else if (value.startsWith("/") && ghostText && cursorPos === value.length) {
+        submitVal = value + ghostText;
+      }
+
+      const trimmed = submitVal.trim();
       if (!trimmed) return;
       if (
         trimmed === "exit" ||
