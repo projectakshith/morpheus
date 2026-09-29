@@ -1,7 +1,8 @@
 import React from "react";
+import path from "node:path";
 import { Box, Text } from "ink";
 import Spinner from "ink-spinner";
-import type { FeedLine, Thread } from "../types.js";
+import type { FeedLine, Thread, ThreadStep } from "../types.js";
 import { MarkdownFormatter } from "../format.js";
 import { wrapLine, visibleLength } from "../utils/text.js";
 import { buildHeroFeedLines } from "./MatrixIntro.js";
@@ -16,6 +17,123 @@ export interface BuildFeedOptions {
   expandedThinkingIds?: Set<string>;
   collapsedThinkingIds?: Set<string>;
   matrixQuote?: string;
+}
+
+function toRel(filePath: string, cwd: string = process.cwd()): string {
+  if (path.isAbsolute(filePath)) {
+    const rel = path.relative(cwd, filePath);
+    return rel.startsWith("..") ? filePath : rel;
+  }
+  return filePath;
+}
+
+export function getCoolActionLabel(step?: ThreadStep, cwd: string = process.cwd()): string {
+  if (!step) {
+    return "morpheus is locked in...";
+  }
+
+  const rawMs = step.isRunning
+    ? (step.startTime ? Date.now() - step.startTime : (step.durationMs || 0))
+    : (step.durationMs || 0);
+  const sec = (rawMs / 1000).toFixed(1);
+  const timeSuffix = step.isRunning ? ` (${sec}s)...` : ` (${sec}s)`;
+
+  if (step.type === "thinking") {
+    return `overclocking neural net${timeSuffix}`;
+  }
+
+  const name = step.name || "";
+  const args = step.args || {};
+
+  switch (name) {
+    case "grep_code":
+    case "grepCode": {
+      const pattern = typeof args.pattern === "string" ? args.pattern : "";
+      const cleanPat = pattern.length > 20 ? `${pattern.slice(0, 18)}…` : pattern;
+      return cleanPat
+        ? `sweeping matrix for "${cleanPat}"${timeSuffix}`
+        : `sweeping codebase${timeSuffix}`;
+    }
+
+    case "read_file": {
+      const fp = typeof args.filePath === "string" ? toRel(args.filePath, cwd) : "";
+      const cleanFp = fp.length > 26 ? `${fp.slice(0, 24)}…` : fp;
+      return cleanFp
+        ? `jacking into: ${cleanFp}${timeSuffix}`
+        : `decrypting construct${timeSuffix}`;
+    }
+
+    case "write_file": {
+      const fp = typeof args.filePath === "string" ? toRel(args.filePath, cwd) : "";
+      const cleanFp = fp.length > 26 ? `${fp.slice(0, 24)}…` : fp;
+      return cleanFp
+        ? `synthesizing: ${cleanFp}${timeSuffix}`
+        : `synthesizing construct${timeSuffix}`;
+    }
+
+    case "edit_file": {
+      const fp = typeof args.filePath === "string" ? toRel(args.filePath, cwd) : "";
+      const cleanFp = fp.length > 26 ? `${fp.slice(0, 24)}…` : fp;
+      return cleanFp
+        ? `rewiring construct: ${cleanFp}${timeSuffix}`
+        : `patching construct${timeSuffix}`;
+    }
+
+    case "bash": {
+      let cmd = typeof args.command === "string" ? args.command.trim() : "";
+      if (cmd.startsWith(`cd ${cwd} && `)) cmd = cmd.slice(`cd ${cwd} && `.length);
+      else if (cmd.startsWith(`cd "${cwd}" && `)) cmd = cmd.slice(`cd "${cwd}" && `.length);
+      const cleanCmd = cmd.length > 24 ? `${cmd.slice(0, 22)}…` : cmd;
+      return cleanCmd
+        ? `breaching shell: ${cleanCmd}${timeSuffix}`
+        : `executing payload${timeSuffix}`;
+    }
+
+    case "list_dir":
+    case "listDir": {
+      const dp = typeof args.dirPath === "string" ? toRel(args.dirPath, cwd) : "";
+      const cleanDp = dp.length > 24 ? `${dp.slice(0, 22)}…` : dp;
+      return cleanDp
+        ? `mapping perimeter: ${cleanDp}${timeSuffix}`
+        : `mapping construct perimeter${timeSuffix}`;
+    }
+
+    case "outline_code":
+    case "outlineCode": {
+      const fp = typeof args.filePath === "string" ? toRel(args.filePath, cwd) : "";
+      const cleanFp = fp.length > 24 ? `${fp.slice(0, 22)}…` : fp;
+      return cleanFp
+        ? `deconstructing ast: ${cleanFp}${timeSuffix}`
+        : `analyzing neural symbols${timeSuffix}`;
+    }
+
+    case "http_request": {
+      const url = typeof args.url === "string" ? args.url : "";
+      const cleanUrl = url.length > 24 ? `${url.slice(0, 22)}…` : url;
+      return cleanUrl
+        ? `uplink ping: ${cleanUrl}${timeSuffix}`
+        : `tapping external uplink${timeSuffix}`;
+    }
+
+    case "load_skill": {
+      const skillName = typeof args.name === "string" ? args.name : "";
+      return skillName
+        ? `loading combat playbook: ${skillName}${timeSuffix}`
+        : `downloading skill construct${timeSuffix}`;
+    }
+
+    case "record_finding": {
+      const topic = typeof args.topic === "string" ? args.topic : "";
+      const cleanTopic = topic.length > 22 ? `${topic.slice(0, 20)}…` : topic;
+      return cleanTopic
+        ? `logging intel: ${cleanTopic}${timeSuffix}`
+        : `archiving construct intel${timeSuffix}`;
+    }
+
+    default: {
+      return `running ${name || "action"}${timeSuffix}`;
+    }
+  }
 }
 
 export function buildThreadFeedLines({
@@ -79,8 +197,10 @@ export function buildThreadFeedLines({
     });
 
     const thinkingSteps = thread.steps.filter((s) => s.type === "thinking");
+    const activeToolStep = thread.steps.find((s) => s.type === "tool" && s.isRunning);
     const hasFollowingContent =
       thinkingSteps.length > 0 ||
+      Boolean(activeToolStep) ||
       Boolean(thread.response) ||
       Boolean(thread.isStreaming) ||
       thread.status === "running" ||
@@ -111,7 +231,7 @@ export function buildThreadFeedLines({
       const sec = (rawMs / 1000).toFixed(1);
 
       if (tStep.isRunning) {
-        const label = `thinking (${sec}s)...`;
+        const label = getCoolActionLabel(tStep);
         const visLen = 2 + 5 + label.length;
         const pad = Math.max(0, leftWidth - visLen);
         lines.push({
@@ -122,7 +242,7 @@ export function buildThreadFeedLines({
             <Text backgroundColor={theme.bg} wrap="truncate-end">
               {"  "}
               <CyberPulse />
-              <Text color={theme.secondary} italic>
+              <Text color={theme.accentBright} italic>
                 {label}
               </Text>
               {" ".repeat(pad)}
@@ -213,6 +333,27 @@ export function buildThreadFeedLines({
       }
     });
 
+    if (activeToolStep) {
+      const label = getCoolActionLabel(activeToolStep);
+      const visLen = 2 + 5 + label.length;
+      const pad = Math.max(0, leftWidth - visLen);
+      lines.push({
+        id: `${activeToolStep.id}_tool_running`,
+        threadId: thread.id,
+        stepId: activeToolStep.id,
+        node: (
+          <Text backgroundColor={theme.bg} wrap="truncate-end">
+            {"  "}
+            <CyberPulse />
+            <Text color={theme.accentBright} italic>
+              {label}
+            </Text>
+            {" ".repeat(pad)}
+          </Text>
+        ),
+      });
+    }
+
     if (thread.status === "queued") {
       lines.push({
         id: `${thread.id}_queued_line`,
@@ -226,12 +367,17 @@ export function buildThreadFeedLines({
       });
     } else if (
       thread.status === "running" &&
-      thread.steps.length === 0 &&
+      !activeToolStep &&
+      !thinkingSteps.some((s) => s.isRunning) &&
       !thread.response &&
       !thread.isStreaming
     ) {
-      const runningLabel = "morpheus is thinking...";
-      const pad = Math.max(0, leftWidth - runningLabel.length - 8);
+      const runningLabel =
+        thread.steps.length === 0
+          ? "morpheus is locked in..."
+          : "synthesizing next move...";
+      const visLen = 2 + 5 + runningLabel.length;
+      const pad = Math.max(0, leftWidth - visLen);
       lines.push({
         id: `${thread.id}_thinking_indicator`,
         threadId: thread.id,
