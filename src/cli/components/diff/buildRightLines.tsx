@@ -136,9 +136,9 @@ export function buildRightLines(
       if (toolSteps.length === 0) return;
 
       const isLatestTurn = tIdx === threads.length - 1;
-      const isThreadCollapsed =
-        collapsedThreadIds.has(thread.id) ||
-        (!isLatestTurn && !collapsedThreadIds.has(`expand_${thread.id}`));
+      const isThreadCollapsed = isLatestTurn
+        ? collapsedThreadIds.has(thread.id)
+        : !collapsedThreadIds.has(thread.id);
       const thArrow = isThreadCollapsed ? "▶" : "▼";
       const thPfx = `  ${thArrow} turn #${thread.index} (${toolSteps.length})`;
       const thPad = Math.max(0, contentWidth - thPfx.length);

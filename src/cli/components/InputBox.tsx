@@ -17,6 +17,7 @@ export interface InputBoxProps {
   availableModels?: string[];
   cwd?: string;
   onPopupOpenChange?: (isOpen: boolean) => void;
+  onTab?: () => void;
   isThinking?: boolean;
   thinkingText?: string;
 }
@@ -31,6 +32,7 @@ export function InputBox({
   availableModels = [],
   cwd,
   onPopupOpenChange,
+  onTab,
   isThinking = false,
   thinkingText,
 }: InputBoxProps) {
@@ -89,7 +91,7 @@ export function InputBox({
       }
     }
 
-    /* Tab: accept highlighted suggestion or inline ghost text */
+    /* Tab: accept highlighted suggestion, inline ghost text, or trigger onTab callback */
     if (key.tab || input === "\t") {
       if (isCommandOrMention && suggestions.length > 0) {
         const activeItem = suggestions[autoResult.selectedIndex];
@@ -103,6 +105,9 @@ export function InputBox({
       } else if (ghostText && cursorPos === value.length) {
         setValue((prev) => prev + ghostText);
         setCursorPos((prev) => prev + ghostText.length);
+        return;
+      } else if (onTab) {
+        onTab();
         return;
       }
     }

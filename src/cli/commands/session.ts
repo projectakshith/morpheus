@@ -74,6 +74,23 @@ export class SessionCommand implements CommandHandler {
       return true;
     }
 
+    /* /session rename <new title>: rename current session */
+    if (sub === "rename") {
+      const newTitle = parts.slice(2).join(" ").trim();
+      if (!newTitle) {
+        this.createFeedbackThread(ctx, "Usage: `/session rename <new title>`");
+        return true;
+      }
+      if (ctx.setSessionTitle) {
+        ctx.setSessionTitle(newTitle);
+      }
+      this.createFeedbackThread(
+        ctx,
+        `✦ **Session Renamed**\nActive session title updated to: **${newTitle}**`
+      );
+      return true;
+    }
+
     /* Open interactive session modal if available */
     if (trimmed === "/sessions" || trimmed === "/session" || trimmed === "/resume" || sub === "list" || sub === "ls") {
       if (ctx.openModal) {

@@ -67,7 +67,6 @@ export function useAgentRunner({
 
   const abortControllerRef = useRef<AbortController | null>(null);
   const timerRef = useRef<NodeJS.Timeout | null>(null);
-  const activeToolArgsRef = useRef<Record<string, unknown>>({});
   const sessionCreatedAtRef = useRef<number>(Date.now());
   const promptQueueRef = useRef<{ id: string; prompt: string }[]>([]);
   const isExecutingRef = useRef(false);
@@ -202,6 +201,7 @@ export function useAgentRunner({
       sessionId,
       setSessionId,
       sessionTitle,
+      setSessionTitle,
       setHistory,
       setFindings,
       setFileEdits,
@@ -248,9 +248,28 @@ export function useAgentRunner({
     isExecutingRef.current = true;
 
     let currentTitle = sessionTitle;
-    if (sessionTitle === "New Session" || !sessionTitle) {
-      currentTitle = taskText.slice(0, 50).trim();
-      setSessionTitle(currentTitle);
+    const isTrivialTitle =
+      !sessionTitle ||
+      sessionTitle === "New Session" ||
+      sessionTitle.length <= 8 ||
+      /^(hi+|hey+|hello+|so+|yo+|test|uh+|sup|ok|okay)\b/i.test(sessionTitle);
+
+    if (isTrivialTitle && taskText.trim().length > 0) {
+      const cleanPrompt = taskText
+        .replace(/^\/\w+\s*/, "")
+        .replace(/[#*`_~]/g, "")
+        .replace(/\s+/g, " ")
+        .trim();
+      if (cleanPrompt.length > 0) {
+        if (cleanPrompt.length <= 48) {
+          currentTitle = cleanPrompt;
+        } else {
+          const truncated = cleanPrompt.slice(0, 48);
+          const lastSpace = truncated.lastIndexOf(" ");
+          currentTitle = lastSpace > 24 ? `${truncated.slice(0, lastSpace)}…` : `${truncated}…`;
+        }
+        setSessionTitle(currentTitle);
+      }
     }
 
     setStatus("running");
@@ -370,9 +389,8 @@ export function useAgentRunner({
     }
 
     let activeThinkingId: string | null = null;
-    let activeToolId: string | null = null;
     let thinkingStartTime = 0;
-    let activeToolStartTime = 0;
+    const activeTools = new Map<string, { uiId: string; started: number; args: Record<string, unknown> }>();
 
     try {
       const result = await runAgent(taskText, historyRef.current, {
@@ -436,11 +454,10 @@ export function useAgentRunner({
             );
           }
         },
-        onToolCall: (name, toolArgs) => {
+        onToolCall: (name, toolArgs, callId) => {
           if (!isUserScrolledRef.current) {
             setScrollOffset(0);
           }
-          activeToolArgsRef.current = toolArgs;
           if (activeThinkingId) {
             const curThinkId = activeThinkingId;
             const thinkDur = thinkingStartTime ? Date.now() - thinkingStartTime : 0;
@@ -459,10 +476,10 @@ export function useAgentRunner({
           }
 
           const toolStartTime = Date.now();
-          activeToolStartTime = toolStartTime;
-          activeToolId = `tool_${toolStartTime}_${name}`;
+          const uiId = `tool_${toolStartTime}_${callId || name}`;
+          activeTools.set(callId || name, { uiId, started: toolStartTime, args: toolArgs });
           const newStep: ThreadStep = {
-            id: activeToolId,
+            id: uiId,
             type: "tool",
             name,
             args: toolArgs,
@@ -475,15 +492,16 @@ export function useAgentRunner({
             )
           );
         },
-        onToolResult: (name, res) => {
+        onToolResult: (name, res, callId) => {
           if (!isUserScrolledRef.current) {
             setScrollOffset(0);
           }
           const isError = isToolError(res.output, res.metadata?.isError as boolean | undefined);
           const lines = res.output.trim().split("\n").filter(Boolean);
           const outputSummary = `${lines.length} lines output`;
-          const curToolId = activeToolId;
-          const toolDur = activeToolStartTime ? Date.now() - activeToolStartTime : undefined;
+          const currentTool = activeTools.get(callId || name);
+          const curToolId = currentTool?.uiId;
+          const toolDur = currentTool ? Date.now() - currentTool.started : undefined;
 
           setThreads((prev) =>
             prev.map((t) => {
@@ -506,11 +524,11 @@ export function useAgentRunner({
               };
             })
           );
-          activeToolId = null;
+          activeTools.delete(callId || name);
 
           const editRecord = extractDiffRecord(
             name,
-            activeToolArgsRef.current || {},
+            currentTool?.args || {},
             res.output
           );
           if (editRecord) {

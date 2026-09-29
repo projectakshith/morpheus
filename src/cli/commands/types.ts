@@ -18,6 +18,7 @@ export interface CommandContext {
   sessionId?: string;
   setSessionId?: (id: string) => void;
   sessionTitle?: string;
+  setSessionTitle?: (title: string) => void;
   setHistory?: React.Dispatch<React.SetStateAction<ChatMessage[]>>;
   setFindings?: React.Dispatch<React.SetStateAction<Finding[]>>;
   setFileEdits?: React.Dispatch<React.SetStateAction<FileEditRecord[]>>;

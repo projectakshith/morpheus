@@ -200,6 +200,26 @@ export function App({
     }
   });
 
+  const handleTab = () => {
+    for (let i = threads.length - 1; i >= 0; i--) {
+      const t = threads[i];
+      const thinkSteps = t.steps.filter((s) => s.type === "thinking");
+      if (thinkSteps.length > 0) {
+        const lastStep = thinkSteps[thinkSteps.length - 1];
+        setExpandedThinkingIds((prev) => {
+          const next = new Set(prev);
+          if (next.has(lastStep.id)) {
+            next.delete(lastStep.id);
+          } else {
+            next.add(lastStep.id);
+          }
+          return next;
+        });
+        return;
+      }
+    }
+  };
+
   useEffect(() => {
     if (initialTask && !initialTaskFired.current) {
       initialTaskFired.current = true;
@@ -482,6 +502,7 @@ export function App({
         availableModels={AVAILABLE_MODELS.map((m) => m.id)}
         cwd={process.cwd()}
         onPopupOpenChange={setIsPopupOpen}
+        onTab={handleTab}
       />
     </Box>
   );
