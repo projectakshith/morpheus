@@ -51,6 +51,22 @@ export interface Finding {
   takeaway: string;
 }
 
+export interface Skill {
+  name: string;
+  category: string;
+  description: string;
+  triggers: string[];
+  content: string;
+  path: string;
+}
+
+export interface Rule {
+  name: string;
+  description?: string;
+  content: string;
+  path: string;
+}
+
 export interface AgentContext {
   cwd: string;
   isGit: boolean;
@@ -61,6 +77,9 @@ export interface AgentContext {
   repoMap?: string;
   siblings?: string[];
   findings?: Finding[];
+  skills?: Skill[];
+  rules?: Rule[];
+  activeSkills?: Skill[];
 }
 
 export interface AgentOptions {

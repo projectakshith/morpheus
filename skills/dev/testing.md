@@ -2,7 +2,7 @@
 name: testing
 category: dev
 description: Writing reliable unit, integration, and regression tests
-triggers: ["test", "unit test", "spec", "vitest", "jest", "coverage"]
+triggers: ["test", "tests", "unit test", "spec", "vitest", "jest", "coverage"]
 ---
 
 # Testing Skill

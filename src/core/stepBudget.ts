@@ -27,9 +27,14 @@ export interface StepExtensionParams {
 }
 
 /* Dynamically extends step budget when the agent is nearing its current limit,
- * has room before hardMaxSteps, and remains safely below the context ceiling. */
+ * has room before hardMaxSteps, has modified files or is early in exploration,
+ * and remains safely below the context ceiling. */
 export function shouldExtendStepBudget(params: StepExtensionParams): boolean {
   if (params.userSpecifiedMaxSteps !== undefined) {
+    return false;
+  }
+  // If the agent hasn't modified any files and is already deep in exploration, do not extend
+  if (params.hasModifiedFiles === false && params.stepCount >= 20) {
     return false;
   }
   return (

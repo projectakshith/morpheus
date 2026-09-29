@@ -6,6 +6,7 @@ import { SessionLogger } from "./logger";
 import { isToolError, formatError } from "../utils/errors";
 import { tryExtractTextToolCalls } from "../utils/toolExtraction";
 import { isConversationalStall } from "./stallGuard";
+import { matchSkills } from "./skills";
 import {
   calculateInitialStepBudget,
   shouldExtendStepBudget,
@@ -16,6 +17,7 @@ import type {
   AgentRunResult,
   ChatMessage,
   Finding,
+  Skill,
   TokenUsage,
   ToolCall,
   ToolDefinition,
@@ -56,7 +58,19 @@ export async function runAgent(
   const cwd = options.cwd ?? process.cwd();
   const findings: Finding[] = options.findings ? [...options.findings] : [];
   const baseContext = gatherContext(cwd);
-  const tools = createTools(cwd, (f) => findings.push(f));
+  const matchedSkills = matchSkills(prompt, baseContext.skills ?? []);
+  const activeSkills: Skill[] = [...matchedSkills];
+
+  const tools = createTools(
+    cwd,
+    (f) => findings.push(f),
+    baseContext.skills,
+    (skill) => {
+      if (!activeSkills.some((s) => s.name === skill.name)) {
+        activeSkills.push(skill);
+      }
+    }
+  );
 
   const operator = new Operator({
     model: options.model,
@@ -88,7 +102,10 @@ export async function runAgent(
   const hardMaxSteps = userSpecifiedMaxSteps ?? DEFAULT_HARD_MAX_STEPS;
   const tokenSafetyCeiling = operator.getContextSafetyLimit();
   let hasModifiedFiles = false;
+  let lastModificationStep = 0;
   const readFiles = new Map<string, number>();
+  const modifiedFiles = new Set<string>();
+  const executedBashCommands = new Map<string, number>();
   let conversationalNudges = 0;
 
   while (stepCount < maxSteps) {
@@ -117,6 +134,7 @@ export async function runAgent(
     const currentSystemPrompt = buildSystemPrompt({
       ...baseContext,
       findings: [...findings],
+      activeSkills: [...activeSkills],
     });
 
     try {
@@ -236,9 +254,10 @@ export async function runAgent(
         const offset = Number(parsedArgs.offset ?? 1);
         const limit = Number(parsedArgs.limit ?? 2000);
         const readKey = `${parsedArgs.filePath}:${offset}:${limit}`;
-        if (readFiles.has(readKey) && readFiles.get(readKey) === stepCount - 1) {
+        const isAlreadyRead = readFiles.has(readKey) && !modifiedFiles.has(parsedArgs.filePath);
+        if (isAlreadyRead) {
           const prevStep = readFiles.get(readKey);
-          outputStr = `[Notice: '${parsedArgs.filePath}' was just read in Step ${prevStep}. The contents are already present in your immediate context above.]`;
+          outputStr = `[Notice: '${parsedArgs.filePath}' was already read in Step ${prevStep} and has not changed. Contents are already in context. Do not re-read unmodified files—proceed directly to edit or answer.]`;
           isError = false;
         } else {
           const executed = await executeToolSafely(targetTool, parsedArgs, cwd);
@@ -246,6 +265,20 @@ export async function runAgent(
           isError = executed.isError;
           if (!isError) {
             readFiles.set(readKey, stepCount);
+          }
+        }
+      } else if (toolName === "bash" && typeof parsedArgs.command === "string") {
+        const cmd = parsedArgs.command.trim();
+        const prevBashStep = executedBashCommands.get(cmd);
+        if (prevBashStep !== undefined && lastModificationStep <= prevBashStep) {
+          outputStr = `[Notice: Command '${cmd}' was already run in Step ${prevBashStep} with no files modified since. Do not rerun duplicate commands without making changes.]`;
+          isError = false;
+        } else {
+          const executed = await executeToolSafely(targetTool, parsedArgs, cwd);
+          outputStr = executed.output;
+          isError = executed.isError;
+          if (!isError) {
+            executedBashCommands.set(cmd, stepCount);
           }
         }
       } else {
@@ -259,6 +292,16 @@ export async function runAgent(
 
       if (!isError && (toolName === "edit_file" || toolName === "write_file")) {
         hasModifiedFiles = true;
+        lastModificationStep = stepCount;
+        const targetPath = typeof parsedArgs.filePath === "string" ? parsedArgs.filePath : "";
+        if (targetPath) {
+          modifiedFiles.add(targetPath);
+          for (const k of Array.from(readFiles.keys())) {
+            if (k.startsWith(`${targetPath}:`)) {
+              readFiles.delete(k);
+            }
+          }
+        }
       }
 
       if (isError) {

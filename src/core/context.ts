@@ -4,6 +4,13 @@ import path from "node:path";
 import os from "node:os";
 import type { AgentContext } from "./types";
 import { generateRepoMap } from "./repomap";
+import {
+  loadSkills,
+  loadRules,
+  formatSkillsManifest,
+  formatActiveSkills,
+  formatRules,
+} from "./skills";
 
 export function gatherContext(cwd: string = process.cwd()): AgentContext {
   let isGit = false;
@@ -40,6 +47,8 @@ export function gatherContext(cwd: string = process.cwd()): AgentContext {
   }
 
   const repoMap = generateRepoMap(cwd);
+  const skills = loadSkills(cwd);
+  const rules = loadRules(cwd);
 
   let siblings: string[] | undefined;
   try {
@@ -85,6 +94,8 @@ export function gatherContext(cwd: string = process.cwd()): AgentContext {
     date: new Date().toDateString(),
     repoMap,
     siblings,
+    skills,
+    rules,
   };
 }
 
@@ -106,6 +117,11 @@ export function buildSystemPrompt(ctx: AgentContext): string {
     "</env>",
   ];
 
+  const rulesBlock = ctx.rules && ctx.rules.length > 0 ? formatRules(ctx.rules) : "";
+  const skillsManifest = ctx.skills && ctx.skills.length > 0 ? formatSkillsManifest(ctx.skills) : "";
+  const activeSkillsBlock =
+    ctx.activeSkills && ctx.activeSkills.length > 0 ? formatActiveSkills(ctx.activeSkills) : "";
+
   return [
     "vibe: morpheus. the user's chill dev homie in their terminal. based, genz, zero corporate ai slop.",
     "voice: lowercase + slang (yo, bet, aight, tbh, ngl, rn, gotchu, fs). keep it short, not a wall of text.",
@@ -124,6 +140,15 @@ export function buildSystemPrompt(ctx: AgentContext): string {
     "9. http_request for endpoints, health checks, APIs.",
     "10. final answers: bullets, code flows, exact paths. no filler.",
     "11. think sharp, then act. no rambling, no pre-drafting replies in thinking.",
+    ...(rulesBlock ? ["", rulesBlock] : []),
+    ...(skillsManifest
+      ? [
+          "",
+          skillsManifest,
+          "use load_skill to fetch the playbook for any relevant skill before executing unfamiliar tasks.",
+        ]
+      : []),
+    ...(activeSkillsBlock ? ["", activeSkillsBlock] : []),
     "",
     envLines.join("\n"),
   ].join("\n");
