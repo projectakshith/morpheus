@@ -15,28 +15,38 @@ export interface HeaderProps {
 export function Header({ version, model, branch, gitStatus, width: customWidth }: HeaderProps) {
   const width = customWidth ?? Math.max(40, process.stdout.columns ? process.stdout.columns - 2 : 76);
 
-  const leftPart = `${glyphs.prompt} MORPHEUS v${version}${branch ? ` · ${glyphs.gitBranch} ${branch} (${gitStatus || "clean"})` : ""}`;
-  const padBetween = Math.max(1, width - leftPart.length - model.length - 2);
+  const brand = `▰ MORPHEUS v${version}`;
+  const gitInfo = branch ? ` │ ◈ ${branch}${gitStatus ? ` [${gitStatus}]` : ""}` : "";
+  const modelTag = `[ ${glyphs.chip} ${model} ]`;
+
+  const leftLen = brand.length + gitInfo.length;
+  const rightLen = modelTag.length;
+  const padBetween = Math.max(1, width - leftLen - rightLen - 1);
 
   return (
     <Box flexDirection="column" width={width} height={2} overflow="hidden">
       <Box height={1} overflow="hidden">
         <Text backgroundColor={theme.bg} wrap="truncate-end">
-          <Text color={theme.accent} bold>
-            {glyphs.prompt} MORPHEUS
+          <Text color={theme.accentBright} bold>
+            ▰ MORPHEUS
           </Text>
           <Text color={theme.muted}> v{version}</Text>
           {branch ? (
             <Text>
-              <Text color={theme.muted}> · </Text>
-              <Text color={theme.secondary}>{glyphs.gitBranch} {branch}</Text>
-              <Text color={gitStatus && gitStatus !== "clean" ? theme.accent : theme.muted}>
-                {` (${gitStatus || "clean"})`}
-              </Text>
+              <Text color={theme.border}> │ </Text>
+              <Text color={theme.secondary}>◈ {branch}</Text>
+              {gitStatus ? (
+                <Text color={gitStatus !== "clean" ? theme.accentBright : theme.muted}>
+                  {` [${gitStatus}]`}
+                </Text>
+              ) : null}
             </Text>
           ) : null}
           {" ".repeat(padBetween)}
-          <Text color={theme.secondary}>{glyphs.chip} {model}</Text>
+          <Text color={theme.border}>[ </Text>
+          <Text color={theme.accent}>{glyphs.chip} </Text>
+          <Text color={theme.secondary} bold>{model}</Text>
+          <Text color={theme.border}> ]</Text>
         </Text>
       </Box>
       <Box height={1} overflow="hidden">

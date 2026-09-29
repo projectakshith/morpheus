@@ -1,10 +1,10 @@
 import React from "react";
 import path from "node:path";
 import { Text } from "ink";
-import Spinner from "ink-spinner";
+import { CyberPulse } from "../CyberPulse.js";
 import type { Finding } from "../../../core/types.js";
 import type { Thread, FileEditRecord, RightLine } from "../../types.js";
-import { theme } from "../../theme.js";
+import { theme, getToolBadge } from "../../theme.js";
 
 function toRel(filePath: string, cwd: string): string {
   if (path.isAbsolute(filePath)) {
@@ -76,7 +76,7 @@ export function buildRightLines(
   contentWidth: number = 36
 ): RightLine[] {
   const lines: RightLine[] = [];
-  const bg = theme.bgColumn;
+  const bg = theme.bg;
   const cwd = process.cwd();
 
   const totalTools = threads.reduce(
@@ -85,18 +85,23 @@ export function buildRightLines(
   );
 
   const tCount = String(totalTools);
-  const tHdrLeft = "  TOOL CALLS";
-  const tPadHdr = Math.max(0, contentWidth - tHdrLeft.length - tCount.length);
+  const tHdrLeft = "[ ▰ TOOLS ]";
+  const tHdrRight = `[ ${tCount} ]`;
+  const tPadHdr = Math.max(0, contentWidth - tHdrLeft.length - tHdrRight.length);
 
   lines.push({
     id: "tools_hdr",
     node: (
       <Text backgroundColor={bg} wrap="truncate-end">
-        <Text color={theme.secondary} bold>
-          {tHdrLeft}
+        <Text color={theme.border}>[ </Text>
+        <Text color={theme.accentBright} bold>
+          ▰ TOOLS
         </Text>
+        <Text color={theme.border}> ]</Text>
         {" ".repeat(Math.max(1, tPadHdr))}
-        <Text color={theme.accentBright}>{tCount}</Text>
+        <Text color={theme.border}>[ </Text>
+        <Text color={theme.secondary} bold>{tCount}</Text>
+        <Text color={theme.border}> ]</Text>
       </Text>
     ),
   });
@@ -123,7 +128,9 @@ export function buildRightLines(
       if (toolSteps.length === 0) return;
 
       const isLatestTurn = tIdx === threads.length - 1;
-      const isThreadCollapsed = collapsedThreadIds.has(thread.id) || (!isLatestTurn && !collapsedThreadIds.has(`expand_${thread.id}`));
+      const isThreadCollapsed =
+        collapsedThreadIds.has(thread.id) ||
+        (!isLatestTurn && !collapsedThreadIds.has(`expand_${thread.id}`));
       const thArrow = isThreadCollapsed ? "▶" : "▼";
       const thPfx = `  ${thArrow} turn #${thread.index} (${toolSteps.length})`;
       const thPad = Math.max(0, contentWidth - thPfx.length);
@@ -133,7 +140,7 @@ export function buildRightLines(
         threadId: thread.id,
         node: (
           <Text backgroundColor={bg} wrap="truncate-end">
-            <Text color={theme.muted} bold>
+            <Text color={theme.secondary} bold>
               {thPfx}
             </Text>
             {" ".repeat(thPad)}
@@ -142,16 +149,9 @@ export function buildRightLines(
       });
 
       if (!isThreadCollapsed) {
-        toolSteps.forEach((step, sIdx) => {
+        toolSteps.forEach((step) => {
           const isExpanded = expandedToolIds.has(step.id);
-          const icon = step.isRunning ? "◌" : step.isError ? "✖" : "✔";
-          const iconColor = step.isRunning
-            ? theme.accentBright
-            : step.isError
-            ? theme.error
-            : theme.secondary;
-
-          const toolName = step.name || "tool";
+          const badge = getToolBadge(step.name);
           const toolArg = cleanToolArg(step.name, step.args, cwd);
 
           const durStr = step.isRunning
@@ -160,32 +160,39 @@ export function buildRightLines(
             ? `${(step.durationMs / 1000).toFixed(1)}s`
             : "";
 
-          const expandHint = isExpanded ? " [-]" : " [+]";
-          const pfx = "    " + icon + " " + toolName;
-          const leftLen = pfx.length + (toolArg ? 1 + toolArg.length : 0);
-          const rightLen = (durStr ? 1 + durStr.length : 0) + expandHint.length;
-          const availSpace = Math.max(0, contentWidth - leftLen - rightLen);
+          const expandHint = isExpanded ? "[-]" : "[+]";
+          const statusIcon = step.isError ? "✖" : "✔";
+          const statusColor = step.isError ? theme.error : theme.accentBright;
+
+          const visTextLen =
+            2 +
+            (step.isRunning ? 5 : 2) +
+            badge.label.length + 3 +
+            (toolArg ? 1 + toolArg.length : 0) +
+            (durStr ? 1 + durStr.length : 0) +
+            1 + expandHint.length;
+          const pad = Math.max(0, contentWidth - visTextLen);
 
           lines.push({
             id: `tool_${step.id}`,
             toolId: step.id,
             node: (
               <Text backgroundColor={bg} wrap="truncate-end">
-                <Text color={theme.border}>    </Text>
+                {"  "}
                 {step.isRunning ? (
-                  <Text color={iconColor}>
-                    <Spinner type="dots" />{" "}
-                  </Text>
+                  <CyberPulse />
                 ) : (
-                  <Text color={iconColor}>{icon} </Text>
+                  <Text color={statusColor}>{statusIcon} </Text>
                 )}
-                <Text color={step.isError ? theme.error : theme.text} bold>
-                  {toolName}
+                <Text color={theme.border}>[</Text>
+                <Text color={badge.color} bold>
+                  {badge.label}
                 </Text>
-                {toolArg ? (
-                  <Text color={theme.muted}> {toolArg}</Text>
-                ) : null}
-                {" ".repeat(availSpace)}
+                <Text color={theme.border}>] </Text>
+                <Text color={step.isError ? theme.error : theme.text} bold>
+                  {toolArg || step.name || "tool"}
+                </Text>
+                {" ".repeat(pad)}
                 {durStr ? <Text color={theme.muted}>{durStr} </Text> : null}
                 <Text color={theme.secondary}>{expandHint}</Text>
               </Text>
@@ -196,15 +203,17 @@ export function buildRightLines(
             if (step.args && Object.keys(step.args).length > 0) {
               const argLines = JSON.stringify(step.args, null, 2).split("\n").slice(0, 8);
               argLines.forEach((aLine, aIdx) => {
-                const pad = Math.max(0, contentWidth - 6 - aLine.length);
+                const visLen = 6 + aLine.length;
+                const padArg = Math.max(0, contentWidth - visLen);
                 lines.push({
                   id: `tool_${step.id}_arg_${aIdx}`,
                   toolId: step.id,
                   node: (
                     <Text backgroundColor={bg} wrap="truncate-end">
-                      <Text color={theme.border}>      </Text>
+                      <Text color={theme.border}>  │ </Text>
+                      <Text color={theme.muted}>in </Text>
                       <Text color={theme.secondary}>{aLine}</Text>
-                      {" ".repeat(pad)}
+                      {" ".repeat(padArg)}
                     </Text>
                   ),
                 });
@@ -213,29 +222,33 @@ export function buildRightLines(
 
             if (step.outputPreview && step.outputPreview.length > 0) {
               step.outputPreview.slice(0, 6).forEach((oLine, oIdx) => {
-                const pad = Math.max(0, contentWidth - 6 - oLine.length);
+                const visLen = 4 + oLine.length;
+                const padOut = Math.max(0, contentWidth - visLen);
                 lines.push({
                   id: `tool_${step.id}_out_${oIdx}`,
                   toolId: step.id,
                   node: (
                     <Text backgroundColor={bg} wrap="truncate-end">
-                      <Text color={theme.border}>      </Text>
-                      <Text color={step.isError ? theme.error : theme.muted}>{oLine}</Text>
-                      {" ".repeat(pad)}
+                      <Text color={theme.border}>  │ </Text>
+                      <Text color={step.isError ? theme.error : theme.text}>{oLine}</Text>
+                      {" ".repeat(padOut)}
                     </Text>
                   ),
                 });
               });
             } else if (step.outputSummary) {
-              const pad = Math.max(0, contentWidth - 6 - step.outputSummary.length);
+              const visLen = 4 + step.outputSummary.length;
+              const padSum = Math.max(0, contentWidth - visLen);
               lines.push({
                 id: `tool_${step.id}_summary`,
                 toolId: step.id,
                 node: (
                   <Text backgroundColor={bg} wrap="truncate-end">
-                    <Text color={theme.border}>      </Text>
-                    <Text color={theme.muted} italic>{step.outputSummary}</Text>
-                    {" ".repeat(pad)}
+                    <Text color={theme.border}>  └ </Text>
+                    <Text color={theme.muted} italic>
+                      {step.outputSummary}
+                    </Text>
+                    {" ".repeat(padSum)}
                   </Text>
                 ),
               });
@@ -250,7 +263,7 @@ export function buildRightLines(
     id: "div_edits",
     node: (
       <Text backgroundColor={bg} color={theme.border}>
-        {"  " + "─".repeat(Math.max(0, contentWidth - 2))}
+        {"──" + "─".repeat(Math.max(0, contentWidth - 2))}
       </Text>
     ),
   });
@@ -290,19 +303,24 @@ export function buildRightLines(
 
   const consolidatedEdits = Array.from(consolidatedMap.values());
 
-  const eLeft = "  FILES CHANGED";
+  const eLeft = "[ ▰ FILES CHANGED ]";
   const eCount = String(consolidatedEdits.length);
-  const ePad = Math.max(0, contentWidth - eLeft.length - eCount.length);
+  const eRight = `[ ${eCount} ]`;
+  const ePad = Math.max(0, contentWidth - eLeft.length - eRight.length);
 
   lines.push({
     id: "edits_hdr",
     node: (
       <Text backgroundColor={bg} wrap="truncate-end">
+        <Text color={theme.border}>[ </Text>
         <Text color={theme.secondary} bold>
-          {eLeft}
+          ▰ FILES CHANGED
         </Text>
+        <Text color={theme.border}> ]</Text>
         {" ".repeat(Math.max(1, ePad))}
-        <Text color={theme.accentBright}>{eCount}</Text>
+        <Text color={theme.border}>[ </Text>
+        <Text color={theme.accentBright} bold>{eCount}</Text>
+        <Text color={theme.border}> ]</Text>
       </Text>
     ),
   });
@@ -331,39 +349,39 @@ export function buildRightLines(
       const availPath = Math.max(0, contentWidth - 6 - statsStr.length);
       const trimmedPath =
         edit.relPath.length > availPath ? `${edit.relPath.slice(0, Math.max(0, availPath - 1))}…` : edit.relPath;
-      const pad = Math.max(0, contentWidth - 6 - trimmedPath.length - statsStr.length);
+      const pad = Math.max(0, contentWidth - 4 - trimmedPath.length - statsStr.length);
 
       lines.push({
         id: `edit_${edit.filePath}`,
         editFilePath: edit.filePath,
         node: (
           <Text backgroundColor={bg} wrap="truncate-end">
-            <Text color={theme.secondary}>  • </Text>
+            <Text color={theme.accent}>  ◈ </Text>
             <Text color={theme.text} bold>
               {trimmedPath}
             </Text>
             {" ".repeat(pad)}
-            <Text color={theme.secondary}>+{edit.linesAdded} </Text>
-            <Text color={theme.error}>-{edit.linesRemoved} </Text>
+            <Text color={theme.diffAdd} bold>+{edit.linesAdded} </Text>
+            <Text color={theme.diffRemove} bold>-{edit.linesRemoved} </Text>
             <Text color={theme.accent}>{expandIcon}</Text>
           </Text>
         ),
       });
 
       if (isExpanded && edit.diffLines && edit.diffLines.length > 0) {
-        edit.diffLines.slice(0, 4).forEach((dLine, dIdx) => {
+        edit.diffLines.slice(0, 5).forEach((dLine, dIdx) => {
           const isAdd = dLine.startsWith("+");
           const isRem = dLine.startsWith("-");
-          const col = isAdd ? theme.secondary : isRem ? theme.error : theme.muted;
-          const pad = Math.max(0, contentWidth - 6 - dLine.length);
+          const col = isAdd ? theme.diffAdd : isRem ? theme.diffRemove : theme.muted;
+          const padDiff = Math.max(0, contentWidth - 4 - dLine.length);
           lines.push({
             id: `diff_${edit.filePath}_${dIdx}`,
             editFilePath: edit.filePath,
             node: (
               <Text backgroundColor={bg} wrap="truncate-end">
-                <Text color={theme.border}>      </Text>
-                <Text color={col}>{dLine}</Text>
-                {" ".repeat(pad)}
+                <Text color={theme.border}>  │ </Text>
+                <Text color={col} bold={isAdd || isRem}>{dLine}</Text>
+                {" ".repeat(padDiff)}
               </Text>
             ),
           });
@@ -374,11 +392,11 @@ export function buildRightLines(
           editFilePath: edit.filePath,
           node: (
             <Text backgroundColor={bg} wrap="truncate-end">
-              <Text color={theme.border}>      </Text>
+              <Text color={theme.border}>  └ </Text>
               <Text color={theme.muted} italic>
-                [type /diff or click to inspect full window]
+                [type /diff to inspect full diff]
               </Text>
-              {" ".repeat(Math.max(0, contentWidth - 48))}
+              {" ".repeat(Math.max(0, contentWidth - 36))}
             </Text>
           ),
         });
@@ -391,30 +409,34 @@ export function buildRightLines(
       id: "findings_div",
       node: (
         <Text backgroundColor={bg} color={theme.border}>
-          {"  " + "─".repeat(Math.max(0, contentWidth - 2))}
+          {"──" + "─".repeat(Math.max(0, contentWidth - 2))}
         </Text>
       ),
     });
 
-    const fLeft = "  FINDINGS";
+    const fLeft = "[ ▰ FINDINGS ]";
     const fCount = String(findings.length);
-    const fPad = Math.max(0, contentWidth - fLeft.length - fCount.length);
+    const fRight = `[ ${fCount} ]`;
+    const fPad = Math.max(0, contentWidth - fLeft.length - fRight.length);
     lines.push({
       id: "findings_hdr",
       node: (
         <Text backgroundColor={bg} wrap="truncate-end">
+          <Text color={theme.border}>[ </Text>
           <Text color={theme.secondary} bold>
-            {fLeft}
+            ▰ FINDINGS
           </Text>
+          <Text color={theme.border}> ]</Text>
           {" ".repeat(Math.max(1, fPad))}
-          <Text color={theme.accentBright}>{fCount}</Text>
+          <Text color={theme.border}>[ </Text>
+          <Text color={theme.accentBright} bold>{fCount}</Text>
+          <Text color={theme.border}> ]</Text>
         </Text>
       ),
     });
 
-    findings.slice(-2).forEach((f, idx) => {
-      const fPfx = "  ● ";
-      const availTopic = Math.max(0, contentWidth - 4);
+    findings.slice(-3).forEach((f, idx) => {
+      const availTopic = Math.max(0, contentWidth - 5);
       const topicTrimmed =
         f.topic.length > availTopic ? `${f.topic.slice(0, Math.max(0, availTopic - 1))}…` : f.topic;
       const itemPad = Math.max(0, contentWidth - 4 - topicTrimmed.length);
@@ -423,10 +445,8 @@ export function buildRightLines(
         id: `finding_${idx}`,
         node: (
           <Text backgroundColor={bg} wrap="truncate-end">
-            <Text color={theme.accent} bold>
-              {fPfx}
-            </Text>
-            <Text color={theme.text}>{topicTrimmed}</Text>
+            <Text color={theme.accentBright}>  ✦ </Text>
+            <Text color={theme.text} bold>{topicTrimmed}</Text>
             {" ".repeat(itemPad)}
           </Text>
         ),
@@ -439,24 +459,23 @@ export function buildRightLines(
       id: "git_div",
       node: (
         <Text backgroundColor={bg} color={theme.border}>
-          {"  " + "─".repeat(Math.max(0, contentWidth - 2))}
+          {"──" + "─".repeat(Math.max(0, contentWidth - 2))}
         </Text>
       ),
     });
 
-    const gitPfx = "  git: ";
     const bTrimmed = branch.length > 18 ? `${branch.slice(0, 15)}…` : branch;
-    const statStr = ` (${gitStatus || "clean"})`;
-    const gitVisLen = gitPfx.length + bTrimmed.length + statStr.length;
+    const statStr = ` [${gitStatus || "clean"}]`;
+    const gitVisLen = 4 + bTrimmed.length + statStr.length;
     const gitPad = Math.max(0, contentWidth - gitVisLen);
 
     lines.push({
       id: "git_info",
       node: (
         <Text backgroundColor={bg} wrap="truncate-end">
-          <Text color={theme.muted}>{gitPfx}</Text>
-          <Text color={theme.secondary}>{bTrimmed}</Text>
-          <Text color={gitStatus && gitStatus !== "clean" ? theme.accent : theme.muted}>
+          <Text color={theme.accent}>  ◈ </Text>
+          <Text color={theme.secondary} bold>{bTrimmed}</Text>
+          <Text color={gitStatus && gitStatus !== "clean" ? theme.accentBright : theme.muted}>
             {statStr}
           </Text>
           {" ".repeat(gitPad)}
@@ -469,22 +488,21 @@ export function buildRightLines(
     id: "log_div",
     node: (
       <Text backgroundColor={bg} color={theme.border}>
-        {"  " + "─".repeat(Math.max(0, contentWidth - 2))}
+        {"──" + "─".repeat(Math.max(0, contentWidth - 2))}
       </Text>
     ),
   });
 
-  const logPfx = "  logs: ";
-  const logHint = "~/.morpheus/logs (type /log)";
-  const logAvail = Math.max(0, contentWidth - logPfx.length);
+  const logHint = "~/.morpheus/logs [type /log]";
+  const logAvail = Math.max(0, contentWidth - 5);
   const logTrimmed = logHint.length > logAvail ? `${logHint.slice(0, Math.max(0, logAvail - 1))}…` : logHint;
-  const lPad = Math.max(0, contentWidth - logPfx.length - logTrimmed.length);
+  const lPad = Math.max(0, contentWidth - 4 - logTrimmed.length);
   lines.push({
     id: "log_info",
     node: (
       <Text backgroundColor={bg} wrap="truncate-end">
-        <Text color={theme.muted}>{logPfx}</Text>
-        <Text color={theme.secondary}>{logTrimmed}</Text>
+        <Text color={theme.border}>  ≡ </Text>
+        <Text color={theme.muted}>{logTrimmed}</Text>
         {" ".repeat(lPad)}
       </Text>
     ),

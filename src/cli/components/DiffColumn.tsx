@@ -42,6 +42,30 @@ export function DiffColumn({ width, height, lines, statusInfo }: DiffColumnProps
   const stepStr = `step ${statusInfo?.stepCount ?? 0}/${statusInfo?.maxSteps ?? 25}`;
   const hintStr = isRunning ? "[esc] stop" : "[ctrl+c] exit";
 
+  const statusLabel = isRunning
+    ? "RUNNING"
+    : isAborted
+    ? "STOPPED"
+    : isError
+    ? "ERROR"
+    : "READY";
+
+  const line2VisLen =
+    1 +
+    (isRunning ? 6 : 4) +
+    statusLabel.length +
+    3 + stepStr.length +
+    3 + timeStr.length +
+    queueStr.length;
+  const padLine2 = Math.max(0, innerWidth - line2VisLen);
+
+  const line3VisLen =
+    1 +
+    4 + peakCtx.length + 1 + limitCtx.length +
+    3 + 4 + totalTokens.length +
+    3 + hintStr.length;
+  const padLine3 = Math.max(0, innerWidth - line3VisLen);
+
   return (
     <Box
       flexDirection="column"
@@ -63,7 +87,7 @@ export function DiffColumn({ width, height, lines, statusInfo }: DiffColumnProps
       ))}
       {Array.from({ length: padCount }).map((_, idx) => (
         <Box key={`pad_${idx}`} height={1} overflow="hidden">
-          <Text backgroundColor={theme.bgColumn}>
+          <Text backgroundColor={theme.bg}>
             {" ".repeat(innerWidth)}
           </Text>
         </Box>
@@ -72,39 +96,47 @@ export function DiffColumn({ width, height, lines, statusInfo }: DiffColumnProps
       {hasFooter && (
         <Box flexDirection="column" height={3} overflow="hidden">
           <Box height={1} overflow="hidden">
-            <Text backgroundColor={theme.bgColumn} color={theme.border}>
+            <Text backgroundColor={theme.bg} color={theme.border}>
               {"─".repeat(innerWidth)}
             </Text>
           </Box>
           <Box height={1} overflow="hidden">
-            <Text backgroundColor={theme.bgColumn} wrap="truncate-end">
+            <Text backgroundColor={theme.bg} wrap="truncate-end">
               {" "}
               {isRunning ? (
                 <Text color={theme.accentBright} bold>
-                  <CyberPulse />RUNNING
+                  <CyberPulse /> RUNNING
                 </Text>
               ) : isAborted ? (
                 <Text color={theme.accent}>
-                  {glyphs.bullet} STOPPED
+                  <Text color={theme.border}>[ </Text>STOPPED<Text color={theme.border}> ]</Text>
                 </Text>
               ) : isError ? (
                 <Text color={theme.diffRemove}>
-                  {glyphs.error} ERROR
+                  <Text color={theme.border}>[ </Text>ERROR<Text color={theme.border}> ]</Text>
                 </Text>
               ) : (
                 <Text color={theme.muted}>
-                  {glyphs.bullet} READY
+                  <Text color={theme.border}>[ </Text><Text color={theme.accent}>●</Text> READY<Text color={theme.border}> ]</Text>
                 </Text>
               )}
               <Text color={theme.secondary}> · {stepStr} · {timeStr}{queueStr}</Text>
+              {" ".repeat(padLine2)}
             </Text>
           </Box>
           <Box height={1} overflow="hidden">
-            <Text backgroundColor={theme.bgColumn} wrap="truncate-end">
+            <Text backgroundColor={theme.bg} wrap="truncate-end">
               {" "}
-              <Text color={theme.secondary}>ctx {peakCtx}/{limitCtx} · api {totalTokens}</Text>
-              <Text color={theme.border}> · </Text>
+              <Text color={theme.muted}>ctx </Text>
+              <Text color={theme.secondary}>{peakCtx}</Text>
+              <Text color={theme.border}>/</Text>
+              <Text color={theme.muted}>{limitCtx}</Text>
+              <Text color={theme.border}> │ </Text>
+              <Text color={theme.muted}>api </Text>
+              <Text color={theme.secondary}>{totalTokens}</Text>
+              <Text color={theme.border}> │ </Text>
               <Text color={theme.muted}>{hintStr}</Text>
+              {" ".repeat(padLine3)}
             </Text>
           </Box>
         </Box>
