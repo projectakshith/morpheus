@@ -8,6 +8,7 @@ import { helpCommand } from "./help.js";
 import { settingsCommand } from "./settings.js";
 import { stopCommand } from "./stop.js";
 import { queueCommand } from "./queue.js";
+import { skillsCommand } from "./skills.js";
 
 export class CommandRegistry {
   private handlers: CommandHandler[] = [];
@@ -22,6 +23,7 @@ export class CommandRegistry {
     this.register(settingsCommand);
     this.register(stopCommand);
     this.register(queueCommand);
+    this.register(skillsCommand);
     this.register(helpCommand);
   }
 

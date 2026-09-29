@@ -24,6 +24,7 @@ const BUILTIN_COMMANDS: CommandDef[] = [
   { name: "/sessions", description: "Browse and resume past sessions" },
   { name: "/login", description: "Authenticate provider (antigravity, openrouter)", hasArgs: true },
   { name: "/auth", description: "Check authentication status of providers" },
+  { name: "/skills", description: "List all available agent skills and playbooks", aliases: ["/skill"] },
   { name: "/exit", description: "Exit Morpheus CLI", aliases: ["/quit"] },
 ];
 
