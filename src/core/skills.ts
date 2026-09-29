@@ -3,13 +3,11 @@ import path from "node:path";
 import os from "node:os";
 import { fileURLToPath } from "node:url";
 import type { Skill, Rule } from "./types";
+import { similarity } from "../utils/levenshtein.js";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
-/**
- * Parses markdown frontmatter between `---` fences.
- */
 export function parseFrontmatter(fileContent: string): {
   attributes: Record<string, any>;
   body: string;
@@ -59,9 +57,6 @@ export function parseFrontmatter(fileContent: string): {
   return { attributes, body };
 }
 
-/**
- * Recursively scans a directory for markdown files.
- */
 function scanMarkdownFiles(dir: string): string[] {
   if (!fs.existsSync(dir)) return [];
   const results: string[] = [];
@@ -77,20 +72,14 @@ function scanMarkdownFiles(dir: string): string[] {
       }
     }
   } catch {
-    // Gracefully ignore directory read errors
   }
 
   return results;
 }
 
-/**
- * Loads and merges skills from built-in, user-level, and workspace directories.
- * Higher precedence overrides lower precedence: workspace > user > built-in.
- */
 export function loadSkills(cwd: string = process.cwd()): Skill[] {
   const skillsMap = new Map<string, Skill>();
 
-  // Determine potential built-in skills locations
   const builtinCandidates = [
     path.resolve(__dirname, "../../skills"),
     path.resolve(process.cwd(), "skills"),
@@ -138,7 +127,6 @@ export function loadSkills(cwd: string = process.cwd()): Skill[] {
           path: filePath,
         });
       } catch {
-        // Skip unparseable skill files
       }
     }
   }
@@ -148,9 +136,6 @@ export function loadSkills(cwd: string = process.cwd()): Skill[] {
   );
 }
 
-/**
- * Loads and merges rules from built-in, user-level, and workspace directories.
- */
 export function loadRules(cwd: string = process.cwd()): Rule[] {
   const rulesMap = new Map<string, Rule>();
 
@@ -183,7 +168,6 @@ export function loadRules(cwd: string = process.cwd()): Rule[] {
           path: filePath,
         });
       } catch {
-        // Skip unparseable rule files
       }
     }
   }
@@ -193,30 +177,29 @@ export function loadRules(cwd: string = process.cwd()): Rule[] {
   );
 }
 
-/**
- * Matches user prompt against skill triggers.
- */
 export function matchSkills(prompt: string, skills: Skill[]): Skill[] {
   if (!prompt || !skills.length) return [];
   const normalized = prompt.toLowerCase();
+  const words = normalized.split(/[^a-z0-9_-]+/).filter(Boolean);
 
   return skills.filter((skill) => {
     return skill.triggers.some((trigger) => {
       const t = trigger.toLowerCase().trim();
       if (!t) return false;
-      // Word boundary regex for single words, or simple substring match for phrases
       if (t.includes(" ")) {
         return normalized.includes(t);
       }
       const regex = new RegExp(`\\b${t}(s|ed|ing)?\\b`, "i");
-      return regex.test(normalized);
+      if (regex.test(normalized)) return true;
+
+      if (t.length >= 4) {
+        return words.some((w) => w.length >= 3 && similarity(w, t) >= 0.8);
+      }
+      return false;
     });
   });
 }
 
-/**
- * Formats a lightweight skill manifest (~100 tokens).
- */
 export function formatSkillsManifest(skills: Skill[]): string {
   if (!skills.length) return "";
   const lines = skills.map(
@@ -225,9 +208,6 @@ export function formatSkillsManifest(skills: Skill[]): string {
   return ["<skills>", ...lines, "</skills>"].join("\n");
 }
 
-/**
- * Formats active skills with full markdown instructions.
- */
 export function formatActiveSkills(skills: Skill[]): string {
   if (!skills.length) return "";
   const blocks = skills.map((s) => {
@@ -236,9 +216,6 @@ export function formatActiveSkills(skills: Skill[]): string {
   return ["<active_skills>", ...blocks, "</active_skills>"].join("\n\n");
 }
 
-/**
- * Formats rules into a concise prompt block.
- */
 export function formatRules(rules: Rule[]): string {
   if (!rules.length) return "";
   const blocks = rules.map((r) => r.content);

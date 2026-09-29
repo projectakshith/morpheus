@@ -2,7 +2,7 @@
 name: word-docs
 category: documents
 description: Generating structured Word documents (.docx), technical specifications, and executive briefs
-triggers: ["word", "docx", "document", "spec", "whitepaper", "rfc", "brief"]
+triggers: ["word", "docx", "doc", "document", "documents", "spec", "whitepaper", "rfc", "brief"]
 ---
 
 # Word Docs & Technical Specifications Skill
