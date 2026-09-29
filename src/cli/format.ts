@@ -142,16 +142,35 @@ export class MarkdownFormatter {
     }
 
     const h1 = raw.match(/^#\s+(.+)$/);
-    if (h1) return "\n" + pc.bold(pc.white(this.formatInline(h1[1]))) + "\n";
+    if (h1) return pc.bold(pc.white(`▰ ${this.formatInline(h1[1])}`));
 
     const h2 = raw.match(/^##\s+(.+)$/);
-    if (h2) return "\n" + pc.bold(pc.green(this.formatInline(h2[1])));
+    if (h2) return pc.bold(pc.green(`◈ ${this.formatInline(h2[1])}`));
 
     const h3 = raw.match(/^###+\s+(.+)$/);
-    if (h3) return pc.bold(pc.cyan(this.formatInline(h3[1])));
+    if (h3) return pc.bold(pc.cyan(`◆ ${this.formatInline(h3[1])}`));
 
     const bq = raw.match(/^>\s*(.+)$/);
     if (bq) return `  ${pc.dim("│")} ${pc.italic(this.formatInline(bq[1]))}`;
+
+    // Priority and callout badges (P0, P1, P2, CRITICAL, WARN, NOTE, FIX)
+    const badge = raw.match(/^(\s*)(?:[-*+]\s+)?(?:\*\*|\[)?(P[0-3]|CRITICAL|SECURITY|WARN|WARNING|NOTE|FIX)(?:\*\*|\])?\s*[-:]\s*(.+)$/i);
+    if (badge) {
+      const indent = badge[1];
+      const tag = badge[2].toUpperCase();
+      const content = badge[3];
+      let badgeStyled = "";
+      if (tag === "P0" || tag === "CRITICAL" || tag === "SECURITY") {
+        badgeStyled = pc.bold(pc.red(`[ ${tag} ]`));
+      } else if (tag === "P1" || tag === "WARN" || tag === "WARNING") {
+        badgeStyled = pc.bold(pc.yellow(`[ ${tag} ]`));
+      } else if (tag === "P2" || tag === "NOTE" || tag === "FIX") {
+        badgeStyled = pc.bold(pc.cyan(`[ ${tag} ]`));
+      } else {
+        badgeStyled = pc.bold(pc.magenta(`[ ${tag} ]`));
+      }
+      return `${indent}  ${badgeStyled} ${this.formatInline(content)}`;
+    }
 
     const boldNum = raw.match(/^(\s*)\*\*(\d+)\.\s*(.+?)\*\*(.*)$/);
     if (boldNum) {
@@ -164,7 +183,7 @@ export class MarkdownFormatter {
 
     const num = raw.match(/^(\s*)(\d+)\.\s+(.+)$/);
     if (num) {
-      return `${num[1]}  ${pc.bold(pc.white(num[2] + "."))} ${this.formatInline(num[3])}`;
+      return `${num[1]}  ${pc.bold(pc.green(num[2] + "."))} ${this.formatInline(num[3])}`;
     }
 
     const bullet = raw.match(/^(\s*)[-*+]\s+(.+)$/);

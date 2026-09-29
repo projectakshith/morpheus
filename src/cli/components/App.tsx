@@ -249,16 +249,30 @@ export function App({
     );
   }, [threads, fileEdits, findings, expandedToolIds, collapsedThreadIds, expandedFileEdits, rightContentWidth]);
 
-  const rightColumnVisibleHeight = Math.max(1, effectiveWorkspaceHeight - 3);
-  const maxRightScroll = Math.max(0, allRightLines.length - rightColumnVisibleHeight);
+  const PINNED_RIGHT_HEADER_COUNT = 2;
+
+  const pinnedRightHeaders = useMemo(() => {
+    return allRightLines.slice(0, PINNED_RIGHT_HEADER_COUNT);
+  }, [allRightLines]);
+
+  const scrollableRightLines = useMemo(() => {
+    return allRightLines.slice(PINNED_RIGHT_HEADER_COUNT);
+  }, [allRightLines]);
+
+  const rightColumnScrollableHeight = Math.max(1, effectiveWorkspaceHeight - 3 - PINNED_RIGHT_HEADER_COUNT);
+  const maxRightScroll = Math.max(0, scrollableRightLines.length - rightColumnScrollableHeight);
   maxRightScrollRef.current = maxRightScroll;
 
   const effectiveRightScroll = Math.min(rightScrollTop, maxRightScroll);
   currentRightScrollRef.current = effectiveRightScroll;
 
   const visibleRightLines = useMemo(() => {
-    return allRightLines.slice(effectiveRightScroll, effectiveRightScroll + rightColumnVisibleHeight);
-  }, [allRightLines, effectiveRightScroll, rightColumnVisibleHeight]);
+    const visibleScrollable = scrollableRightLines.slice(
+      effectiveRightScroll,
+      effectiveRightScroll + rightColumnScrollableHeight
+    );
+    return [...pinnedRightHeaders, ...visibleScrollable];
+  }, [pinnedRightHeaders, scrollableRightLines, effectiveRightScroll, rightColumnScrollableHeight]);
 
   visibleRightLinesRef.current = visibleRightLines;
 

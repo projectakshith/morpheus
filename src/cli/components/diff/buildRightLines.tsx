@@ -1,7 +1,6 @@
 import React from "react";
 import path from "node:path";
 import { Text } from "ink";
-import { CyberPulse } from "../CyberPulse.js";
 import type { Finding } from "../../../core/types.js";
 import type { Thread, FileEditRecord, RightLine } from "../../types.js";
 import { theme, getToolBadge } from "../../theme.js";
@@ -89,22 +88,31 @@ export function buildRightLines(
   const tHdrRight = `[ ${tCount} ]`;
   const tPadHdr = Math.max(0, contentWidth - tHdrLeft.length - tHdrRight.length);
 
-  lines.push({
-    id: "tools_hdr",
-    node: (
-      <Text backgroundColor={bg} wrap="truncate-end">
-        <Text color={theme.border}>[ </Text>
-        <Text color={theme.accentBright} bold>
-          ▰ TOOLS
+    lines.push({
+      id: "tools_hdr",
+      node: (
+        <Text backgroundColor={bg} wrap="truncate-end">
+          <Text color={theme.border}>[ </Text>
+          <Text color={theme.accentBright} bold>
+            ▰ TOOLS
+          </Text>
+          <Text color={theme.border}> ]</Text>
+          {" ".repeat(Math.max(1, tPadHdr))}
+          <Text color={theme.border}>[ </Text>
+          <Text color={theme.secondary} bold>{tCount}</Text>
+          <Text color={theme.border}> ]</Text>
         </Text>
-        <Text color={theme.border}> ]</Text>
-        {" ".repeat(Math.max(1, tPadHdr))}
-        <Text color={theme.border}>[ </Text>
-        <Text color={theme.secondary} bold>{tCount}</Text>
-        <Text color={theme.border}> ]</Text>
-      </Text>
-    ),
-  });
+      ),
+    });
+
+    lines.push({
+      id: "tools_hdr_div",
+      node: (
+        <Text backgroundColor={bg} color={theme.border}>
+          {"─".repeat(contentWidth)}
+        </Text>
+      ),
+    });
 
   if (totalTools === 0) {
     const emptyPfx = "  ○ ";
@@ -166,7 +174,7 @@ export function buildRightLines(
 
           const visTextLen =
             2 +
-            (step.isRunning ? 5 : 2) +
+            2 +
             badge.label.length + 3 +
             (toolArg ? 1 + toolArg.length : 0) +
             (durStr ? 1 + durStr.length : 0) +
@@ -180,7 +188,7 @@ export function buildRightLines(
               <Text backgroundColor={bg} wrap="truncate-end">
                 {"  "}
                 {step.isRunning ? (
-                  <CyberPulse />
+                  <Text color={theme.accentBright}>● </Text>
                 ) : (
                   <Text color={statusColor}>{statusIcon} </Text>
                 )}

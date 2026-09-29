@@ -2,7 +2,6 @@ import React from "react";
 import { Box, Text } from "ink";
 import { theme } from "../theme.js";
 import { glyphs } from "../glyphs.js";
-import { CyberPulse } from "./CyberPulse.js";
 import type { RightLine, DiffColumnProps, FileEditRecord, ToolStepRecord } from "../types.js";
 import { buildRightLines } from "./diff/buildRightLines.js";
 
@@ -42,18 +41,10 @@ export function DiffColumn({ width, height, lines, statusInfo }: DiffColumnProps
   const stepStr = `step ${statusInfo?.stepCount ?? 0}/${statusInfo?.maxSteps ?? 25}`;
   const hintStr = isRunning ? "[esc] stop" : "[ctrl+c] exit";
 
-  const statusLabel = isRunning
-    ? "RUNNING"
-    : isAborted
-    ? "STOPPED"
-    : isError
-    ? "ERROR"
-    : "READY";
-
+  const statusBadgeLength = isRunning ? 10 : isAborted ? 11 : isError ? 9 : 11;
   const line2VisLen =
     1 +
-    (isRunning ? 6 : 4) +
-    statusLabel.length +
+    statusBadgeLength +
     3 + stepStr.length +
     3 + timeStr.length +
     queueStr.length;
@@ -104,8 +95,8 @@ export function DiffColumn({ width, height, lines, statusInfo }: DiffColumnProps
             <Text backgroundColor={theme.bg} wrap="truncate-end">
               {" "}
               {isRunning ? (
-                <Text color={theme.accentBright} bold>
-                  <CyberPulse /> RUNNING
+                <Text color={theme.accent}>
+                  <Text color={theme.border}>[ </Text><Text color={theme.accentBright}>●</Text> BUSY<Text color={theme.border}> ]</Text>
                 </Text>
               ) : isAborted ? (
                 <Text color={theme.accent}>

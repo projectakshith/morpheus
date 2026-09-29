@@ -3,7 +3,7 @@ import { Box, Text } from "ink";
 import Spinner from "ink-spinner";
 import type { FeedLine, Thread } from "../types.js";
 import { MarkdownFormatter } from "../format.js";
-import { wrapLine } from "../utils/text.js";
+import { wrapLine, visibleLength } from "../utils/text.js";
 import { buildHeroFeedLines } from "./MatrixIntro.js";
 import { CyberPulse } from "./CyberPulse.js";
 import { theme } from "../theme.js";
@@ -63,7 +63,7 @@ export function buildThreadFeedLines({
     promptLines.forEach((pLine) => {
       const wrapped = wrapLine(pLine, maxLineWidth);
       wrapped.forEach((wLine) => {
-        const visLen = 2 + wLine.length;
+        const visLen = 2 + visibleLength(wLine);
         const pad = Math.max(0, leftWidth - visLen);
         lines.push({
           id: `${thread.id}_prompt_${lines.length}`,
@@ -191,7 +191,7 @@ export function buildThreadFeedLines({
           rawThinkLines.forEach((rLine) => {
             const wrapped = wrapLine(rLine, maxLineWidth);
             wrapped.forEach((wLine) => {
-              const visLen = 4 + wLine.length;
+              const visLen = 4 + visibleLength(wLine);
               const padLine = Math.max(0, leftWidth - visLen);
               lines.push({
                 id: `${tStep.id}_think_${lines.length}`,
@@ -285,8 +285,20 @@ export function buildThreadFeedLines({
       formattedLines.forEach((mLine) => {
         const wrapped = wrapLine(mLine, maxLineWidth);
         wrapped.forEach((wLine) => {
-          const cleanText = wLine.replace(/\x1b\[[0-9;]*m/g, "");
-          const visLen = 2 + cleanText.length;
+          const vis = visibleLength(wLine);
+          if (vis === 0) {
+            lines.push({
+              id: `${thread.id}_asst_line_${lines.length}`,
+              threadId: thread.id,
+              node: (
+                <Text backgroundColor={theme.bg}>
+                  {" ".repeat(leftWidth)}
+                </Text>
+              ),
+            });
+            return;
+          }
+          const visLen = 2 + vis;
           const pad = Math.max(0, leftWidth - visLen);
           lines.push({
             id: `${thread.id}_asst_line_${lines.length}`,

@@ -102,4 +102,48 @@ describe("MarkdownFormatter", () => {
     assert.ok(step4.some(l => l.includes("┌")), "Should include rendered table");
     assert.ok(step4[step4.length - 1].includes("Done with table."), "Should include trailing line");
   });
+
+  it("formats priority badges (P0, P1, P2, CRITICAL)", () => {
+    const formatter = new MarkdownFormatter();
+    const p0 = formatter.formatSingleLine("- P0: Critical buffer overflow");
+    assert.ok(p0 !== null && p0.includes("[ P0 ]") && p0.includes("Critical buffer overflow"));
+
+    const crit = formatter.formatSingleLine("CRITICAL: Root auth bypassed");
+    assert.ok(crit !== null && crit.includes("[ CRITICAL ]") && crit.includes("Root auth bypassed"));
+
+    const p1 = formatter.formatSingleLine("- P1: Inefficient compaction query");
+    assert.ok(p1 !== null && p1.includes("[ P1 ]") && p1.includes("Inefficient compaction query"));
+
+    const p2 = formatter.formatSingleLine("- P2: Missing docstring in helper");
+    assert.ok(p2 !== null && p2.includes("[ P2 ]") && p2.includes("Missing docstring in helper"));
+  });
 });
+
+import { wrapLine, visibleLength, stripAnsi } from "../src/cli/utils/text";
+
+describe("ANSI-aware wrapLine", () => {
+  it("does not prematurely wrap lines containing ANSI escape sequences", () => {
+    const ansiText = "\x1b[36mwordOne\x1b[39m \x1b[32mwordTwo\x1b[39m \x1b[1mwordThree\x1b[22m";
+    // Visible length is 7 + 1 + 7 + 1 + 9 = 25
+    assert.equal(visibleLength(ansiText), 25);
+    const wrapped = wrapLine(ansiText, 30);
+    assert.equal(wrapped.length, 1, "Should fit on a single line when visible length <= 30");
+  });
+
+  it("wraps text exceeding maxWidth with hanging indent for bullet lists", () => {
+    const bulletText = "  • First item that has enough words to certainly exceed thirty characters width";
+    const wrapped = wrapLine(bulletText, 35);
+    assert.ok(wrapped.length >= 2, "Should wrap across multiple lines");
+    assert.ok(wrapped[0].startsWith("  • "), "First line has bullet prefix");
+    assert.ok(wrapped[1].startsWith("    "), "Second line has 4-space hanging indent");
+  });
+
+  it("wraps numbered lists with hanging indent", () => {
+    const numText = "  1. First instruction that is exceptionally long and will exceed the specified width";
+    const wrapped = wrapLine(numText, 35);
+    assert.ok(wrapped.length >= 2, "Should wrap across multiple lines");
+    assert.ok(wrapped[0].startsWith("  1. "), "First line has number prefix");
+    assert.ok(wrapped[1].startsWith("     "), "Second line aligns with content");
+  });
+});
+
