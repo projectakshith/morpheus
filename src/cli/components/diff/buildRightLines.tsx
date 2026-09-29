@@ -4,6 +4,8 @@ import { Text } from "ink";
 import type { Finding } from "../../../core/types.js";
 import type { Thread, FileEditRecord, RightLine } from "../../types.js";
 import { theme, getToolBadge } from "../../theme.js";
+import { highlightCode, getLangFromPath } from "../../highlight.js";
+import { visibleLength } from "../../utils/text.js";
 
 function toRel(filePath: string, cwd: string): string {
   if (path.isAbsolute(filePath)) {
@@ -386,19 +388,25 @@ export function buildRightLines(
       });
 
       if (isExpanded && edit.diffLines && edit.diffLines.length > 0) {
+        const lang = getLangFromPath(edit.filePath);
         edit.diffLines.slice(0, 5).forEach((dLine, dIdx) => {
           const isAdd = dLine.startsWith("+") && !dLine.startsWith("+++");
           const isRem = dLine.startsWith("-") && !dLine.startsWith("---");
-          const col = isAdd ? theme.diffAdd : isRem ? theme.diffRemove : theme.muted;
-          const lineBg = isAdd ? theme.bgDiffAdd : isRem ? theme.bgDiffRemove : bg;
-          const padDiff = Math.max(0, contentWidth - 4 - dLine.length);
+          const isHunk = dLine.startsWith("@@");
+          const col = isAdd ? theme.diffAdd : isRem ? theme.diffRemove : isHunk ? theme.accent : theme.muted;
+          const lineBg = isAdd ? theme.bgDiffAdd : isRem ? theme.bgDiffRemove : isHunk ? theme.bgColumn : bg;
+          const marker = isAdd ? "+" : isRem ? "-" : isHunk ? "~" : " ";
+          const codeText = isAdd || isRem ? dLine.slice(1) : dLine.startsWith(" ") ? dLine.slice(1) : dLine;
+          const highlighted = isHunk ? codeText : highlightCode(codeText, lang);
+          const padDiff = Math.max(0, contentWidth - 6 - visibleLength(codeText));
           lines.push({
             id: `diff_${edit.filePath}_${dIdx}`,
             editFilePath: edit.filePath,
             node: (
               <Text backgroundColor={lineBg} wrap="truncate-end">
                 <Text color={theme.border}>  │ </Text>
-                <Text color={col} bold={isAdd || isRem}>{dLine}</Text>
+                <Text color={col} bold={isAdd || isRem}>{marker} </Text>
+                {highlighted}
                 {" ".repeat(padDiff)}
               </Text>
             ),

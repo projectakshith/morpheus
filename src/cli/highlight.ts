@@ -3,6 +3,7 @@
  * Fast, ANSI-safe tokenization for TypeScript, JavaScript, Python, Rust, Go, Bash, and JSON.
  */
 
+import path from "node:path";
 import picocolors from "picocolors";
 const pc = picocolors.createColors(true);
 
@@ -156,4 +157,50 @@ export function highlightCode(line: string, lang?: string): string {
   }
 
   return working;
+}
+
+/**
+ * Detect language string from file path extension.
+ */
+export function getLangFromPath(filePath: string): string {
+  const ext = path.extname(filePath).toLowerCase();
+  switch (ext) {
+    case ".ts":
+    case ".tsx":
+    case ".mts":
+    case ".cts":
+      return "typescript";
+    case ".js":
+    case ".jsx":
+    case ".mjs":
+    case ".cjs":
+      return "javascript";
+    case ".py":
+    case ".pyw":
+      return "python";
+    case ".rs":
+      return "rust";
+    case ".go":
+      return "go";
+    case ".sh":
+    case ".bash":
+    case ".zsh":
+      return "bash";
+    case ".json":
+      return "json";
+    case ".css":
+    case ".scss":
+      return "css";
+    case ".html":
+      return "html";
+    case ".md":
+      return "markdown";
+    case ".sql":
+      return "sql";
+    case ".yaml":
+    case ".yml":
+      return "yaml";
+    default:
+      return "text";
+  }
 }
