@@ -1,7 +1,7 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
-import { getCoolActionLabel } from "../src/cli/components/ThreadFeed";
-import type { ThreadStep } from "../src/cli/types";
+import { getCoolActionLabel, buildThreadFeedLines } from "../src/cli/components/ThreadFeed";
+import type { Thread, ThreadStep } from "../src/cli/types";
 
 describe("Cool Action Labels (Matrix / Cyberpunk Aesthetic)", () => {
   it("defaults to 'morpheus is locked in...' when no step is active", () => {
@@ -135,5 +135,73 @@ describe("Cool Action Labels (Matrix / Cyberpunk Aesthetic)", () => {
     };
     const label = getCoolActionLabel(step);
     assert.ok(label.includes("loading combat playbook: matrix-combat"));
+  });
+});
+
+describe("ThreadFeed Continuous UI Activity", () => {
+  it("renders live thinking indicator when thread is running without steps or response", () => {
+    const thread: Thread = {
+      id: "t1",
+      index: 1,
+      prompt: "inspect construct",
+      response: "",
+      isStreaming: false,
+      steps: [],
+      status: "running",
+      stepCount: 1,
+      startTime: Date.now() - 1000,
+    };
+    const lines = buildThreadFeedLines({
+      threads: [thread],
+      leftWidth: 80,
+      feedHeight: 20,
+      maxLineWidth: 76,
+    });
+    const hasRunningIndicator = lines.some((l) => l.id.includes("thinking_indicator"));
+    assert.ok(hasRunningIndicator, "Must show running indicator during initial processing");
+  });
+
+  it("renders live running pulse beneath assistant response while thread is still running", () => {
+    const thread: Thread = {
+      id: "t2",
+      index: 1,
+      prompt: "run analysis",
+      response: "Preliminary finding recorded.",
+      isStreaming: true,
+      steps: [],
+      status: "running",
+      stepCount: 2,
+      startTime: Date.now() - 2000,
+    };
+    const lines = buildThreadFeedLines({
+      threads: [thread],
+      leftWidth: 80,
+      feedHeight: 20,
+      maxLineWidth: 76,
+    });
+    const hasStreamingPulse = lines.some((l) => l.id.includes("asst_running_pulse"));
+    assert.ok(hasStreamingPulse, "Must show running pulse below assistant response while streaming");
+  });
+
+  it("cleans up running indicators once thread status transitions to completed", () => {
+    const thread: Thread = {
+      id: "t3",
+      index: 1,
+      prompt: "conclude mission",
+      response: "Construct verified and deployed.",
+      isStreaming: false,
+      steps: [],
+      status: "completed",
+      stepCount: 2,
+      startTime: Date.now() - 3000,
+    };
+    const lines = buildThreadFeedLines({
+      threads: [thread],
+      leftWidth: 80,
+      feedHeight: 20,
+      maxLineWidth: 76,
+    });
+    const hasPulse = lines.some((l) => l.id.includes("asst_running_pulse") || l.id.includes("thinking_indicator"));
+    assert.ok(!hasPulse, "Must not show running indicators when thread is completed");
   });
 });

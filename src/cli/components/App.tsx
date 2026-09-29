@@ -235,8 +235,9 @@ export function App({
       maxLineWidth,
       expandedThinkingIds,
       matrixQuote,
+      elapsedSeconds,
     });
-  }, [threads, leftWidth, maxLineWidth, feedHeight, expandedThinkingIds, matrixQuote]);
+  }, [threads, leftWidth, maxLineWidth, feedHeight, expandedThinkingIds, matrixQuote, elapsedSeconds]);
 
   const maxScroll = Math.max(0, allFeedLines.length - effectiveFeedHeight);
   maxScrollRef.current = maxScroll;

@@ -406,11 +406,36 @@ export function useAgentRunner({
           if (!isUserScrolledRef.current) {
             setScrollOffset(0);
           }
-          setThreads((prev) =>
-            prev.map((t) =>
-              t.id === threadId ? { ...t, stepCount: step } : t
-            )
-          );
+          if (!activeThinkingId) {
+            activeThinkingId = `think_${Date.now()}`;
+            thinkingStartTime = Date.now();
+            const newStep: ThreadStep = {
+              id: activeThinkingId,
+              type: "thinking",
+              content: "",
+              isRunning: true,
+              startTime: thinkingStartTime,
+              durationMs: 0,
+            };
+            setThreads((prev) =>
+              prev.map((t) =>
+                t.id === threadId
+                  ? {
+                      ...t,
+                      stepCount: step,
+                      isStreaming: false,
+                      steps: [...t.steps, newStep],
+                    }
+                  : t
+              )
+            );
+          } else {
+            setThreads((prev) =>
+              prev.map((t) =>
+                t.id === threadId ? { ...t, stepCount: step, isStreaming: false } : t
+              )
+            );
+          }
         },
         onReasoningDelta: (chunk) => {
           if (!isUserScrolledRef.current) {
@@ -466,9 +491,11 @@ export function useAgentRunner({
                 if (t.id !== threadId) return t;
                 return {
                   ...t,
-                  steps: t.steps.map((s) =>
-                    s.id === curThinkId ? { ...s, isRunning: false, durationMs: thinkDur } : s
-                  ),
+                  steps: t.steps
+                    .map((s) =>
+                      s.id === curThinkId ? { ...s, isRunning: false, durationMs: thinkDur } : s
+                    )
+                    .filter((s) => s.id !== curThinkId || Boolean(s.content?.trim())),
                 };
               })
             );
@@ -488,7 +515,7 @@ export function useAgentRunner({
           };
           setThreads((prev) =>
             prev.map((t) =>
-              t.id === threadId ? { ...t, steps: [...t.steps, newStep] } : t
+              t.id === threadId ? { ...t, isStreaming: false, steps: [...t.steps, newStep] } : t
             )
           );
         },
@@ -547,9 +574,11 @@ export function useAgentRunner({
                 if (t.id !== threadId) return t;
                 return {
                   ...t,
-                  steps: t.steps.map((s) =>
-                    s.id === curThinkId ? { ...s, isRunning: false, durationMs: thinkDur } : s
-                  ),
+                  steps: t.steps
+                    .map((s) =>
+                      s.id === curThinkId ? { ...s, isRunning: false, durationMs: thinkDur } : s
+                    )
+                    .filter((s) => s.id !== curThinkId || Boolean(s.content?.trim())),
                 };
               })
             );
@@ -578,9 +607,11 @@ export function useAgentRunner({
             if (t.id !== threadId) return t;
             return {
               ...t,
-              steps: t.steps.map((s) =>
-                s.id === curThinkId ? { ...s, isRunning: false, durationMs: thinkDur } : s
-              ),
+              steps: t.steps
+                .map((s) =>
+                  s.id === curThinkId ? { ...s, isRunning: false, durationMs: thinkDur } : s
+                )
+                .filter((s) => s.id !== curThinkId || Boolean(s.content?.trim())),
             };
           })
         );

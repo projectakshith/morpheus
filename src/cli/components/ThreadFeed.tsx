@@ -18,6 +18,7 @@ export interface BuildFeedOptions {
   expandedThinkingIds?: Set<string>;
   collapsedThinkingIds?: Set<string>;
   matrixQuote?: string;
+  elapsedSeconds?: number;
 }
 
 function toRel(filePath: string, cwd: string = process.cwd()): string {
@@ -365,66 +366,7 @@ export function buildThreadFeedLines({
       }
     });
 
-    if (activeToolStep) {
-      const label = getCoolActionLabel(activeToolStep);
-      const visLen = 2 + 5 + label.length;
-      const pad = Math.max(0, leftWidth - visLen);
-      lines.push({
-        id: `${activeToolStep.id}_tool_running`,
-        threadId: thread.id,
-        stepId: activeToolStep.id,
-        node: (
-          <Text backgroundColor={theme.bg} wrap="truncate-end">
-            {"  "}
-            <CyberPulse />
-            <Text color={theme.accentBright} italic>
-              {label}
-            </Text>
-            {" ".repeat(pad)}
-          </Text>
-        ),
-      });
-    }
-
-    if (thread.status === "queued") {
-      lines.push({
-        id: `${thread.id}_queued_line`,
-        threadId: thread.id,
-        node: (
-          <Text backgroundColor={theme.bg} wrap="truncate-end">
-            <Text color={theme.warning}>  [queued behind active task · waiting for turn]</Text>
-            {" ".repeat(Math.max(0, leftWidth - 50))}
-          </Text>
-        ),
-      });
-    } else if (
-      thread.status === "running" &&
-      !activeToolStep &&
-      !thinkingSteps.some((s) => s.isRunning) &&
-      !thread.response &&
-      !thread.isStreaming
-    ) {
-      const runningLabel =
-        thread.steps.length === 0
-          ? "morpheus is locked in..."
-          : "synthesizing next move...";
-      const visLen = 2 + 5 + runningLabel.length;
-      const pad = Math.max(0, leftWidth - visLen);
-      lines.push({
-        id: `${thread.id}_thinking_indicator`,
-        threadId: thread.id,
-        node: (
-          <Text backgroundColor={theme.bg} wrap="truncate-end">
-            {"  "}
-            <CyberPulse />
-            <Text color={theme.secondary} italic>
-              {runningLabel}
-            </Text>
-            {" ".repeat(pad)}
-          </Text>
-        ),
-      });
-    } else if (thread.response || thread.isStreaming) {
+    if (thread.response || thread.isStreaming) {
       if (thinkingSteps.length > 0) {
         lines.push({
           id: `${thread.id}_asst_spacer`,
@@ -490,6 +432,106 @@ export function buildThreadFeedLines({
           });
         });
       });
+
+      if (activeToolStep) {
+        const label = getCoolActionLabel(activeToolStep);
+        const visLen = 2 + 5 + label.length;
+        const pad = Math.max(0, leftWidth - visLen);
+        lines.push({
+          id: `${activeToolStep.id}_tool_running`,
+          threadId: thread.id,
+          stepId: activeToolStep.id,
+          node: (
+            <Text backgroundColor={theme.bg} wrap="truncate-end">
+              {"  "}
+              <CyberPulse />
+              <Text color={theme.accentBright} italic>
+                {label}
+              </Text>
+              {" ".repeat(pad)}
+            </Text>
+          ),
+        });
+      } else if (thread.status === "running") {
+        const rawSec = ((Date.now() - (thread.startTime || Date.now())) / 1000).toFixed(1);
+        const liveLabel = thread.isStreaming
+          ? `transmitting stream (${rawSec}s)...`
+          : thread.stepCount && thread.stepCount > 1
+          ? `synthesizing next move (${rawSec}s)...`
+          : `synthesizing construct (${rawSec}s)...`;
+        const visLen = 2 + 5 + liveLabel.length;
+        const pad = Math.max(0, leftWidth - visLen);
+        lines.push({
+          id: `${thread.id}_asst_running_pulse`,
+          threadId: thread.id,
+          node: (
+            <Text backgroundColor={theme.bg} wrap="truncate-end">
+              {"  "}
+              <CyberPulse />
+              <Text color={theme.accentBright} italic>
+                {liveLabel}
+              </Text>
+              {" ".repeat(pad)}
+            </Text>
+          ),
+        });
+      }
+    } else {
+      if (activeToolStep) {
+        const label = getCoolActionLabel(activeToolStep);
+        const visLen = 2 + 5 + label.length;
+        const pad = Math.max(0, leftWidth - visLen);
+        lines.push({
+          id: `${activeToolStep.id}_tool_running`,
+          threadId: thread.id,
+          stepId: activeToolStep.id,
+          node: (
+            <Text backgroundColor={theme.bg} wrap="truncate-end">
+              {"  "}
+              <CyberPulse />
+              <Text color={theme.accentBright} italic>
+                {label}
+              </Text>
+              {" ".repeat(pad)}
+            </Text>
+          ),
+        });
+      } else if (thread.status === "queued") {
+        lines.push({
+          id: `${thread.id}_queued_line`,
+          threadId: thread.id,
+          node: (
+            <Text backgroundColor={theme.bg} wrap="truncate-end">
+              <Text color={theme.warning}>  [queued behind active task · waiting for turn]</Text>
+              {" ".repeat(Math.max(0, leftWidth - 50))}
+            </Text>
+          ),
+        });
+      } else if (thread.status === "running" && !thinkingSteps.some((s) => s.isRunning)) {
+        const rawSec = ((Date.now() - (thread.startTime || Date.now())) / 1000).toFixed(1);
+        const runningLabel =
+          thread.steps.length === 0
+            ? (thread.stepCount && thread.stepCount > 1
+                ? `evaluating construct (${rawSec}s)...`
+                : `morpheus is locked in (${rawSec}s)...`)
+            : `synthesizing next move (${rawSec}s)...`;
+        const visLen = 2 + 5 + runningLabel.length;
+        const pad = Math.max(0, leftWidth - visLen);
+        lines.push({
+          id: `${thread.id}_thinking_indicator`,
+          threadId: thread.id,
+          node: (
+            <Text backgroundColor={theme.bg} wrap="truncate-end">
+              {"  "}
+              <CyberPulse />
+              <Text color={theme.secondary} italic>
+                {runningLabel}
+              </Text>
+              {" ".repeat(pad)}
+            </Text>
+          ),
+        });
+      }
     }
 
     if (tIdx < threads.length - 1) {
