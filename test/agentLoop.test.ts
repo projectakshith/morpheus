@@ -116,3 +116,31 @@ test("Agent reruns a command after bash changed the workspace", async () => {
   assert.doesNotMatch(String(rerun.content), /already run|just run/);
   assert.match(String(rerun.content), /a\s+b/);
 });
+
+function textThenTool(content: string, id: string, name: string, args: object): Response {
+  return sse([
+    { choices: [{ delta: { content } }] },
+    { choices: [{ delta: { tool_calls: [{ index: 0, id, function: { name, arguments: JSON.stringify(args) } }] } }] },
+    { choices: [{ delta: {}, finish_reason: "tool_calls" }] },
+  ]);
+}
+
+test("Agent reports text before tool calls as narration, separate from the answer", async () => {
+  fs.writeFileSync(path.join(workspace, "notes.txt"), "hello\n");
+  scriptModel([
+    textThenTool("Checking the notes file first.", "c1", "read_file", { filePath: "notes.txt" }),
+    textThenTool("Found it. Now listing the folder.", "c2", "list_dir", { path: "." }),
+    text("The file says hello."),
+  ]);
+
+  const narration: string[] = [];
+  const result = await runAgent("what's in notes.txt?", [], {
+    cwd: workspace,
+    baseURL: "https://example.test/v1",
+    apiKey: "k",
+    onNarration: (t) => narration.push(t),
+  });
+
+  assert.deepEqual(narration, ["Checking the notes file first.", "Found it. Now listing the folder."]);
+  assert.equal(result.text, "The file says hello.", "final answer must not include narration");
+});

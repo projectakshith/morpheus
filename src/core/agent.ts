@@ -229,6 +229,12 @@ export async function runAgent(
       }
     }
 
+    /* Text in a step that goes on to call tools is narration, not the answer. */
+    if (toolCalls.length > 0) {
+      options.onNarration?.(accumulatedResponse + assistantContent);
+      accumulatedResponse = "";
+    }
+
     if (toolCalls.length === 0) {
       if (finishReason === "length" && !assistantContent.trim()) {
         if (truncatedToolRetries < 1) {
@@ -283,6 +289,8 @@ export async function runAgent(
 
       if (isConversationalStall(assistantContent, stepCount, maxSteps, conversationalNudges)) {
         conversationalNudges++;
+        options.onNarration?.(accumulatedResponse + assistantContent);
+        accumulatedResponse = "";
         workingMessages.push({
           role: "assistant",
           content: assistantContent,

@@ -588,6 +588,29 @@ export function useAgentRunner({
             setFileEdits((prev) => [...prev, editRecord]);
           }
         },
+        onNarration: (text) => {
+          const note = text.trim();
+          const noteStep: ThreadStep = {
+            id: `note_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
+            type: "note",
+            content: note,
+            startTime: Date.now(),
+          };
+          /* Interim text leaves the answer block and becomes its own timeline entry,
+           * so the final answer streams into a clean response. */
+          setThreads((prev) =>
+            prev.map((t) =>
+              t.id === threadId
+                ? {
+                    ...t,
+                    response: "",
+                    isStreaming: false,
+                    steps: note ? [...t.steps, noteStep] : t.steps,
+                  }
+                : t
+            )
+          );
+        },
         onTextDelta: (chunk) => {
           if (!isUserScrolledRef.current) {
             setScrollOffset(0);

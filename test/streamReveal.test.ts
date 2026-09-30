@@ -120,3 +120,26 @@ test("feed leaves other threads and settled reveals untouched", () => {
   assert.deepEqual(lines.map((l) => stripAnsi(l).trim()), ["earlier answer", "live text"]);
   assert.ok(lines.every((l) => !/\x1b\[38;2;/.test(l)), "no trail once glow is zero");
 });
+
+test("feed shows narration notes as separate entries before the final answer", () => {
+  const t: Thread = {
+    ...thread("t1", "Final answer here."),
+    isStreaming: false,
+    status: "completed",
+    steps: [
+      { id: "n1", type: "note", content: "Checking the config first." },
+      { id: "tool1", type: "tool", name: "read_file", args: {} },
+      { id: "n2", type: "note", content: "Found it, now the router." },
+    ],
+  };
+  const all = buildThreadFeedLines({ threads: [t], leftWidth: 80, feedHeight: 20, maxLineWidth: 76 });
+  const text = all.map((l) => stripAnsi(textOf(l.node)).trimEnd());
+  const first = text.findIndex((l) => l.includes("› Checking the config first."));
+  const second = text.findIndex((l) => l.includes("› Found it, now the router."));
+  const answer = text.findIndex((l) => l.includes("Final answer here."));
+
+  assert.ok(first !== -1 && second !== -1 && answer !== -1, text.join("\n"));
+  assert.ok(first < second && second < answer, "notes appear in order, before the answer");
+  assert.equal(text[second - 1].trim(), "", "a blank line separates consecutive notes");
+  assert.ok(!text.some((l) => l.includes("read_file")), "tool steps stay out of the left feed");
+});

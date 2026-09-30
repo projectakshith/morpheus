@@ -4,7 +4,8 @@ export type AppStatus = "idle" | "running" | "error" | "aborted";
 
 export interface ThreadStep {
   id: string;
-  type: "thinking" | "tool";
+  /* "note" is narration the model wrote between tool calls. */
+  type: "thinking" | "tool" | "note";
   content?: string;
   name?: string;
   args?: Record<string, unknown>;

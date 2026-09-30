@@ -141,6 +141,50 @@ export function getCoolActionLabel(step?: ThreadStep, cwd: string = process.cwd(
   }
 }
 
+/* Renders one narration note: a marker on the first line, wrapped text indented
+ * under it, and a blank line before it so consecutive notes read as paragraphs. */
+function pushNoteLines(
+  lines: FeedLine[],
+  threadId: string,
+  step: ThreadStep,
+  withSpacer: boolean,
+  leftWidth: number,
+  maxLineWidth: number
+): void {
+  if (withSpacer) {
+    lines.push({
+      id: `${step.id}_note_spacer`,
+      threadId,
+      stepId: step.id,
+      node: <Text backgroundColor={theme.bg}>{" ".repeat(leftWidth)}</Text>,
+    });
+  }
+
+  const formatter = new MarkdownFormatter();
+  const formatted = [
+    ...(step.content || "").split("\n").flatMap((raw) => formatter.processLine(raw)),
+    ...formatter.flush(),
+  ];
+  const wrapped = formatted.flatMap((line) => wrapLine(line, Math.max(10, maxLineWidth - 2)));
+
+  wrapped.forEach((wLine, idx) => {
+    const prefix = idx === 0 ? "  › " : "    ";
+    const pad = Math.max(0, leftWidth - prefix.length - visibleLength(wLine));
+    lines.push({
+      id: `${step.id}_note_${idx}`,
+      threadId,
+      stepId: step.id,
+      node: (
+        <Text backgroundColor={theme.bg} wrap="truncate-end">
+          <Text color={theme.accent}>{prefix}</Text>
+          <Text color={theme.secondary}>{wLine}</Text>
+          {" ".repeat(pad)}
+        </Text>
+      ),
+    });
+  });
+}
+
 export function buildThreadFeedLines({
   threads,
   leftWidth,
@@ -202,10 +246,11 @@ export function buildThreadFeedLines({
       });
     });
 
-    const thinkingSteps = thread.steps.filter((s) => s.type === "thinking");
+    /* Thoughts and narration notes, in the order they happened; tools live in the right panel. */
+    const timelineSteps = thread.steps.filter((s) => s.type === "thinking" || s.type === "note");
     const activeToolStep = thread.steps.find((s) => s.type === "tool" && s.isRunning);
     const hasFollowingContent =
-      thinkingSteps.length > 0 ||
+      timelineSteps.length > 0 ||
       Boolean(activeToolStep) ||
       Boolean(thread.response) ||
       Boolean(thread.isStreaming) ||
@@ -224,7 +269,12 @@ export function buildThreadFeedLines({
       });
     }
 
-    thinkingSteps.forEach((tStep) => {
+    timelineSteps.forEach((tStep, stepIdx) => {
+      if (tStep.type === "note") {
+        pushNoteLines(lines, thread.id, tStep, stepIdx > 0, leftWidth, maxLineWidth);
+        return;
+      }
+
       const isExpanded = expandedThinkingIds
         ? expandedThinkingIds.has(tStep.id)
         : collapsedThinkingIds
@@ -353,7 +403,7 @@ export function buildThreadFeedLines({
     });
 
     if (thread.response || thread.isStreaming) {
-      if (thinkingSteps.length > 0) {
+      if (timelineSteps.length > 0) {
         lines.push({
           id: `${thread.id}_asst_spacer`,
           threadId: thread.id,

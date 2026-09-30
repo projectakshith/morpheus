@@ -98,6 +98,11 @@ export interface AgentOptions {
   onToolCall?: (toolName: string, args: Record<string, unknown>, callId?: string) => void;
   onToolResult?: (toolName: string, result: ToolResult, callId?: string) => void;
   onUsage?: (usage: TokenUsage) => void;
+  /* Fired when text streamed in a step turns out to be interim narration (the
+   * step called tools, or was nudged as a stall) rather than the final answer.
+   * `text` is the cleaned narration; anything streamed via onTextDelta since the
+   * last narration or step belongs to it. */
+  onNarration?: (text: string) => void;
   verbose?: boolean;
 }
 
