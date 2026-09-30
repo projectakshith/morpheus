@@ -84,7 +84,10 @@ function textOf(node: unknown): string {
   return props ? textOf(props.children) : "";
 }
 
-function feedFor(threads: Thread[], streamReveal?: { threadId: string; text: string; glow: number }): string[] {
+function feedFor(
+  threads: Thread[],
+  streamReveal?: { threadId: string; text: string; glow: number; random?: () => number }
+): string[] {
   return buildThreadFeedLines({ threads, leftWidth: 80, feedHeight: 20, maxLineWidth: 76, streamReveal })
     .filter((l) => l.id.includes("_asst_line_"))
     .map((l) => textOf(l.node));
@@ -107,6 +110,7 @@ test("feed renders only the revealed prefix of the streaming thread, with a trai
     threadId: "t1",
     text: "hello world",
     glow: 1,
+    random: () => 1,
   });
   assert.equal(lines.length, 1);
   assert.equal(stripAnsi(lines[0]).trim(), "hello world");

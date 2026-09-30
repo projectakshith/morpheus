@@ -21,7 +21,13 @@ export interface BuildFeedOptions {
   matrixQuote?: string;
   elapsedSeconds?: number;
   /* Live reveal of one thread's response; other threads render their full text. */
-  streamReveal?: { threadId: string; text: string; glow: number };
+  streamReveal?: {
+    threadId: string;
+    text: string;
+    glow: number;
+    /* Source of randomness for the glyph flicker; injectable for deterministic tests. */
+    random?: () => number;
+  };
 }
 
 function toRel(filePath: string, cwd: string = process.cwd()): string {
@@ -450,7 +456,7 @@ export function buildThreadFeedLines({
             deep: theme.accent,
             bright: theme.accentBright,
             settled: theme.text,
-          }, { scramble: Math.random });
+          }, { scramble: reveal.random ?? Math.random });
         }
       }
 

@@ -7,7 +7,8 @@ import React, { useState, useEffect, useRef, useMemo } from "react";
 import { Box, Text, useInput } from "ink";
 import { Header } from "./Header.js";
 import { StatusBar } from "./StatusBar.js";
-import { DiffColumn, buildRightLines } from "./DiffColumn.js";
+import { DiffColumn, RIGHT_FOOTER_HEIGHT } from "./DiffColumn.js";
+import { buildActivityLines } from "./activity/buildActivityLines.js";
 import { InputBox, POPUP_TOTAL_HEIGHT } from "./InputBox.js";
 import { ModelSelector, AVAILABLE_MODELS } from "./ModelSelector.js";
 import { SessionSelector } from "./SessionSelector.js";
@@ -275,44 +276,34 @@ export function App({
 
   const rightContentWidth = Math.max(16, rightWidth - 1);
 
+  const rightColumnScrollableHeight = Math.max(1, effectiveWorkspaceHeight - RIGHT_FOOTER_HEIGHT);
+
   const allRightLines = useMemo<RightLine[]>(() => {
-    return buildRightLines(
+    return buildActivityLines({
       threads,
-      fileEdits,
-      findings,
-      baseContext.current.branch,
-      baseContext.current.gitStatus,
-      expandedToolIds,
-      collapsedThreadIds,
-      expandedFileEdits,
-      rightContentWidth
-    );
-  }, [threads, fileEdits, findings, expandedToolIds, collapsedThreadIds, expandedFileEdits, rightContentWidth]);
+      edits: fileEdits,
+      /* One column of gutter between the panel border and the cards. */
+      width: rightContentWidth - 1,
+      viewportHeight: rightColumnScrollableHeight,
+      toggledIds: expandedToolIds,
+      openedTurnIds: collapsedThreadIds,
+    });
+    /* elapsedSeconds keeps running cards' timers fresh. */
+  }, [threads, fileEdits, expandedToolIds, collapsedThreadIds, rightContentWidth, rightColumnScrollableHeight, elapsedSeconds]);
 
-  const PINNED_RIGHT_HEADER_COUNT = 2;
-
-  const pinnedRightHeaders = useMemo(() => {
-    return allRightLines.slice(0, PINNED_RIGHT_HEADER_COUNT);
-  }, [allRightLines]);
-
-  const scrollableRightLines = useMemo(() => {
-    return allRightLines.slice(PINNED_RIGHT_HEADER_COUNT);
-  }, [allRightLines]);
-
-  const rightColumnScrollableHeight = Math.max(1, effectiveWorkspaceHeight - 3 - PINNED_RIGHT_HEADER_COUNT);
-  const maxRightScroll = Math.max(0, scrollableRightLines.length - rightColumnScrollableHeight);
+  const maxRightScroll = Math.max(0, allRightLines.length - rightColumnScrollableHeight);
   maxRightScrollRef.current = maxRightScroll;
 
-  const effectiveRightScroll = Math.min(rightScrollTop, maxRightScroll);
+  /* Follows the newest cards like a terminal until the user scrolls up. */
+  const effectiveRightScroll = isRightUserScrolledRef.current
+    ? Math.min(rightScrollTop, maxRightScroll)
+    : maxRightScroll;
   currentRightScrollRef.current = effectiveRightScroll;
 
-  const visibleRightLines = useMemo(() => {
-    const visibleScrollable = scrollableRightLines.slice(
-      effectiveRightScroll,
-      effectiveRightScroll + rightColumnScrollableHeight
-    );
-    return [...pinnedRightHeaders, ...visibleScrollable];
-  }, [pinnedRightHeaders, scrollableRightLines, effectiveRightScroll, rightColumnScrollableHeight]);
+  const visibleRightLines = useMemo(
+    () => allRightLines.slice(effectiveRightScroll, effectiveRightScroll + rightColumnScrollableHeight),
+    [allRightLines, effectiveRightScroll, rightColumnScrollableHeight]
+  );
 
   visibleRightLinesRef.current = visibleRightLines;
 

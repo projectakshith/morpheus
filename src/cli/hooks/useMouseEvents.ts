@@ -78,12 +78,15 @@ export function useMouseEvents({
         }
 
         if (isSplitLayout && col > leftWidth) {
+          /* Scroll from what's on screen (it may be following the bottom), and
+           * resume following once the user scrolls back down to the end. */
           if (button === 64) {
-            setRightScrollTop((prev) => Math.max(0, prev - 2));
             isRightUserScrolledRef.current = true;
+            setRightScrollTop(Math.max(0, currentRightScrollRef.current - 2));
           } else if (button === 65) {
-            setRightScrollTop((prev) => Math.min(maxRightScrollRef.current, prev + 2));
-            isRightUserScrolledRef.current = true;
+            const next = Math.min(maxRightScrollRef.current, currentRightScrollRef.current + 2);
+            isRightUserScrolledRef.current = next < maxRightScrollRef.current;
+            setRightScrollTop(next);
           } else if (button === 0 && !isRelease) {
             const workspaceRow = row - 3;
             if (workspaceRow >= 0 && workspaceRow < visibleRightLinesRef.current.length) {
@@ -91,7 +94,6 @@ export function useMouseEvents({
               if (clickedLine?.threadId) {
                 const tId = clickedLine.threadId;
                 setRightScrollTop(currentRightScrollRef.current);
-                isRightUserScrolledRef.current = true;
                 setCollapsedThreadIds((prev) => {
                   const next = new Set(prev);
                   if (next.has(tId)) {
@@ -107,7 +109,6 @@ export function useMouseEvents({
                   onOpenFileDiff(fp);
                 } else {
                   setRightScrollTop(currentRightScrollRef.current);
-                  isRightUserScrolledRef.current = true;
                   setExpandedFileEdits((prev) => {
                     const next = new Set(prev);
                     if (next.has(fp)) {
@@ -121,7 +122,6 @@ export function useMouseEvents({
               } else if (clickedLine?.toolId) {
                 const clickedId = clickedLine.toolId;
                 setRightScrollTop(currentRightScrollRef.current);
-                isRightUserScrolledRef.current = true;
                 setExpandedToolIds((prev) => {
                   const next = new Set(prev);
                   if (next.has(clickedId)) {

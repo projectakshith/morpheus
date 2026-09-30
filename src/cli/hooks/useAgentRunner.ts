@@ -650,7 +650,8 @@ export function useAgentRunner({
           );
           activeTools.delete(callId || name);
 
-          const editRecord = extractDiffRecord(
+          /* A failed edit changed nothing, so it must not count as a changed file. */
+          const editRecord = isError ? null : extractDiffRecord(
             name,
             currentTool?.args || {},
             res.output
