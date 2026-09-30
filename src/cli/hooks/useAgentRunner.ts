@@ -4,7 +4,7 @@
 
 import React, { useState, useRef, useEffect, type MutableRefObject } from "react";
 import { runAgent } from "../../core/agent.js";
-import type { ChatMessage, Finding, TokenUsage, ToolResult } from "../../core/types.js";
+import type { ChatMessage, Finding, SubagentRole, TokenUsage, ToolResult } from "../../core/types.js";
 import { isToolError } from "../../utils/errors.js";
 import type { Thread, ThreadStep, FileEditRecord, AppStatus } from "../types.js";
 import { extractDiffRecord } from "../utils/diffRecord.js";
@@ -42,6 +42,7 @@ export interface AgentRunnerOptions {
   isLocal?: boolean;
   isVerbose?: boolean;
   maxSteps?: number;
+  subagentModels?: Partial<Record<SubagentRole, string>>;
   initialTask?: string;
   resumeSessionId?: string | boolean;
   isUserScrolledRef: MutableRefObject<boolean>;
@@ -84,6 +85,7 @@ export function useAgentRunner({
   isLocal = false,
   isVerbose = false,
   maxSteps,
+  subagentModels,
   initialTask,
   resumeSessionId,
   isUserScrolledRef,
@@ -488,6 +490,7 @@ export function useAgentRunner({
         baseURL,
         verbose: isVerbose,
         maxSteps,
+        subagents: { models: subagentModels },
         findings: findingsRef.current,
         onStepStart: (step) => {
           setStepCount(step);

@@ -11,10 +11,11 @@ export interface WriteFileParams {
 
 export async function writeFile(
   params: WriteFileParams,
-  cwd: string = process.cwd()
+  cwd: string = process.cwd(),
+  allowFallback = true
 ): Promise<ToolResult> {
   let fullPath = resolvePath(params.filePath, cwd);
-  if (!(await exists(fullPath))) {
+  if (allowFallback && !(await exists(fullPath))) {
     const fallback = await resolvePathWithFallbacks(params.filePath, cwd);
     if (await exists(fallback)) {
       fullPath = fallback;
@@ -35,7 +36,7 @@ export async function writeFile(
   };
 }
 
-export function createWriteTool(cwd: string = process.cwd()): ToolDefinition {
+export function createWriteTool(cwd: string = process.cwd(), allowFallback = true): ToolDefinition {
   return {
     name: "write_file",
     description:
@@ -56,7 +57,7 @@ export function createWriteTool(cwd: string = process.cwd()): ToolDefinition {
     },
     execute: async (params: Record<string, any>) => {
       try {
-        return await writeFile(params as unknown as WriteFileParams, cwd);
+        return await writeFile(params as unknown as WriteFileParams, cwd, allowFallback);
       } catch (err: unknown) {
         return `Error: ${formatError(err)}`;
       }

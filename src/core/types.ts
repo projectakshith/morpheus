@@ -27,12 +27,21 @@ export interface ToolResult<TMetadata = Record<string, unknown>> {
   metadata?: TMetadata;
 }
 
+export interface ToolParameterSchema {
+  type: string;
+  description?: string;
+  enum?: string[];
+  items?: ToolParameterSchema;
+  properties?: Record<string, ToolParameterSchema>;
+  required?: string[];
+}
+
 export interface ToolDefinition {
   name: string;
   description: string;
   parameters: {
     type: "object";
-    properties: Record<string, { type: string; description: string; enum?: string[] }>;
+    properties: Record<string, ToolParameterSchema>;
     required?: string[];
   };
   execute: (args: Record<string, any>, cwd?: string, signal?: AbortSignal) => Promise<ToolResult | string>;
@@ -114,6 +123,13 @@ export interface AgentOptions {
   baseURL?: string;
   isLocal?: boolean;
   maxSteps?: number;
+  /** Bounded worker-agent policy. Omit to use the built-in safe defaults. */
+  subagents?: SubagentOptions;
+  /** Internal recursion guard for worker runs. */
+  disableSubagents?: boolean;
+  /** Internal worker tool restrictions. */
+  toolAccess?: "readOnly" | "scopedWrite";
+  allowedWritePaths?: string[];
   /** Cumulative input + output token budget for one run. Defaults to 300,000. */
   maxTotalTokens?: number;
   /** Stable only for the lifetime of this run; used for provider-side prompt-cache affinity. */
@@ -129,6 +145,19 @@ export interface AgentOptions {
   /* Called when a step's streamed text turns out to be narration rather than the final answer. */
   onNarration?: (text: string) => void;
   verbose?: boolean;
+}
+
+export type SubagentRole = "explore" | "review" | "implement";
+
+export interface SubagentOptions {
+  enabled?: boolean;
+  /** Route roles to provider model IDs (for example `claude/claude-sonnet`). */
+  models?: Partial<Record<SubagentRole, string>>;
+  maxParallel?: number;
+  maxTasksPerRun?: number;
+  maxTokensPerAgent?: number;
+  maxTotalTokens?: number;
+  maxStepsPerAgent?: number;
 }
 
 export interface AgentRunResult {

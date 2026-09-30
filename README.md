@@ -27,6 +27,14 @@ morpheus
 - `morpheus --local` — run locally via ollama (`qwen2.5-coder:7b`)
 - `morpheus -v` — stream raw reasoning and tool deltas
 
+### worker agents
+
+Morpheus can delegate independent research, review, or scoped implementation tasks. Workers receive a separate task and context, run concurrently within limits, and return results to the coordinating agent. Research and review are read-only. Implementation workers must be given exact workspace-relative files; shell commands and commits are disabled, and edits outside that file list are rejected.
+
+By default, a run allows up to 3 concurrent workers, 6 total worker tasks, 20,000 tokens per worker, and 60,000 worker tokens total. All worker usage counts toward the parent run budget. Workers cannot delegate again.
+
+Set role-specific models in `/settings` under runtime. Choices are saved in `~/.morpheus/config.json`; choose “inherit main” to follow the active model. Workers also fall back to the main model until you assign one.
+
 ### controls
 
 - `tab` — toggle panel focus (chat / tool calls & telemetry)

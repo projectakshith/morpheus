@@ -10,6 +10,7 @@ import { tryExtractTextToolCalls } from "../utils/toolExtraction";
 import { isConversationalStall } from "./stallGuard";
 import { ToolCallGuard } from "./callGuard";
 import { matchSkills } from "./skills";
+import { createDelegateTasksTool, createSubagentRunnerOptions, resolveSubagentOptions } from "./subagents";
 import {
   calculateInitialStepBudget,
   calculateExplorationTokenBudget,
@@ -97,17 +98,28 @@ export async function runAgent(
   const baseContext = gatherContext(cwd);
   const matchedSkills = matchSkills(prompt, baseContext.skills ?? []);
   const activeSkills: Skill[] = [...matchedSkills];
-
-  const tools = createTools(
-    cwd,
-    rememberFinding,
-    baseContext.skills,
-    (skill) => {
-      if (!activeSkills.some((s) => s.name === skill.name)) {
-        activeSkills.push(skill);
-      }
-    }
-  );
+  let promptTokens = 0;
+  let completionTokens = 0;
+  let peakContextTokens = 0;
+  let usageReported = true;
+  let usageEvents = 0;
+  let cachedInputTokens = 0;
+  let cacheCreationInputTokens = 0;
+  let reasoningTokens = 0;
+  let reservedWorkerTokens = 0;
+  const byModel: NonNullable<TokenUsage["byModel"]> = {};
+  const accumulateModelUsage = (model: string, usage: TokenUsage) => {
+    const previous = byModel[model];
+    byModel[model] = {
+      promptTokens: (previous?.promptTokens ?? 0) + usage.promptTokens,
+      completionTokens: (previous?.completionTokens ?? 0) + usage.completionTokens,
+      totalTokens: (previous?.totalTokens ?? 0) + usage.totalTokens,
+      cachedInputTokens: (previous?.cachedInputTokens ?? 0) + (usage.cachedInputTokens ?? 0),
+      cacheCreationInputTokens: (previous?.cacheCreationInputTokens ?? 0) + (usage.cacheCreationInputTokens ?? 0),
+      reasoningTokens: (previous?.reasoningTokens ?? 0) + (usage.reasoningTokens ?? 0),
+      reported: previous?.reported !== false && usage.reported !== false,
+    };
+  };
 
   const operator = new Operator({
     model: options.model,
@@ -118,7 +130,60 @@ export async function runAgent(
   });
   const runTokenBudget = options.maxTotalTokens ?? DEFAULT_RUN_TOKEN_BUDGET;
   const explorationTokenBudget = calculateExplorationTokenBudget(runTokenBudget);
+  const subagentPolicy = resolveSubagentOptions(options.subagents);
+  const delegateTool = !options.disableSubagents && subagentPolicy.enabled
+    ? createDelegateTasksTool(subagentPolicy, operator.getModel(), async (input) => {
+      const childRun = createSubagentRunnerOptions({
+        parent: options,
+        cwd,
+        ...input,
+      });
+      const result = await runAgent(childRun.prompt, [], childRun.options);
+      promptTokens += result.usage.promptTokens;
+      completionTokens += result.usage.completionTokens;
+      peakContextTokens = Math.max(peakContextTokens, result.usage.peakContextTokens ?? 0);
+      usageEvents++;
+      usageReported &&= result.usage.reported !== false;
+      if (result.usage.reported === false) reservedWorkerTokens += input.maxTotalTokens;
+      cachedInputTokens += result.usage.cachedInputTokens ?? 0;
+      cacheCreationInputTokens += result.usage.cacheCreationInputTokens ?? 0;
+      reasoningTokens += result.usage.reasoningTokens ?? 0;
+      if (result.usage.byModel) {
+        for (const [model, modelUsage] of Object.entries(result.usage.byModel)) {
+          accumulateModelUsage(model, modelUsage);
+        }
+      } else {
+        accumulateModelUsage(input.model, result.usage);
+      }
+      return result;
+    }, () => Math.max(0, explorationTokenBudget - promptTokens - completionTokens - reservedWorkerTokens))
+    : undefined;
 
+  const tools = createTools(
+    cwd,
+    rememberFinding,
+    baseContext.skills,
+    (skill) => {
+      if (!activeSkills.some((s) => s.name === skill.name)) {
+        activeSkills.push(skill);
+      }
+    },
+    {
+      delegateTool,
+      access: options.toolAccess,
+      allowedWritePaths: options.allowedWritePaths,
+    }
+  );
+  const buildRunSystemPrompt = () => {
+    const systemPrompt = buildSystemPrompt({
+      ...baseContext,
+      findings: [...findings],
+      activeSkills: [...activeSkills],
+    });
+    return delegateTool
+      ? `${systemPrompt}\n\nUse delegate_tasks only for genuinely independent work. Give each worker a focused task and only the context it needs. Review worker findings and verify any changes yourself before reporting completion.`
+      : systemPrompt;
+  };
   const logger = new SessionLogger();
   await logger.init(prompt, cwd, operator.getModel(), runTokenBudget);
 
@@ -138,18 +203,10 @@ export async function runAgent(
   let finalFinishReason: string | undefined;
   let completedCleanly = false;
   let stepCount = 0;
-  let promptTokens = 0;
-  let completionTokens = 0;
   let currentPromptTokens = 0;
-  let peakContextTokens = 0;
   let wasAborted = false;
   let lifecycle: AgentLifecycle = "exploring";
   let stopReason: AgentStopReason | undefined;
-  let usageReported = true;
-  let usageEvents = 0;
-  let cachedInputTokens = 0;
-  let cacheCreationInputTokens = 0;
-  let reasoningTokens = 0;
   const userSpecifiedMaxSteps = options.maxSteps;
   let maxSteps = calculateInitialStepBudget({ prompt, userSpecifiedMaxSteps });
   const hardMaxSteps = userSpecifiedMaxSteps ?? DEFAULT_HARD_MAX_STEPS;
@@ -166,7 +223,7 @@ export async function runAgent(
       break;
     }
 
-    const tokensUsed = promptTokens + completionTokens;
+    const tokensUsed = promptTokens + completionTokens + reservedWorkerTokens;
     if (tokensUsed >= explorationTokenBudget) {
       loopStopReason = `The run used ${tokensUsed.toLocaleString()} tokens. Stopping exploration at the ${runTokenBudget.toLocaleString()} token budget so I can summarize what I found.`;
       stopReason = "token_budget";
@@ -192,11 +249,7 @@ export async function runAgent(
     const toolCalls: ToolCall[] = [];
     let finishReason: string | undefined;
 
-    const currentSystemPrompt = buildSystemPrompt({
-      ...baseContext,
-      findings: [...findings],
-      activeSkills: [...activeSkills],
-    });
+    const currentSystemPrompt = buildRunSystemPrompt();
 
     try {
       const stream = operator.chatStream({
@@ -231,6 +284,7 @@ export async function runAgent(
           cachedInputTokens += event.usage.cachedInputTokens ?? 0;
           cacheCreationInputTokens += event.usage.cacheCreationInputTokens ?? 0;
           reasoningTokens += event.usage.reasoningTokens ?? 0;
+          accumulateModelUsage(operator.getModel(), event.usage);
           await logger.logUsage(stepCount, event.usage.promptTokens, event.usage.completionTokens, event.usage);
         } else if (event.type === "finish") {
           finishReason = event.finishReason;
@@ -513,11 +567,7 @@ export async function runAgent(
 
     fullResponse = "";
 
-    const currentSystemPrompt = buildSystemPrompt({
-      ...baseContext,
-      findings: [...findings],
-      activeSkills: [...activeSkills],
-    });
+    const currentSystemPrompt = buildRunSystemPrompt();
 
     try {
       const finalStream = operator.chatStream({
@@ -550,6 +600,7 @@ export async function runAgent(
           cachedInputTokens += event.usage.cachedInputTokens ?? 0;
           cacheCreationInputTokens += event.usage.cacheCreationInputTokens ?? 0;
           reasoningTokens += event.usage.reasoningTokens ?? 0;
+          accumulateModelUsage(operator.getModel(), event.usage);
           await logger.logUsage(stepCount, event.usage.promptTokens, event.usage.completionTokens, event.usage);
         } else if (event.type === "finish") {
           finalFinishReason = event.finishReason;
@@ -599,6 +650,7 @@ export async function runAgent(
     ...(cachedInputTokens > 0 ? { cachedInputTokens } : {}),
     ...(cacheCreationInputTokens > 0 ? { cacheCreationInputTokens } : {}),
     ...(reasoningTokens > 0 ? { reasoningTokens } : {}),
+    ...(Object.keys(byModel).length > 0 ? { byModel } : {}),
   };
 
   options.onUsage?.(usage);

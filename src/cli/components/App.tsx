@@ -27,6 +27,8 @@ import { useTerminalLayout } from "../hooks/useTerminalLayout.js";
 import { useMouseEvents } from "../hooks/useMouseEvents.js";
 import { useAgentRunner } from "../hooks/useAgentRunner.js";
 import { useStreamReveal, REDUCED_MOTION } from "../hooks/useStreamReveal.js";
+import type { SubagentRole } from "../../core/types.js";
+import { loadSubagentModels, saveSubagentModels } from "../userSettings.js";
 
 export type { Thread, ThreadStep, AppProps, FeedLine };
 
@@ -40,6 +42,9 @@ export function App({
   resumeSessionId,
 }: AppProps) {
   const [currentModel, setCurrentModel] = useState(model);
+  const [subagentModels, setSubagentModels] = useState(() => loadSubagentModels());
+  const [workerModelSaveError, setWorkerModelSaveError] = useState(false);
+  const [workerModelRole, setWorkerModelRole] = useState<SubagentRole | null>(null);
   const [activeModal, setActiveModal] = useState<"none" | "model" | "session" | "settings" | "diff" | "neo" | "usage">("none");
   const [selectedDiffFile, setSelectedDiffFile] = useState<string | null>(null);
   const [scrollOffset, setScrollOffset] = useState(0);
@@ -54,6 +59,12 @@ export function App({
   const [introTick, setIntroTick] = useState(0);
   const greetName = useMemo(() => greetingName(), []);
   const [matrixQuote] = useState(() => MATRIX_QUOTES[Math.floor(Math.random() * MATRIX_QUOTES.length)]);
+  const persistSubagentModels = (models: typeof subagentModels) => {
+    void saveSubagentModels(models).then(
+      () => setWorkerModelSaveError(false),
+      () => setWorkerModelSaveError(true),
+    );
+  };
 
   const isModelSelectorOpen = activeModal === "model";
   const setIsModelSelectorOpen = (open: boolean) => setActiveModal(open ? "model" : "none");
@@ -103,6 +114,7 @@ export function App({
     isLocal,
     isVerbose,
     maxSteps: stepBudget,
+    subagentModels,
     initialTask,
     resumeSessionId,
     isUserScrolledRef,
@@ -347,12 +359,29 @@ export function App({
       <Box flexDirection="row" width={terminalWidth} height={effectiveWorkspaceHeight} overflow="hidden">
         {activeModal === "model" ? (
           <ModelSelector
-            currentModel={currentModel}
+            currentModel={workerModelRole ? subagentModels[workerModelRole] ?? currentModel : currentModel}
+            selectionContext={workerModelRole ? `${workerModelRole} worker` : undefined}
+            onInherit={workerModelRole ? () => {
+              const next = { ...subagentModels };
+              delete next[workerModelRole];
+              setSubagentModels(next);
+              persistSubagentModels(next);
+              setWorkerModelRole(null);
+              setActiveModal("settings");
+            } : undefined}
             usage={usage}
             width={terminalWidth}
             height={effectiveWorkspaceHeight}
             baseURL={baseURL}
             onSelect={(selectedId) => {
+              if (workerModelRole) {
+                const next = { ...subagentModels, [workerModelRole]: selectedId };
+                setSubagentModels(next);
+                persistSubagentModels(next);
+                setWorkerModelRole(null);
+                setActiveModal("settings");
+                return;
+              }
               setCurrentModel(selectedId);
               closeModal();
               const switchThread: Thread = {
@@ -370,7 +399,10 @@ export function App({
               };
               setThreads((prev) => [...prev, switchThread]);
             }}
-            onClose={closeModal}
+            onClose={workerModelRole ? () => {
+              setWorkerModelRole(null);
+              setActiveModal("settings");
+            } : closeModal}
           />
         ) : activeModal === "session" ? (
           <SessionSelector
@@ -399,6 +431,12 @@ export function App({
             sessionId={sessionId}
             sessionTitle={sessionTitle}
             onOpenModelSelector={() => openModal("model")}
+            onOpenWorkerModelSelector={(role) => {
+              setWorkerModelRole(role);
+              openModal("model");
+            }}
+            subagentModels={subagentModels}
+            workerModelSaveError={workerModelSaveError}
             onOpenSessionSelector={() => openModal("session")}
             onOpenNeoModal={() => openModal("neo")}
             onOpenUsageModal={() => openModal("usage")}

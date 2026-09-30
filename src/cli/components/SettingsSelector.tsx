@@ -1,7 +1,8 @@
 import React, { useState, useEffect } from "react";
 import { Text, useInput } from "ink";
 import { theme } from "../theme.js";
-import type { TokenUsage } from "../../core/types.js";
+import type { SubagentRole, TokenUsage } from "../../core/types.js";
+import type { SubagentModelMap } from "../userSettings.js";
 import {
   Modal,
   Split,
@@ -22,6 +23,9 @@ import {
 export interface SettingsSelectorProps {
   currentModel: string;
   onOpenModelSelector: () => void;
+  onOpenWorkerModelSelector?: (role: SubagentRole) => void;
+  subagentModels?: SubagentModelMap;
+  workerModelSaveError?: boolean;
   onOpenSessionSelector: () => void;
   onOpenNeoModal?: () => void;
   onOpenUsageModal?: () => void;
@@ -66,6 +70,9 @@ type ProviderId = "neo" | "claude" | "codex" | "antigravity" | "openrouter" | "l
 
 export function SettingsSelector({
   currentModel,
+  onOpenWorkerModelSelector,
+  subagentModels = {},
+  workerModelSaveError = false,
   onOpenModelSelector,
   onOpenSessionSelector,
   onOpenNeoModal,
@@ -188,6 +195,25 @@ export function SettingsSelector({
       cta: "enter opens the model catalog",
       action: onOpenModelSelector,
     },
+    ...(["explore", "review", "implement"] as const).map((role) => ({
+      id: `worker-${role}`,
+      section: "runtime" as const,
+      label: `${role} worker`,
+      value: subagentModels[role] ?? "inherit main",
+      heading: `${role[0].toUpperCase()}${role.slice(1)} worker model`,
+      description: role === "implement"
+        ? "Model used for scoped implementation work. The worker can edit only its assigned files."
+        : role === "review"
+          ? "Model used for read only review tasks delegated by the main agent."
+          : "Model used for read only codebase research delegated by the main agent.",
+      details: [
+        { k: "assigned", v: subagentModels[role] ?? `inherits ${currentModel}`, color: theme.accentBright },
+        { k: "fallback", v: "main model" },
+      ],
+      cta: onOpenWorkerModelSelector ? "enter chooses a model · press 0 in the catalog to inherit main" : "worker routing",
+      ctaTone: "accent" as const,
+      action: () => onOpenWorkerModelSelector?.(role),
+    })),
     {
       id: "usage",
       section: "runtime",
@@ -341,6 +367,7 @@ export function SettingsSelector({
               {feedback
                 ? wrapWords(feedback, rw).map((line) => <Text color={theme.secondary}>{line}</Text>)
                 : null}
+              {workerModelSaveError ? <Text color={theme.error}>could not save worker models to ~/.morpheus/config.json</Text> : null}
             </Lines>
           )}
         />

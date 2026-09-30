@@ -1,6 +1,6 @@
 import fs from "node:fs/promises";
 import { createPatch } from "diff";
-import { resolvePathWithFallbacks, exists, detectLineEnding, normalizeLineEndings } from "../utils/filesystem";
+import { resolvePath, resolvePathWithFallbacks, exists, detectLineEnding, normalizeLineEndings } from "../utils/filesystem";
 import { similarity } from "../utils/levenshtein";
 import type { ToolDefinition, ToolResult } from "../core/types";
 import { formatError } from "../utils/errors";
@@ -50,9 +50,12 @@ function findFuzzyMatch(
 
 export async function editFile(
   params: EditFileParams,
-  cwd: string = process.cwd()
+  cwd: string = process.cwd(),
+  allowFallback = true
 ): Promise<ToolResult> {
-  const fullPath = await resolvePathWithFallbacks(params.filePath, cwd);
+  const fullPath = allowFallback
+    ? await resolvePathWithFallbacks(params.filePath, cwd)
+    : resolvePath(params.filePath, cwd);
 
   if (!(await exists(fullPath))) {
     throw new Error(`File not found: ${params.filePath}`);
@@ -118,7 +121,7 @@ export async function editFile(
   };
 }
 
-export function createEditTool(cwd: string = process.cwd()): ToolDefinition {
+export function createEditTool(cwd: string = process.cwd(), allowFallback = true): ToolDefinition {
   return {
     name: "edit_file",
     description:
@@ -147,7 +150,7 @@ export function createEditTool(cwd: string = process.cwd()): ToolDefinition {
     },
     execute: async (params: Record<string, any>) => {
       try {
-        return await editFile(params as unknown as EditFileParams, cwd);
+        return await editFile(params as unknown as EditFileParams, cwd, allowFallback);
       } catch (err: unknown) {
         return `Error: ${formatError(err)}`;
       }

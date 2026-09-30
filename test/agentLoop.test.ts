@@ -115,6 +115,61 @@ test("Agent marks provider usage unavailable instead of reporting zero as measur
   assert.equal(result.usage.reported, false);
 });
 
+test("Agent delegates isolated tasks to configured models and rolls worker usage into the parent", async () => {
+  const requests: any[] = [];
+  let activeWorkers = 0;
+  let peakWorkers = 0;
+  globalThis.fetch = (async (_url: unknown, init?: RequestInit) => {
+    const payload = JSON.parse(String(init?.body));
+    requests.push(payload);
+    if (payload.model === "main-model" && requests.length === 1) {
+      return toolCall("delegate-1", "delegate_tasks", {
+        tasks: [
+          { role: "explore", task: "trace token usage", context: "inspect usage aggregation" },
+          { role: "review", task: "review the stop guards", context: "inspect agent-loop guards" },
+        ],
+      }, { promptTokens: 10, completionTokens: 2 });
+    }
+    if (payload.model === "main-model") {
+      return text("Combined worker findings.", { promptTokens: 10, completionTokens: 3 });
+    }
+    activeWorkers++;
+    peakWorkers = Math.max(peakWorkers, activeWorkers);
+    await new Promise((resolve) => setTimeout(resolve, 10));
+    activeWorkers--;
+    const userContent = payload.messages.find((message: any) => message.role === "user")?.content ?? "";
+    return text(`Finding from ${payload.model}: ${userContent}`, { promptTokens: 5, completionTokens: 1 });
+  }) as typeof fetch;
+
+  const result = await runAgent("research and review the loop", [], {
+    cwd: workspace,
+    model: "main-model",
+    baseURL: "https://example.test/v1",
+    apiKey: "k",
+    subagents: {
+      models: { explore: "codex/research", review: "claude/review" },
+      maxTotalTokens: 100,
+      maxTokensPerAgent: 20,
+    },
+  });
+
+  assert.equal(result.text, "Combined worker findings.");
+  assert.equal(peakWorkers, 2, "independent worker runs execute concurrently");
+  assert.equal(requests[0].model, "main-model");
+  assert.deepEqual(new Set(requests.slice(1, 3).map((request) => request.model)), new Set(["codex/research", "claude/review"]));
+  assert.ok(requests.slice(1, 3).every((request) => {
+    const names = request.tools.map((tool: any) => tool.function.name);
+    return !names.includes("delegate_tasks") && !names.includes("write_file") && !names.includes("bash");
+  }), "workers cannot recurse or mutate the workspace in read-only roles");
+  const workerPrompts = requests.slice(1, 3).map((request) => request.messages.find((message: any) => message.role === "user").content);
+  assert.ok(workerPrompts.some((content: string) => content.includes("inspect usage aggregation")));
+  assert.ok(workerPrompts.some((content: string) => content.includes("inspect agent-loop guards")));
+  assert.equal(result.usage.totalTokens, 37, "parent usage includes both workers");
+  assert.equal(result.usage.byModel?.["main-model"].totalTokens, 25);
+  assert.equal(result.usage.byModel?.["codex/research"].totalTokens, 6);
+  assert.equal(result.usage.byModel?.["claude/review"].totalTokens, 6);
+});
+
 test("Agent re-reads a file once compaction has hidden the earlier contents", async () => {
   scriptModel([
     toolCall("c1", "read_file", { filePath: "big.ts" }),

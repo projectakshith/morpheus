@@ -346,6 +346,8 @@ export const AVAILABLE_MODELS: ModelOption[] = [
 export interface ModelSelectorProps {
   currentModel: string;
   onSelect: (modelId: string) => void;
+  selectionContext?: string;
+  onInherit?: () => void;
   onClose: () => void;
   baseURL?: string;
   width?: number;
@@ -378,6 +380,8 @@ function getInitialCategory(modelId: string, modelList: ModelOption[]): Category
 export function ModelSelector({
   currentModel,
   onSelect,
+  selectionContext,
+  onInherit,
   onClose,
   baseURL = "http://127.0.0.1:8787/v1",
   width = 80,
@@ -446,6 +450,7 @@ export function ModelSelector({
     if (input === "3") { switchTab("antigravity"); return; }
     if (input === "4") { switchTab("local"); return; }
     if (input === "5") { switchTab("cloud"); return; }
+    if (input === "0" && onInherit) { onInherit(); return; }
 
     /* Cycle tabs with Tab, Right Arrow, Left Arrow */
     if (key.tab || key.rightArrow || input === "l") {
@@ -488,14 +493,15 @@ export function ModelSelector({
 
   return (
     <Modal
-      title="model"
-      context={`using ${currentModel}`}
+      title={selectionContext ? "worker model" : "model"}
+      context={selectionContext ? `${selectionContext} · using ${currentModel}` : `using ${currentModel}`}
       width={width}
       height={height}
       hints={[
         { keys: "1-5 ←→", label: "provider" },
         { keys: "↑↓", label: "move" },
         { keys: "enter", label: "use model" },
+        ...(onInherit ? [{ keys: "0", label: "inherit main" }] : []),
         { keys: "esc", label: "close" },
       ]}
     >
