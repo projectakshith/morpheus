@@ -4,7 +4,7 @@ import { listSessions, deleteSession, type SessionSummary } from "../../core/ses
 import { theme } from "../theme.js";
 import { displayTitle } from "../../core/sessionTitle.js";
 import { truncateCells } from "../utils/cells.js";
-import { PROVIDERS, providerOf, providerLabel } from "../providers.js";
+import { providerOf, providerLabel } from "../providers.js";
 import { Modal, Split, Section, RowList, Lines, ListRow, KeyValue, StatusValue, Callout, Blank, type Row } from "./ui/kit.js";
 
 function formatAge(timestamp: number): string {
@@ -17,6 +17,21 @@ function formatAge(timestamp: number): string {
   if (diffHours < 24) return `${diffHours}h ago`;
   const diffDays = Math.floor(diffHours / 24);
   return `${diffDays}d ago`;
+}
+
+export function dayLabel(timestamp: number, now: number = Date.now()): string {
+  const startOf = (t: number) => new Date(new Date(t).toDateString()).getTime();
+  const days = Math.round((startOf(now) - startOf(timestamp)) / 86_400_000);
+  const d = new Date(timestamp);
+  if (days <= 0) return "today";
+  if (days === 1) return "yesterday";
+  if (days < 7) return d.toLocaleDateString("en-US", { weekday: "long" }).toLowerCase();
+  const sameYear = d.getFullYear() === new Date(now).getFullYear();
+  return d.toLocaleDateString("en-US", { month: "short", day: "numeric", ...(sameYear ? {} : { year: "numeric" }) }).toLowerCase();
+}
+
+function timeOfDay(timestamp: number): string {
+  return new Date(timestamp).toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" }).toLowerCase();
 }
 
 function formatDate(timestamp: number): string {
@@ -50,8 +65,7 @@ export function SessionSelector({
   const loadList = async () => {
     try {
       const list = await listSessions(process.cwd(), 30);
-      const rank = (model: string) => PROVIDERS.findIndex((p) => p.key === providerOf(model));
-      setSessions(list.sort((a, b) => rank(a.model) - rank(b.model) || b.updatedAt - a.updatedAt));
+      setSessions(list.sort((a, b) => b.updatedAt - a.updatedAt));
     } catch {
       setSessions([]);
     } finally {
@@ -147,12 +161,12 @@ export function SessionSelector({
             if (isLoading) rows.push({ key: "loading", node: <Text color={theme.muted}>  loading…</Text> });
             else if (sessions.length === 0) rows.push({ key: "none", node: <Text color={theme.muted}>  no saved sessions yet</Text> });
             sessions.forEach((sess, i) => {
-              const provider = providerOf(sess.model);
+              const day = dayLabel(sess.updatedAt);
               const prev = sessions[i - 1];
-              if (!prev || providerOf(prev.model) !== provider) {
-                const count = sessions.filter((x) => providerOf(x.model) === provider).length;
+              if (!prev || dayLabel(prev.updatedAt) !== day) {
+                const count = sessions.filter((x) => dayLabel(x.updatedAt) === day).length;
                 rows.push({ key: `gap_${i}`, node: <Blank /> });
-                rows.push({ key: `sec_${i}`, node: <Section label={providerLabel(provider)} detail={String(count)} width={lw} /> });
+                rows.push({ key: `sec_${i}`, node: <Section label={day} detail={String(count)} width={lw} /> });
               }
               const current = sess.id === currentSessionId;
               rows.push({
@@ -161,7 +175,7 @@ export function SessionSelector({
                 node: (
                   <ListRow
                     label={displayTitle(sess.title, sess.createdAt)}
-                    value={current ? "open" : formatAge(sess.updatedAt)}
+                    value={current ? "open" : timeOfDay(sess.updatedAt)}
                     valueColor={current ? theme.accentBright : theme.muted}
                     icon={current ? "●" : " "}
                     iconColor={theme.accentBright}
@@ -181,7 +195,7 @@ export function SessionSelector({
                 </Text>
                 <Text color={theme.muted}>
                   {truncateCells(
-                    `${selectedSession.turnCount} turn${selectedSession.turnCount === 1 ? "" : "s"}${selectedSession.model ? ` · ${selectedSession.model}` : ""}`,
+                    `${selectedSession.model ? `${providerLabel(providerOf(selectedSession.model))} · ` : ""}${selectedSession.turnCount} turn${selectedSession.turnCount === 1 ? "" : "s"}`,
                     rw
                   )}
                 </Text>
@@ -189,6 +203,7 @@ export function SessionSelector({
                 {selectedSession.id === currentSessionId ? <StatusValue status="active" detail="open now" width={rw} /> : null}
                 <KeyValue k="last active" v={`${formatAge(selectedSession.updatedAt)} · ${formatDate(selectedSession.updatedAt)}`} width={rw} />
                 <KeyValue k="started" v={formatDate(selectedSession.createdAt)} width={rw} />
+                {selectedSession.model ? <KeyValue k="model" v={selectedSession.model} width={rw} /> : null}
                 <KeyValue k="id" v={selectedSession.id} width={rw} />
                 <Blank />
                 {selectedSession.id === currentSessionId ? (
