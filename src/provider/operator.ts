@@ -12,6 +12,10 @@ export interface OperatorConfig {
   defaultHeaders?: Record<string, string>;
   isLocal?: boolean;
   numCtx?: number;
+  /* Retries for transient failures before any output streams. Default 3. */
+  maxRetries?: number;
+  /* First backoff delay; doubles per attempt. Default 1000ms. */
+  retryBaseDelayMs?: number;
 }
 
 export interface StreamEvent {
@@ -44,6 +48,53 @@ function resolveContextSize(configured: number | undefined, fallback: number): n
   return typeof candidate === "number" && Number.isSafeInteger(candidate) && candidate > 0
     ? candidate
     : fallback;
+}
+
+/* Rate limits, overload (529 is Anthropic's), and gateway failures are worth retrying;
+ * other 4xx mean the request itself is wrong and would fail identically. */
+const RETRYABLE_STATUSES = new Set([408, 429, 500, 502, 503, 504, 529]);
+/* Dropped or stalled connections are transient. ECONNREFUSED is deliberately absent:
+ * a proxy that isn't running should fail fast, not after a backoff cycle. */
+const RETRYABLE_NETWORK_CODES = new Set([
+  "ECONNRESET",
+  "ETIMEDOUT",
+  "EPIPE",
+  "EAI_AGAIN",
+  "UND_ERR_SOCKET",
+  "UND_ERR_CONNECT_TIMEOUT",
+]);
+/* A server asking for a longer wait than this is better surfaced than slept on. */
+const MAX_RETRY_DELAY_MS = 30_000;
+
+function isRetryableNetworkError(err: unknown): boolean {
+  if (!(err instanceof Error) || err.name === "AbortError") return false;
+  const code = (err as { cause?: { code?: string } }).cause?.code ?? (err as { code?: string }).code;
+  return typeof code === "string" && RETRYABLE_NETWORK_CODES.has(code);
+}
+
+/* Parses Retry-After as delta-seconds or an HTTP date. */
+export function parseRetryAfterMs(header: string | null, now: number = Date.now()): number | undefined {
+  if (!header) return undefined;
+  const seconds = Number(header);
+  if (Number.isFinite(seconds)) return Math.max(0, seconds * 1000);
+  const date = Date.parse(header);
+  return Number.isNaN(date) ? undefined : Math.max(0, date - now);
+}
+
+function abortableSleep(ms: number, signal?: AbortSignal): Promise<void> {
+  return new Promise((resolve, reject) => {
+    const abortError = () => new DOMException("The operation was aborted.", "AbortError");
+    if (signal?.aborted) return reject(abortError());
+    const onAbort = () => {
+      clearTimeout(timer);
+      reject(abortError());
+    };
+    const timer = setTimeout(() => {
+      signal?.removeEventListener("abort", onAbort);
+      resolve();
+    }, ms);
+    signal?.addEventListener("abort", onAbort, { once: true });
+  });
 }
 
 /* Transforms internal chat messages into OpenAI-compatible payload format. */
@@ -135,8 +186,13 @@ export class Operator {
   private defaultHeaders: Record<string, string>;
   private isLocal: boolean;
   private numCtx: number;
+  private maxRetries: number;
+  private retryBaseDelayMs: number;
 
   constructor(config: OperatorConfig = {}) {
+    this.maxRetries = Math.max(0, config.maxRetries ?? 3);
+    this.retryBaseDelayMs = Math.max(0, config.retryBaseDelayMs ?? 1000);
+
     /* Differentiate Neo router proxy on port 8787 from local Ollama */
     const isNeo = Boolean(
       (config.baseURL && config.baseURL.includes("8787")) ||
@@ -227,6 +283,38 @@ export class Operator {
     return Math.max(1, Math.min(8192, Math.floor(this.numCtx * 0.15)));
   }
 
+  /* Retries only the request phase. Once streaming starts, events have already been
+   * yielded to the caller, so a retry would duplicate text and tool calls. */
+  private async fetchWithRetry(url: string, init: RequestInit): Promise<Response> {
+    const signal = init.signal ?? undefined;
+    for (let attempt = 0; ; attempt++) {
+      let response: Response;
+      try {
+        response = await fetch(url, init);
+      } catch (err: unknown) {
+        if (attempt >= this.maxRetries || signal?.aborted || !isRetryableNetworkError(err)) throw err;
+        await abortableSleep(this.backoffDelay(attempt), signal);
+        continue;
+      }
+
+      if (response.ok || attempt >= this.maxRetries || !RETRYABLE_STATUSES.has(response.status)) {
+        return response;
+      }
+
+      const retryAfter = parseRetryAfterMs(response.headers.get("retry-after"));
+      if (retryAfter !== undefined && retryAfter > MAX_RETRY_DELAY_MS) return response;
+
+      await response.body?.cancel().catch(() => {});
+      await abortableSleep(retryAfter ?? this.backoffDelay(attempt), signal);
+    }
+  }
+
+  /* Exponential backoff with jitter so parallel clients don't retry in lockstep. */
+  private backoffDelay(attempt: number): number {
+    const base = this.retryBaseDelayMs * 2 ** attempt;
+    return Math.min(MAX_RETRY_DELAY_MS, base * (0.75 + Math.random() * 0.5));
+  }
+
   async *chatStream(options: ChatStreamOptions): AsyncGenerator<StreamEvent> {
     const rawMessages = formatMessagesForPayload(options.messages, options.system);
 
@@ -249,7 +337,7 @@ export class Operator {
       payload.tools = formattedTools;
     }
 
-    const response = await fetch(`${this.baseURL}/chat/completions`, {
+    const response = await this.fetchWithRetry(`${this.baseURL}/chat/completions`, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",

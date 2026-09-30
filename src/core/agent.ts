@@ -6,6 +6,7 @@ import { SessionLogger } from "./logger";
 import { isToolError, formatError } from "../utils/errors";
 import { tryExtractTextToolCalls } from "../utils/toolExtraction";
 import { isConversationalStall } from "./stallGuard";
+import { ToolCallGuard } from "./callGuard";
 import { matchSkills } from "./skills";
 import {
   calculateInitialStepBudget,
@@ -26,6 +27,8 @@ import type {
 export { isConversationalStall };
 
 const DOOM_LOOP_THRESHOLD = 3;
+/* Consecutive steps made only of repeated calls before the run is stopped. */
+const REPEAT_ONLY_STEP_THRESHOLD = 3;
 const MAX_FINDINGS = 12;
 const MAX_FINDING_TAKEAWAY_CHARS = 320;
 
@@ -129,10 +132,8 @@ export async function runAgent(
   const hardMaxSteps = userSpecifiedMaxSteps ?? DEFAULT_HARD_MAX_STEPS;
   const tokenSafetyCeiling = operator.getContextSafetyLimit();
   let hasModifiedFiles = false;
-  let lastModificationStep = 0;
-  const readFiles = new Map<string, number>();
-  const modifiedFiles = new Set<string>();
-  const executedBashCommands = new Map<string, number>();
+  const callGuard = new ToolCallGuard(cwd);
+  let consecutiveRepeatOnlySteps = 0;
   let conversationalNudges = 0;
 
   while (stepCount < maxSteps) {
@@ -309,6 +310,10 @@ export async function runAgent(
       tool_calls: toolCalls,
     });
 
+    /* A step is a repeat if every call in it duplicates one made since the workspace
+     * last changed, whether skipped or re-run after compaction hid its result. */
+    let stepMadeProgress = false;
+
     for (const toolCall of toolCalls) {
       const toolName = toolCall.function.name;
       let parsedArgs: Record<string, unknown> = {};
@@ -327,51 +332,27 @@ export async function runAgent(
       let toolExecuted = false;
 
       if (loopStopReason) {
-        outputStr = "[Tool skipped after the repeated-error stop.]";
+        outputStr = "[Tool skipped because the run was stopped.]";
       } else if (options.abortSignal?.aborted) {
         wasAborted = true;
         outputStr = "[Tool cancelled before execution.]";
       } else if (!targetTool) {
         outputStr = `Error: Tool '${toolName}' not found. Available tools: ${Object.keys(tools).join(", ")}`;
         isError = true;
-      } else if (toolName === "read_file" && typeof parsedArgs.filePath === "string") {
-        const offset = Number(parsedArgs.offset ?? 1);
-        const limit = Number(parsedArgs.limit ?? 2000);
-        const readKey = `${parsedArgs.filePath}:${offset}:${limit}`;
-        const isAlreadyRead = readFiles.has(readKey) && !modifiedFiles.has(parsedArgs.filePath);
-        if (isAlreadyRead) {
-          const prevStep = readFiles.get(readKey);
-          outputStr = `[Notice: '${parsedArgs.filePath}' was already read in Step ${prevStep} and has not changed. Contents are already in context. Do not re-read unmodified files—proceed directly to edit or answer.]`;
-          isError = false;
-        } else {
-          toolExecuted = true;
-          const executed = await executeToolSafely(targetTool, parsedArgs, cwd, options.abortSignal);
-          outputStr = executed.output;
-          isError = executed.isError;
-          if (!isError) {
-            readFiles.set(readKey, stepCount);
-          }
-        }
-      } else if (toolName === "bash" && typeof parsedArgs.command === "string") {
-        const cmd = parsedArgs.command.trim();
-        const prevBashStep = executedBashCommands.get(cmd);
-        if (prevBashStep !== undefined && lastModificationStep <= prevBashStep) {
-          outputStr = `[Notice: Command '${cmd}' was already run in Step ${prevBashStep} with no files modified since. Do not rerun duplicate commands without making changes.]`;
-          isError = false;
-        } else {
-          toolExecuted = true;
-          const executed = await executeToolSafely(targetTool, parsedArgs, cwd, options.abortSignal);
-          outputStr = executed.output;
-          isError = executed.isError;
-          if (!isError) {
-            executedBashCommands.set(cmd, stepCount);
-          }
-        }
+        /* Not a repeat; persistent bad calls are the error guard's job. */
+        stepMadeProgress = true;
       } else {
-        toolExecuted = true;
-        const executed = await executeToolSafely(targetTool, parsedArgs, cwd, options.abortSignal);
-        outputStr = executed.output;
-        isError = executed.isError;
+        const verdict = callGuard.check(toolName, parsedArgs, stepCount, compactedMessages);
+        if (!verdict.repeat) stepMadeProgress = true;
+        if (verdict.skip) {
+          outputStr = verdict.notice;
+        } else {
+          toolExecuted = true;
+          const executed = await executeToolSafely(targetTool, parsedArgs, cwd, options.abortSignal);
+          outputStr = executed.output;
+          isError = executed.isError;
+          callGuard.record(toolName, parsedArgs, stepCount, toolCall.id, outputStr, isError);
+        }
       }
 
       options.onToolResult?.(toolName, { output: outputStr, metadata: { isError } }, toolCall.id);
@@ -380,16 +361,6 @@ export async function runAgent(
 
       if (toolExecuted && !isError && (toolName === "edit_file" || toolName === "write_file")) {
         hasModifiedFiles = true;
-        lastModificationStep = stepCount;
-        const targetPath = typeof parsedArgs.filePath === "string" ? parsedArgs.filePath : "";
-        if (targetPath) {
-          modifiedFiles.add(targetPath);
-          for (const k of Array.from(readFiles.keys())) {
-            if (k.startsWith(`${targetPath}:`)) {
-              readFiles.delete(k);
-            }
-          }
-        }
       }
 
       if (isError) {
@@ -417,6 +388,11 @@ export async function runAgent(
       if (consecutiveErrors >= DOOM_LOOP_THRESHOLD) {
         loopStopReason = `Tool '${toolName}' returned the same error ${DOOM_LOOP_THRESHOLD} times in a row.`;
       }
+    }
+
+    consecutiveRepeatOnlySteps = stepMadeProgress ? 0 : consecutiveRepeatOnlySteps + 1;
+    if (!loopStopReason && consecutiveRepeatOnlySteps >= REPEAT_ONLY_STEP_THRESHOLD) {
+      loopStopReason = `The last ${REPEAT_ONLY_STEP_THRESHOLD} steps only repeated tool calls whose results were already available.`;
     }
 
     if (wasAborted || loopStopReason) break;

@@ -1,3 +1,8 @@
+/* A stall is a brief narration of the next step ("Let's look at X") sent instead
+ * of a tool call. Anything longer, or carrying code, is a real answer even if it
+ * mentions follow-ups, and nudging it would discard work and loop the agent. */
+const MAX_STALL_CHARS = 400;
+
 /* Evaluates whether assistant content is an advisory deflection, future narrative,
  * or permission prompt that stalls autonomous tool execution. */
 export function isConversationalStall(
@@ -10,8 +15,13 @@ export function isConversationalStall(
     return false;
   }
 
+  const trimmed = content.trim();
+  if (trimmed.length > MAX_STALL_CHARS || trimmed.includes("```")) {
+    return false;
+  }
+
   const matchesFutureAction =
-    /(\b(let's|let us|i'll|i will|we will|we can|we should|we need to)\s+(?:try\s+(?:to\s+)?|first\s+|now\s+|also\s+|proceed\s+to\s+|go\s+ahead\s+and\s+)?(?:take\s+(?:a\s+)?(?:look|peek)|check(?:\s+out)?|dig\s+into|dive\s+into|turn\s+(?:our\s+)?attention\s+to|look(?:\s+at|\s+into)?|explore|investigate|search|inspect|scan|list|read|outline|see\s+(?:if|whether)|find\s+out|examine|start\s+(?:by|with)?|locate|head\s+over\s+to)\b|\bdoes this help\b|\bshall i\b|\bshould we\b|\bwould you like\b|\bwhat's next\b)/i.test(
+    /(\b(let's|let us|i'll|i will|we will|we can|we should|we need to)\s+(?:try\s+(?:to\s+)?|first\s+|now\s+|also\s+|proceed\s+to\s+|go\s+ahead\s+and\s+)?(?:take\s+(?:a\s+)?(?:look|peek)|check(?:\s+out)?|dig\s+into|dive\s+into|turn\s+(?:our\s+)?attention\s+to|look(?:\s+at|\s+into)?|explore|investigate|search|inspect|scan|list|read|outline|see\s+(?:if|whether)|find\s+out|examine|start\s+(?:by|with)?|locate|head\s+over\s+to)\b|\bshall i\b|\bshould we\b|\bwould you like\b)/i.test(
       content
     );
 

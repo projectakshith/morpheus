@@ -31,6 +31,27 @@ test("isConversationalStall does not flag genuine explanatory answers", () => {
   assert.equal(isConversationalStall(answer, 3, 8, 0), false);
 });
 
+test("isConversationalStall does not flag long answers that mention follow-ups", () => {
+  const answer =
+    "The loop halts because the stall guard fires on any response containing advisory phrasing. " +
+    "I traced it through agent.ts, where the guard runs before the response is accepted, and " +
+    "confirmed that compaction then hides the earlier read. The fix is to gate the guard on " +
+    "response length and verify visibility against the compacted messages. You should check " +
+    "the updated tests to see each case covered. Would you like me to also add a regression test?";
+  assert.ok(answer.length > 400);
+  assert.equal(isConversationalStall(answer, 3, 25, 0), false);
+});
+
+test("isConversationalStall does not flag short answers that carry code", () => {
+  const answer = "Here's the fix, you should check it compiles:\n```ts\nconst x = 1;\n```";
+  assert.equal(isConversationalStall(answer, 3, 25, 0), false);
+});
+
+test("isConversationalStall does not flag closing pleasantries", () => {
+  assert.equal(isConversationalStall("Done, the tests pass now. Does this help?", 3, 25, 0), false);
+  assert.equal(isConversationalStall("All three bugs are fixed. What's next?", 3, 25, 0), false);
+});
+
 test("isConversationalStall respects step budget and nudge limit", () => {
   const stallText = "Let's take a look at the file.";
   assert.equal(isConversationalStall(stallText, 8, 8, 0), false);
