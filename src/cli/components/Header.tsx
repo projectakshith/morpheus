@@ -15,7 +15,7 @@ export interface HeaderProps {
 export function Header({ version, model, branch, gitStatus, width: customWidth }: HeaderProps) {
   const width = customWidth ?? Math.max(40, process.stdout.columns ? process.stdout.columns - 2 : 76);
 
-  const brand = `▰ MORPHEUS v${version}`;
+  const brand = `▰ morpheus v${version}`;
   const gitInfo = branch ? ` │ ◈ ${branch}${gitStatus ? ` [${gitStatus}]` : ""}` : "";
   const modelTag = `[ ${glyphs.chip} ${model} ]`;
 
@@ -28,7 +28,7 @@ export function Header({ version, model, branch, gitStatus, width: customWidth }
       <Box height={1} overflow="hidden">
         <Text backgroundColor={theme.bg} wrap="truncate-end">
           <Text color={theme.accentBright} bold>
-            ▰ MORPHEUS
+            ▰ morpheus
           </Text>
           <Text color={theme.muted}> v{version}</Text>
           {branch ? (

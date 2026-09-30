@@ -1,6 +1,7 @@
 import React from "react";
 import { Text } from "ink";
 import type { FeedLine } from "../types.js";
+import { getMorpheusPixel } from "../ascii/morpheusArt.js";
 
 const HERO_STOPS: Array<[number, [number, number, number]]> = [
   [0.00, [ 24,  28,  22]],
@@ -286,34 +287,123 @@ export function buildFullScreenIntro(
 
 export function buildHeroFeedLines(width: number, totalLines: number, quote?: string): FeedLine[] {
   const W = Math.max(20, width);
-  const H = Math.max(3, totalLines);
-  const midY = Math.floor(H / 2);
-
+  const H = Math.max(4, totalLines);
   const rawQuote = quote || MATRIX_QUOTES[0];
-  const fullQuote = `· ${rawQuote} ·`;
-  const quoteText = fullQuote.length <= W - 4 ? fullQuote : rawQuote.length <= W - 2 ? rawQuote : "";
-  const quoteY = Math.max(0, midY - 2);
 
   const lines: FeedLine[] = [];
+  const midY = Math.floor(H / 2);
+  const artAnchorX = W >= 70 ? Math.floor(W * 0.62) : Math.floor(W / 2);
+
+  const textRows: Record<number, Array<{ text: string; color: string }>> = {};
+  const topPad = Math.max(0, Math.floor((H - 4) / 2));
+
+  textRows[topPad + 0] = [
+    { text: "M/ ", color: "\x1b[38;2;255;238;210;1m" },
+    { text: "●● ", color: "\x1b[38;2;165;240;135;1m" },
+    { text: "01", color: "\x1b[38;2;218;204;167;1m" },
+  ];
+  textRows[topPad + 1] = [
+    { text: "▰ ", color: "\x1b[38;2;165;240;135;1m" },
+    { text: "morpheus", color: "\x1b[38;2;255;238;210;1m" },
+  ];
+  if (topPad + 3 < H) {
+    const maxQuoteLen = Math.max(15, Math.floor(W * 0.45));
+    const dispQuote = rawQuote.length > maxQuoteLen ? rawQuote.slice(0, maxQuoteLen - 3) + "..." : rawQuote;
+    textRows[topPad + 3] = [{ text: `"${dispQuote}"`, color: "\x1b[38;2;218;204;167;3m" }];
+  }
 
   for (let y = 0; y < H; y++) {
-    const t = y / Math.max(1, H - 1);
-    const [r, g, b] = getHeroColor(t);
-    const bgCode = `\x1b[48;2;${clampColor(r)};${clampColor(g)};${clampColor(b)}m`;
-    let line = bgCode;
+    const srcY = 25 + (y - midY);
 
-    if (y === quoteY && quoteText) {
-      const pad = Math.max(0, Math.floor((W - quoteText.length) / 2));
-      line += "\x1b[38;2;165;240;135m" + " ".repeat(pad) + quoteText + " ".repeat(Math.max(0, W - pad - quoteText.length));
-    } else {
-      line += " ".repeat(W);
+    interface Cell {
+      ch: string;
+      fg: string;
+      bg: string;
+    }
+    const rowCells: Cell[] = [];
+
+    for (let x = 0; x < W; x++) {
+      const srcX = 60 + (x - artAnchorX);
+      const pixel = getMorpheusPixel(srcX, srcY);
+      if (pixel && pixel.char !== " ") {
+        let r = pixel.r;
+        let g = pixel.g;
+        let b = pixel.b;
+
+        if (srcX < 48) {
+          const dim = 0.16 + 0.22 * Math.max(0, (srcX - 15) / 33);
+          r = Math.floor(r * dim);
+          g = Math.floor(g * dim);
+          b = Math.floor(b * dim);
+        } else if (srcX <= 82 && [":", "-", "+", ".", "*", "\\", "/", "=", "`"].includes(pixel.char)) {
+          const lum = 0.299 * r + 0.587 * g + 0.114 * b;
+          if (lum > 25) {
+            const boost = Math.min(1.35, 180 / Math.max(1, lum));
+            r = Math.min(240, Math.floor(r * boost));
+            g = Math.min(255, Math.floor(g * boost));
+            b = Math.min(240, Math.floor(b * boost));
+          }
+        }
+
+        rowCells.push({
+          ch: pixel.char,
+          fg: `\x1b[38;2;${r};${g};${b}m`,
+          bg: "\x1b[48;2;12;16;13m",
+        });
+      } else {
+        rowCells.push({
+          ch: " ",
+          fg: "\x1b[38;2;22;28;23m",
+          bg: "\x1b[48;2;12;16;13m",
+        });
+      }
     }
 
-    line += "\x1b[0m";
+    if (textRows[y]) {
+      const segments = textRows[y];
+      const totalLen = segments.reduce((sum, s) => sum + s.text.length, 0);
+      const startX = 2;
+      const endX = Math.min(W - 1, startX + totalLen + 2);
+
+      for (let px = startX; px < endX; px++) {
+        rowCells[px].ch = " ";
+        rowCells[px].bg = "\x1b[48;2;14;18;15m";
+      }
+
+      let curX = startX + 1;
+      for (const seg of segments) {
+        for (let i = 0; i < seg.text.length; i++) {
+          if (curX < W) {
+            rowCells[curX].ch = seg.text[i];
+            rowCells[curX].fg = seg.color;
+            rowCells[curX].bg = "\x1b[48;2;14;18;15m";
+            curX++;
+          }
+        }
+      }
+    }
+
+    let lineStr = "";
+    let lastFg = "";
+    let lastBg = "";
+
+    for (const cell of rowCells) {
+      if (cell.bg !== lastBg) {
+        lineStr += cell.bg;
+        lastBg = cell.bg;
+      }
+      if (cell.fg !== lastFg) {
+        lineStr += cell.fg;
+        lastFg = cell.fg;
+      }
+      lineStr += cell.ch;
+    }
+    lineStr += "\x1b[0m";
+
     lines.push({
       id: `hero_${y}`,
       threadId: "hero",
-      node: <Text wrap="truncate-end">{line}</Text>,
+      node: <Text wrap="truncate-end">{lineStr}</Text>,
     });
   }
 
