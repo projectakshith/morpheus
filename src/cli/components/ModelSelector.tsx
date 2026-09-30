@@ -1,6 +1,21 @@
 import React, { useState, useEffect, useMemo } from "react";
 import { Box, Text, useInput } from "ink";
 import { theme } from "../theme.js";
+import { truncateCells } from "../utils/cells.js";
+import {
+  Modal,
+  Split,
+  Tabs,
+  RowList,
+  Lines,
+  ListRow,
+  KeyValue,
+  StatusValue,
+  Callout,
+  Blank,
+  wrapWords,
+  formatTokens,
+} from "./ui/kit.js";
 import type { TokenUsage } from "../../core/types.js";
 
 export interface ModelOption {
@@ -466,201 +481,103 @@ export function ModelSelector({
     }
   });
 
-  const totalContentWidth = Math.max(40, width - 6);
-  const leftWidth = Math.min(52, Math.max(38, Math.floor(totalContentWidth * 0.48)));
-  const rightWidth = Math.max(30, totalContentWidth - leftWidth - 3);
-  const bodyHeight = Math.max(10, height - 6);
-
   const selectedModel = tabModels[selectedIndex] || tabModels[0];
-  const isSelectedActive =
-    selectedModel.id === currentModel ||
-    (selectedModel.id === "flash" && currentModel.includes("flash"));
-
-  const sessionTokensStr = usage?.totalTokens
-    ? `${(usage.totalTokens / 1000).toFixed(1)}k tokens (in: ${(usage.promptTokens / 1000).toFixed(1)}k · out: ${(usage.completionTokens / 1000).toFixed(1)}k)`
-    : "0 tokens used";
+  const isActive = (m: ModelOption) => m.id === currentModel || (m.id === "flash" && currentModel.includes("flash"));
+  const selectedIsActive = isActive(selectedModel);
+  const modelUsage = usage?.byModel?.[selectedModel.id];
+  const counts = CATEGORY_TABS.map((t) => models.filter((m) => m.category === t.key).length);
 
   return (
-    <Box
-      flexDirection="column"
-      borderStyle="round"
-      borderColor={theme.secondary}
+    <Modal
+      title="model"
+      context={`using ${currentModel}`}
       width={width}
       height={height}
-      paddingX={2}
-      paddingY={1}
-      overflow="hidden"
+      hints={[
+        { keys: "1-5 ←→", label: "provider" },
+        { keys: "↑↓", label: "move" },
+        { keys: "enter", label: "use model" },
+        { keys: "esc", label: "close" },
+      ]}
     >
-      {/* Top Header */}
-      <Box height={1} width={totalContentWidth} justifyContent="space-between" marginBottom={1} overflow="hidden">
-        <Box flexDirection="row">
-          <Text bold color={theme.accentBright}>
-            morpheus · model catalog
-          </Text>
-          <Text color={theme.muted}> · </Text>
-          <Text color={theme.text}>active: {currentModel}</Text>
-        </Box>
-        <Text color={theme.muted}>
-          [1-5/tab switch category · esc close]
-        </Text>
-      </Box>
-
-      {/* Horizontal Category Tabs Bar */}
-      <Box height={1} width={totalContentWidth} flexDirection="row" marginBottom={1} overflow="hidden">
-        {CATEGORY_TABS.map((tab, idx) => {
-          const isActive = tab.key === activeCategory;
-          return (
-            <Box key={tab.key} marginRight={2}>
-              {isActive ? (
-                <Text bold color={theme.accentBright}>
-                  [{tab.num}] {tab.label}
+      {({ width: w, height: h }) => (
+        <>
+          <Box height={1} flexShrink={0}>
+            <Tabs
+              tabs={CATEGORY_TABS.map((t, i) => ({ label: t.label.replace(/ \(free\)$/, ""), count: counts[i] }))}
+              active={CATEGORY_TABS.findIndex((t) => t.key === activeCategory)}
+            />
+          </Box>
+          <Box height={1} flexShrink={0} />
+          <Split
+            width={w}
+            height={Math.max(3, h - 2)}
+            left={(lw) => (
+              <RowList
+                height={Math.max(3, h - 2)}
+                rows={tabModels.map((m, idx) => {
+                  const active = isActive(m);
+                  return {
+                    key: m.id,
+                    focus: idx === selectedIndex,
+                    node: (
+                      <ListRow
+                        label={shortModelName(m)}
+                        value={active ? `${contextBadge(m)} · active` : contextBadge(m)}
+                        valueColor={active ? theme.accentBright : theme.muted}
+                        icon={active ? "●" : " "}
+                        iconColor={theme.accentBright}
+                        selected={idx === selectedIndex}
+                        width={lw}
+                      />
+                    ),
+                  };
+                })}
+              />
+            )}
+            right={(rw, rh) => (
+              <Lines height={rh}>
+                <Text bold color={theme.text}>
+                  {truncateCells(selectedModel.id, rw)}
                 </Text>
-              ) : (
-                <Text color={theme.muted}>
-                  [{tab.num}] {tab.label}
-                </Text>
-              )}
-            </Box>
-          );
-        })}
-      </Box>
-
-      {/* Main Two-Column Layout */}
-      <Box flexDirection="row" width={totalContentWidth} height={bodyHeight} overflow="hidden">
-        {/* Left Column: Models in Active Tab (Always fits without clipping) */}
-        <Box flexDirection="column" width={leftWidth} height={bodyHeight} overflow="hidden">
-          <Box marginBottom={1} justifyContent="space-between">
-            <Text bold color={theme.secondary}>
-              {CATEGORY_TABS.find((t) => t.key === activeCategory)?.label} models ({tabModels.length})
-            </Text>
-            <Text color={theme.muted}>
-              {selectedIndex + 1}/{tabModels.length}
-            </Text>
-          </Box>
-
-          {tabModels.map((m, idx) => {
-            const isSelected = idx === selectedIndex;
-            const isActive =
-              m.id === currentModel ||
-              (m.id === "flash" && currentModel.includes("flash"));
-
-            return (
-              <Box
-                key={m.id}
-                flexDirection="row"
-                justifyContent="space-between"
-                paddingLeft={1}
-                marginBottom={1}
-              >
-                <Box flexDirection="row">
-                  <Text color={isSelected ? theme.accentBright : theme.muted}>
-                    {isSelected ? "▶ " : "  "}
-                  </Text>
-                  <Text
-                    bold={isSelected}
-                    color={isSelected ? theme.accentBright : theme.text}
-                  >
-                    {m.id}
-                  </Text>
-                </Box>
-
-                <Box flexDirection="row">
-                  <Text color={theme.muted}>[{m.badge}]</Text>
-                  {isActive && (
-                    <Text color={theme.accentBright} bold>
-                      {" "}[active]
-                    </Text>
-                  )}
-                </Box>
-              </Box>
-            );
-          })}
-        </Box>
-
-        {/* Vertical Divider */}
-        <Box width={1} height={bodyHeight} flexDirection="column" overflow="hidden" marginX={1}>
-          {Array.from({ length: bodyHeight }).map((_, i) => (
-            <Box key={`div_${i}`} height={1}>
-              <Text color={theme.border}>│</Text>
-            </Box>
-          ))}
-        </Box>
-
-        {/* Right Column: Model Specifications & Live Quota */}
-        <Box flexDirection="column" width={rightWidth} height={bodyHeight} overflow="hidden" paddingLeft={2}>
-          <Box marginBottom={1}>
-            <Text bold color={theme.accentBright}>
-              model specifications
-            </Text>
-          </Box>
-
-          <Box flexDirection="column" marginBottom={1}>
-            <Box flexDirection="row" justifyContent="space-between">
-              <Text color={theme.muted}>model name</Text>
-              <Text bold color={theme.secondary}>{selectedModel.name}</Text>
-            </Box>
-            <Box flexDirection="row" justifyContent="space-between">
-              <Text color={theme.muted}>provider</Text>
-              <Text color={theme.text}>{selectedModel.providerName}</Text>
-            </Box>
-            <Box flexDirection="row" justifyContent="space-between">
-              <Text color={theme.muted}>speed tier</Text>
-              <Text color={theme.text}>{selectedModel.speed}</Text>
-            </Box>
-            <Box flexDirection="row" justifyContent="space-between">
-              <Text color={theme.muted}>status</Text>
-              <Text bold color={isSelectedActive ? theme.accentBright : theme.secondary}>
-                {isSelectedActive ? "[active]" : "[available]"}
-              </Text>
-            </Box>
-          </Box>
-
-          <Box marginBottom={1}>
-            <Text bold color={theme.accentBright}>
-              usage & quota
-            </Text>
-          </Box>
-
-          <Box flexDirection="column" marginBottom={1}>
-            <Box flexDirection="row" justifyContent="space-between">
-              <Text color={theme.muted}>context window</Text>
-              <Text bold color={theme.text}>{selectedModel.contextLimit}</Text>
-            </Box>
-            <Box flexDirection="row" justifyContent="space-between">
-              <Text color={theme.muted}>cost / pricing</Text>
-              <Text color={theme.accent}>{selectedModel.costTier}</Text>
-            </Box>
-            <Box flexDirection="row" justifyContent="space-between">
-              <Text color={theme.muted}>rate limits</Text>
-              <Text color={theme.text}>{selectedModel.rateLimit}</Text>
-            </Box>
-            <Box flexDirection="row" justifyContent="space-between">
-              <Text color={theme.muted}>session usage</Text>
-              <Text color={isSelectedActive && usage ? theme.accentBright : theme.muted}>
-                {isSelectedActive ? sessionTokensStr : "inactive"}
-              </Text>
-            </Box>
-          </Box>
-
-          <Box marginTop={1} paddingX={1} borderStyle="single" borderColor={isSelectedActive ? theme.accentBright : theme.border}>
-            <Text bold color={isSelectedActive ? theme.accentBright : theme.secondary}>
-              {isSelectedActive
-                ? "active for agent operations"
-                : "press [enter] to activate this model"}
-            </Text>
-          </Box>
-        </Box>
-      </Box>
-
-      {/* Bottom Key Hints */}
-      <Box height={1} width={totalContentWidth} justifyContent="space-between" marginTop={1} overflow="hidden">
-        <Text color={theme.muted}>
-          [1-5/tab] tabs · [↑/↓] select · [enter] activate · [esc] close
-        </Text>
-        <Text color={theme.secondary}>
-          morpheus
-        </Text>
-      </Box>
-    </Box>
+                {wrapWords(selectedModel.description, rw).map((line) => (
+                  <Text color={theme.muted}>{line}</Text>
+                ))}
+                <Blank />
+                {selectedIsActive ? <StatusValue status="active" detail="used for new tasks" width={rw} /> : null}
+                <KeyValue k="provider" v={selectedModel.providerName} width={rw} />
+                <KeyValue k="context" v={selectedModel.contextLimit} width={rw} />
+                <KeyValue k="speed" v={selectedModel.speed} width={rw} />
+                <KeyValue k="cost" v={selectedModel.costTier} width={rw} />
+                <KeyValue k="limits" v={selectedModel.rateLimit} width={rw} />
+                {modelUsage ? (
+                  <KeyValue
+                    k="this session"
+                    v={`${formatTokens(modelUsage.totalTokens)} tokens (${formatTokens(modelUsage.promptTokens)} in · ${formatTokens(modelUsage.completionTokens)} out)`}
+                    width={rw}
+                  />
+                ) : null}
+                <Blank />
+                <Callout
+                  text={selectedIsActive ? "this is the current model" : "enter switches to this model"}
+                  tone={selectedIsActive ? "muted" : "accent"}
+                  width={rw}
+                />
+              </Lines>
+            )}
+          />
+        </>
+      )}
+    </Modal>
   );
+}
+
+function shortModelName(m: ModelOption): string {
+  const prefix = `${m.category}/`;
+  return m.id.startsWith(prefix) ? m.id.slice(prefix.length) : m.id;
+}
+
+function contextBadge(m: ModelOption): string {
+  const first = m.badge.split("·")[0]?.trim();
+  return first ? first.toUpperCase() : m.badge;
 }
