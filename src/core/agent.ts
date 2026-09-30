@@ -26,15 +26,24 @@ import type {
 export { isConversationalStall };
 
 const DOOM_LOOP_THRESHOLD = 3;
+const MAX_FINDINGS = 12;
+const MAX_FINDING_TAKEAWAY_CHARS = 320;
+
+function compactFindingText(value: string, limit: number): string {
+  const compact = value.replace(/\s+/g, " ").trim();
+  if (compact.length <= limit) return compact;
+  return `${compact.slice(0, limit - 1).trimEnd()}…`;
+}
 
 /* Safely executes a tool handler, extracting output and detecting errors cleanly. */
 async function executeToolSafely(
   tool: ToolDefinition,
   args: Record<string, unknown>,
-  cwd: string
+  cwd: string,
+  signal?: AbortSignal
 ): Promise<{ output: string; isError: boolean }> {
   try {
-    const res = await tool.execute(args, cwd);
+    const res = await tool.execute(args, cwd, signal);
     const output = typeof res === "string" ? res : res.output;
     const isError = isToolError(
       output,
@@ -56,14 +65,26 @@ export async function runAgent(
   options: AgentOptions = {}
 ): Promise<AgentRunResult> {
   const cwd = options.cwd ?? process.cwd();
-  const findings: Finding[] = options.findings ? [...options.findings] : [];
+  const findings: Finding[] = [];
+  const rememberFinding = (finding: Finding) => {
+    const topic = compactFindingText(finding.topic, 80);
+    const takeaway = compactFindingText(finding.takeaway, MAX_FINDING_TAKEAWAY_CHARS);
+    if (!topic || !takeaway) return;
+    const existingIndex = findings.findIndex(
+      (item) => item.topic.toLowerCase() === topic.toLowerCase()
+    );
+    if (existingIndex !== -1) findings.splice(existingIndex, 1);
+    findings.push({ topic, takeaway });
+    if (findings.length > MAX_FINDINGS) findings.splice(0, findings.length - MAX_FINDINGS);
+  };
+  for (const finding of options.findings ?? []) rememberFinding(finding);
   const baseContext = gatherContext(cwd);
   const matchedSkills = matchSkills(prompt, baseContext.skills ?? []);
   const activeSkills: Skill[] = [...matchedSkills];
 
   const tools = createTools(
     cwd,
-    (f) => findings.push(f),
+    rememberFinding,
     baseContext.skills,
     (skill) => {
       if (!activeSkills.some((s) => s.name === skill.name)) {
@@ -89,7 +110,13 @@ export async function runAgent(
 
   let consecutiveErrors = 0;
   let lastErrorSignature = "";
+  let loopStopReason: string | undefined;
   let fullResponse = "";
+  let accumulatedResponse = "";
+  let lengthContinuations = 0;
+  let truncatedToolRetries = 0;
+  let finalError: string | undefined;
+  let finalFinishReason: string | undefined;
   let completedCleanly = false;
   let stepCount = 0;
   let promptTokens = 0;
@@ -130,6 +157,7 @@ export async function runAgent(
 
     let assistantContent = "";
     const toolCalls: ToolCall[] = [];
+    let finishReason: string | undefined;
 
     const currentSystemPrompt = buildSystemPrompt({
       ...baseContext,
@@ -166,6 +194,8 @@ export async function runAgent(
           }
           promptTokens += event.usage.promptTokens;
           completionTokens += event.usage.completionTokens;
+        } else if (event.type === "finish") {
+          finishReason = event.finishReason;
         }
       }
     } catch (err: unknown) {
@@ -173,10 +203,22 @@ export async function runAgent(
         wasAborted = true;
         break;
       }
-      throw err;
+      finalError = formatError(err);
+      fullResponse = accumulatedResponse;
+      if (assistantContent.trim() && toolCalls.length === 0) {
+        fullResponse = accumulatedResponse + assistantContent;
+        workingMessages.push({ role: "assistant", content: assistantContent });
+      }
+      break;
     }
 
-    if (wasAborted) break;
+    if (wasAborted) {
+      if (assistantContent.trim() && toolCalls.length === 0) {
+        fullResponse = accumulatedResponse + assistantContent;
+        workingMessages.push({ role: "assistant", content: assistantContent });
+      }
+      break;
+    }
 
     if (toolCalls.length === 0 && assistantContent.trim()) {
       const extracted = tryExtractTextToolCalls(assistantContent, tools);
@@ -187,6 +229,42 @@ export async function runAgent(
     }
 
     if (toolCalls.length === 0) {
+      if (finishReason === "length" && !assistantContent.trim()) {
+        if (truncatedToolRetries < 1) {
+          truncatedToolRetries++;
+          workingMessages.push({ role: "assistant", content: null });
+          workingMessages.push({
+            role: "user",
+            content:
+              "[System Notice: A tool call was cut off before it was complete. Discard it and issue one complete valid tool call, or give a concise answer if no tool is needed.]",
+          });
+          continue;
+        }
+        loopStopReason = "The provider truncated a tool call twice before it could be executed.";
+        break;
+      }
+
+      if (finishReason === "length") {
+        accumulatedResponse += assistantContent;
+        if (lengthContinuations < 2) {
+          lengthContinuations++;
+          workingMessages.push({ role: "assistant", content: assistantContent });
+          workingMessages.push({
+            role: "user",
+            content:
+              "[System Notice: Your answer hit the output limit. Continue from where it stopped without repeating earlier text.]",
+          });
+          continue;
+        }
+        fullResponse = `${accumulatedResponse}\n\n[Response stopped at the model's output limit.]`;
+        completedCleanly = true;
+        workingMessages.push({
+          role: "assistant",
+          content: `${assistantContent}\n\n[Response stopped at the model's output limit.]`,
+        });
+        break;
+      }
+
       if (!assistantContent.trim()) {
         /* Model emitted thinking or empty output, but no user-facing response text.
          * Nudge the model to output its answer, or fall through to final synthesis. */
@@ -217,7 +295,7 @@ export async function runAgent(
       }
 
       completedCleanly = true;
-      fullResponse = assistantContent;
+      fullResponse = accumulatedResponse + assistantContent;
       workingMessages.push({
         role: "assistant",
         content: assistantContent,
@@ -246,8 +324,14 @@ export async function runAgent(
       const targetTool = tools[toolName];
       let outputStr = "";
       let isError = false;
+      let toolExecuted = false;
 
-      if (!targetTool) {
+      if (loopStopReason) {
+        outputStr = "[Tool skipped after the repeated-error stop.]";
+      } else if (options.abortSignal?.aborted) {
+        wasAborted = true;
+        outputStr = "[Tool cancelled before execution.]";
+      } else if (!targetTool) {
         outputStr = `Error: Tool '${toolName}' not found. Available tools: ${Object.keys(tools).join(", ")}`;
         isError = true;
       } else if (toolName === "read_file" && typeof parsedArgs.filePath === "string") {
@@ -260,7 +344,8 @@ export async function runAgent(
           outputStr = `[Notice: '${parsedArgs.filePath}' was already read in Step ${prevStep} and has not changed. Contents are already in context. Do not re-read unmodified files—proceed directly to edit or answer.]`;
           isError = false;
         } else {
-          const executed = await executeToolSafely(targetTool, parsedArgs, cwd);
+          toolExecuted = true;
+          const executed = await executeToolSafely(targetTool, parsedArgs, cwd, options.abortSignal);
           outputStr = executed.output;
           isError = executed.isError;
           if (!isError) {
@@ -274,7 +359,8 @@ export async function runAgent(
           outputStr = `[Notice: Command '${cmd}' was already run in Step ${prevBashStep} with no files modified since. Do not rerun duplicate commands without making changes.]`;
           isError = false;
         } else {
-          const executed = await executeToolSafely(targetTool, parsedArgs, cwd);
+          toolExecuted = true;
+          const executed = await executeToolSafely(targetTool, parsedArgs, cwd, options.abortSignal);
           outputStr = executed.output;
           isError = executed.isError;
           if (!isError) {
@@ -282,15 +368,17 @@ export async function runAgent(
           }
         }
       } else {
-        const executed = await executeToolSafely(targetTool, parsedArgs, cwd);
+        toolExecuted = true;
+        const executed = await executeToolSafely(targetTool, parsedArgs, cwd, options.abortSignal);
         outputStr = executed.output;
         isError = executed.isError;
       }
 
       options.onToolResult?.(toolName, { output: outputStr, metadata: { isError } }, toolCall.id);
       await logger.logToolResult(stepCount, toolName, outputStr, isError);
+      if (options.abortSignal?.aborted) wasAborted = true;
 
-      if (!isError && (toolName === "edit_file" || toolName === "write_file")) {
+      if (toolExecuted && !isError && (toolName === "edit_file" || toolName === "write_file")) {
         hasModifiedFiles = true;
         lastModificationStep = stepCount;
         const targetPath = typeof parsedArgs.filePath === "string" ? parsedArgs.filePath : "";
@@ -305,7 +393,8 @@ export async function runAgent(
       }
 
       if (isError) {
-        const signature = `${toolName}:${outputStr.slice(0, 100)}`;
+        const stableOutput = outputStr.replace(/tool_\d+_[a-z0-9]+\.log/g, "tool_<id>.log");
+        const signature = `${toolName}:${stableOutput}`;
         if (signature === lastErrorSignature) {
           consecutiveErrors++;
         } else {
@@ -313,11 +402,6 @@ export async function runAgent(
           lastErrorSignature = signature;
         }
 
-        if (consecutiveErrors >= DOOM_LOOP_THRESHOLD) {
-          throw new Error(
-            `[Morpheus Doom-Loop Guard] Tool '${toolName}' failed ${DOOM_LOOP_THRESHOLD} times consecutively with identical error. Halting loop to prevent token burn.`
-          );
-        }
       } else {
         consecutiveErrors = 0;
       }
@@ -329,7 +413,13 @@ export async function runAgent(
         content: outputStr,
         isError,
       });
+
+      if (consecutiveErrors >= DOOM_LOOP_THRESHOLD) {
+        loopStopReason = `Tool '${toolName}' returned the same error ${DOOM_LOOP_THRESHOLD} times in a row.`;
+      }
     }
+
+    if (wasAborted || loopStopReason) break;
 
     if (
       shouldExtendStepBudget({
@@ -346,7 +436,7 @@ export async function runAgent(
     }
   }
 
-  if (!wasAborted && (!completedCleanly || !fullResponse.trim())) {
+  if (!wasAborted && !finalError && (!completedCleanly || !fullResponse.trim())) {
     stepCount++;
     options.onStepStart?.(stepCount);
     await logger.logStep(stepCount);
@@ -358,8 +448,9 @@ export async function runAgent(
       }),
       {
         role: "user",
-        content:
-          "Provide your concise, direct final answer to the user now based on your findings above.",
+        content: loopStopReason
+          ? `${loopStopReason} Summarize what succeeded, what failed, and the next useful step. Do not retry the failed tool.`
+          : "Provide your concise, direct final answer to the user now based on your findings above.",
       },
     ];
 
@@ -368,6 +459,7 @@ export async function runAgent(
     const currentSystemPrompt = buildSystemPrompt({
       ...baseContext,
       findings: [...findings],
+      activeSkills: [...activeSkills],
     });
 
     try {
@@ -397,10 +489,15 @@ export async function runAgent(
           }
           promptTokens += event.usage.promptTokens;
           completionTokens += event.usage.completionTokens;
+        } else if (event.type === "finish") {
+          finalFinishReason = event.finishReason;
         }
       }
 
       if (fullResponse.trim()) {
+        if (finalFinishReason === "length") {
+          fullResponse += "\n\n[Response stopped at the model's output limit.]";
+        }
         workingMessages.push({
           role: "assistant",
           content: fullResponse,
@@ -409,8 +506,17 @@ export async function runAgent(
     } catch (err: unknown) {
       if (options.abortSignal?.aborted || (err instanceof Error && err.name === "AbortError")) {
         wasAborted = true;
+      } else {
+        finalError = formatError(err);
+        if (fullResponse.trim()) {
+          workingMessages.push({ role: "assistant", content: fullResponse });
+        }
       }
     }
+  }
+
+  if (!wasAborted && !finalError && !fullResponse.trim()) {
+    finalError = "The model returned no final response.";
   }
 
   const usage: TokenUsage = {
@@ -432,6 +538,7 @@ export async function runAgent(
     usage,
     findings,
     aborted: wasAborted,
+    error: finalError,
     logPath: logger.getLogPath(),
   };
 }

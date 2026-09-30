@@ -10,12 +10,17 @@ export interface BashParams {
 
 export async function executeBash(
   params: BashParams,
-  cwd: string = process.cwd()
+  cwd: string = process.cwd(),
+  signal?: AbortSignal
 ): Promise<ToolResult> {
   const timeoutMs = params.timeoutMs ?? 60_000;
+  if (signal?.aborted) {
+    return { output: "[Command cancelled before execution.]", metadata: { cancelled: true } };
+  }
 
-  return new Promise((resolve, reject) => {
+  return new Promise((resolve) => {
     const proc = spawn("bash", ["-c", params.command], {
+      detached: process.platform !== "win32",
       cwd,
       env: {
         ...process.env,
@@ -24,54 +29,130 @@ export async function executeBash(
       },
     });
 
-    let stdout = "";
-    let stderr = "";
-    let killed = false;
+    const HEAD_LIMIT = 32 * 1024;
+    const TAIL_LIMIT = 96 * 1024;
+    const streams = {
+      stdout: { head: "", tail: "", bytes: 0 },
+      stderr: { head: "", tail: "", bytes: 0 },
+    };
+    let settled = false;
+    let stopReason: "timeout" | "cancelled" | undefined;
+    let killTimer: NodeJS.Timeout | undefined;
+
+    const capture = (name: "stdout" | "stderr", chunk: Buffer) => {
+      const stream = streams[name];
+      stream.bytes += chunk.length;
+      const text = chunk.toString("utf-8");
+      const headRoom = Math.max(0, HEAD_LIMIT - stream.head.length);
+      stream.head += text.slice(0, headRoom);
+      const overflow = text.slice(headRoom);
+      if (overflow) stream.tail = (stream.tail + overflow).slice(-TAIL_LIMIT);
+    };
+
+    const signalProcess = (signalName: NodeJS.Signals) => {
+      try {
+        if (process.platform !== "win32" && proc.pid) process.kill(-proc.pid, signalName);
+        else proc.kill(signalName);
+      } catch {
+        try {
+          proc.kill(signalName);
+        } catch {
+          // The process has already exited.
+        }
+      }
+    };
+
+    const stop = (reason: "timeout" | "cancelled") => {
+      if (stopReason) return;
+      stopReason = reason;
+      signalProcess("SIGTERM");
+      killTimer = setTimeout(() => signalProcess("SIGKILL"), 1_000);
+    };
+
+    const cleanup = () => {
+      clearTimeout(timer);
+      if (killTimer) clearTimeout(killTimer);
+      signal?.removeEventListener("abort", onAbort);
+    };
+
+    const finish = (result: ToolResult) => {
+      if (settled) return;
+      settled = true;
+      cleanup();
+      resolve(result);
+    };
+
+    const onAbort = () => stop("cancelled");
 
     const timer = setTimeout(() => {
-      killed = true;
-      proc.kill("SIGKILL");
-      reject(new Error(`Command timed out after ${timeoutMs / 1000}s: ${params.command}`));
+      stop("timeout");
     }, timeoutMs);
 
-    proc.stdout.on("data", (chunk: Buffer) => {
-      stdout += chunk.toString("utf-8");
-    });
+    signal?.addEventListener("abort", onAbort, { once: true });
+    if (signal?.aborted) onAbort();
 
-    proc.stderr.on("data", (chunk: Buffer) => {
-      stderr += chunk.toString("utf-8");
-    });
+    proc.stdout.on("data", (chunk: Buffer) => capture("stdout", chunk));
+
+    proc.stderr.on("data", (chunk: Buffer) => capture("stderr", chunk));
 
     proc.on("error", (err) => {
-      clearTimeout(timer);
-      reject(err);
+      finish({ output: `Error: ${formatError(err)}`, metadata: { isError: true } });
     });
 
     proc.on("close", async (code) => {
-      clearTimeout(timer);
-      if (killed) return;
+      if (stopReason === "cancelled") {
+        finish({ output: "[Command cancelled by user.]", metadata: { cancelled: true } });
+        return;
+      }
+      if (stopReason === "timeout") {
+        finish({
+          output: `Error: Command timed out after ${timeoutMs / 1000}s: ${params.command}`,
+          metadata: { isError: true, timedOut: true },
+        });
+        return;
+      }
+
+      const formatStream = (name: "stdout" | "stderr") => {
+        const stream = streams[name];
+        const retained = Buffer.byteLength(stream.head + stream.tail, "utf-8");
+        const omitted = Math.max(0, stream.bytes - retained);
+        return `${stream.head}${omitted > 0 ? `\n... [${omitted} bytes omitted from ${name}] ...\n` : ""}${stream.tail}`.trim();
+      };
 
       const combined = [
-        stdout.trim(),
-        stderr.trim() ? `[stderr]\n${stderr.trim()}` : "",
+        formatStream("stdout"),
+        ...(formatStream("stderr") ? [`[stderr]\n${formatStream("stderr")}`] : []),
       ]
         .filter(Boolean)
         .join("\n\n");
 
       const raw = combined || "(command completed with no output)";
-      const processed = await truncateOutput(raw);
-
-      if (code !== 0) {
-        resolve({
-          output: `Command exited with code ${code}\n${processed.content}`,
-          metadata: { exitCode: code, truncated: processed.truncated },
+      const captureTruncated = Object.values(streams).some((stream) =>
+        stream.bytes > Buffer.byteLength(stream.head + stream.tail, "utf-8")
+      );
+      let processed: Awaited<ReturnType<typeof truncateOutput>>;
+      try {
+        processed = await truncateOutput(raw);
+      } catch (err: unknown) {
+        const preview = raw.slice(0, 50 * 1024);
+        finish({
+          output: `${preview}\n... [capture could not be saved: ${formatError(err)}]`,
+          metadata: { isError: code !== 0, exitCode: code, captureTruncated: true },
         });
         return;
       }
 
-      resolve({
+      if (code !== 0) {
+        finish({
+          output: `Command exited with code ${code}\n${processed.content}`,
+          metadata: { isError: true, exitCode: code, truncated: processed.truncated, captureTruncated },
+        });
+        return;
+      }
+
+      finish({
         output: processed.content,
-        metadata: { exitCode: 0, truncated: processed.truncated },
+        metadata: { exitCode: 0, truncated: processed.truncated, captureTruncated },
       });
     });
   });
@@ -96,9 +177,9 @@ export function createBashTool(cwd: string = process.cwd()): ToolDefinition {
       },
       required: ["command"],
     },
-    execute: async (params: Record<string, any>) => {
+    execute: async (params: Record<string, any>, _toolCwd, signal) => {
       try {
-        return await executeBash(params as unknown as BashParams, cwd);
+        return await executeBash(params as unknown as BashParams, cwd, signal);
       } catch (err: unknown) {
         return `Error: ${formatError(err)}`;
       }

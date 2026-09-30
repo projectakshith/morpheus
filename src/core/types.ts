@@ -35,7 +35,7 @@ export interface ToolDefinition {
     properties: Record<string, { type: string; description: string; enum?: string[] }>;
     required?: string[];
   };
-  execute: (args: Record<string, any>, cwd?: string) => Promise<ToolResult | string>;
+  execute: (args: Record<string, any>, cwd?: string, signal?: AbortSignal) => Promise<ToolResult | string>;
 }
 
 export interface TokenUsage {
@@ -108,5 +108,6 @@ export interface AgentRunResult {
   usage: TokenUsage;
   findings?: Finding[];
   aborted?: boolean;
+  error?: string;
   logPath?: string;
 }

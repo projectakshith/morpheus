@@ -36,6 +36,16 @@ interface AccumulatedToolCall {
   arguments: string;
 }
 
+function resolveContextSize(configured: number | undefined, fallback: number): number {
+  const fromEnv = process.env.MORPHEUS_NUM_CTX
+    ? Number(process.env.MORPHEUS_NUM_CTX)
+    : undefined;
+  const candidate = configured ?? fromEnv;
+  return typeof candidate === "number" && Number.isSafeInteger(candidate) && candidate > 0
+    ? candidate
+    : fallback;
+}
+
 /* Transforms internal chat messages into OpenAI-compatible payload format. */
 export function formatMessagesForPayload(
   messages: ChatMessage[],
@@ -167,9 +177,7 @@ export class Operator {
         process.env.MORPHEUS_LOCAL_MODEL ||
         "qwen2.5-coder:7b";
 
-      this.numCtx =
-        config.numCtx ||
-        (process.env.MORPHEUS_NUM_CTX ? parseInt(process.env.MORPHEUS_NUM_CTX, 10) : 32768);
+      this.numCtx = resolveContextSize(config.numCtx, 32768);
     } else {
       this.baseURL =
         config.baseURL ||
@@ -188,9 +196,7 @@ export class Operator {
         process.env.MORPHEUS_MODEL ||
         "flash";
 
-      this.numCtx =
-        config.numCtx ||
-        (process.env.MORPHEUS_NUM_CTX ? parseInt(process.env.MORPHEUS_NUM_CTX, 10) : 128000);
+      this.numCtx = resolveContextSize(config.numCtx, 128000);
     }
 
     this.defaultHeaders = config.defaultHeaders || {};
@@ -214,8 +220,11 @@ export class Operator {
 
   /* Computes safe token threshold before context overflow, reserving generation headroom */
   getContextSafetyLimit(): number {
-    const completionReserve = Math.min(8192, Math.floor(this.numCtx * 0.15));
-    return Math.max(4096, this.numCtx - completionReserve);
+    return Math.max(1, this.numCtx - this.getCompletionTokenLimit());
+  }
+
+  getCompletionTokenLimit(): number {
+    return Math.max(1, Math.min(8192, Math.floor(this.numCtx * 0.15)));
   }
 
   async *chatStream(options: ChatStreamOptions): AsyncGenerator<StreamEvent> {
@@ -225,7 +234,7 @@ export class Operator {
       model: this.model,
       messages: rawMessages,
       stream: true,
-      max_tokens: 8192,
+      max_tokens: this.getCompletionTokenLimit(),
       stream_options: { include_usage: true },
     };
 
@@ -266,15 +275,18 @@ export class Operator {
     const decoder = new TextDecoder("utf-8");
     let buffer = "";
     const toolCallsByIndex = new Map<number, AccumulatedToolCall>();
+    let lastFinishReason: string | undefined;
 
     try {
       while (true) {
         const { done, value } = await reader.read();
-        if (done) break;
-
-        buffer += decoder.decode(value, { stream: true });
+        buffer += decoder.decode(value ?? new Uint8Array(), { stream: !done });
+        if (done) {
+          buffer += decoder.decode();
+          if (buffer && !buffer.endsWith("\n")) buffer += "\n";
+        }
         const lines = buffer.split("\n");
-        buffer = lines.pop() ?? "";
+        buffer = done ? "" : lines.pop() ?? "";
 
         for (const line of lines) {
           const trimmed = line.trim();
@@ -282,10 +294,14 @@ export class Operator {
 
           const dataStr = trimmed.slice(5).trim();
           if (dataStr === "[DONE]") {
-            for (const event of flushAccumulatedToolCalls(toolCallsByIndex)) {
-              yield event;
+            if (lastFinishReason === "length") {
+              toolCallsByIndex.clear();
+            } else {
+              for (const event of flushAccumulatedToolCalls(toolCallsByIndex)) {
+                yield event;
+              }
             }
-            yield { type: "finish", finishReason: "stop" };
+            if (!lastFinishReason) yield { type: "finish", finishReason: "stop" };
             return;
           }
 
@@ -344,18 +360,30 @@ export class Operator {
             }
           }
 
+          if (choice.finish_reason) {
+            lastFinishReason = choice.finish_reason;
+          }
+
           if (choice.finish_reason === "tool_calls" || choice.finish_reason === "function_call") {
             for (const event of flushAccumulatedToolCalls(toolCallsByIndex)) {
               yield event;
             }
+          }
+          if (choice.finish_reason) {
             yield { type: "finish", finishReason: choice.finish_reason };
           }
         }
+
+        if (done) break;
       }
 
       if (toolCallsByIndex.size > 0) {
-        for (const event of flushAccumulatedToolCalls(toolCallsByIndex)) {
-          yield event;
+        if (lastFinishReason === "length") {
+          toolCallsByIndex.clear();
+        } else {
+          for (const event of flushAccumulatedToolCalls(toolCallsByIndex)) {
+            yield event;
+          }
         }
       }
     } finally {
