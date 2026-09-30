@@ -232,7 +232,6 @@ export function App({
     }
   }, []);
 
-  /* Only one thread streams at a time: the running one, or the latest while its glow settles. */
   const revealThread = useMemo(
     () => [...threads].reverse().find((t) => t.status === "running") ?? threads[threads.length - 1],
     [threads]
@@ -282,19 +281,15 @@ export function App({
     return buildActivityLines({
       threads,
       edits: fileEdits,
-      /* One column of gutter between the panel border and the cards. */
       width: rightContentWidth - 1,
-      viewportHeight: rightColumnScrollableHeight,
       toggledIds: expandedToolIds,
       openedTurnIds: collapsedThreadIds,
     });
-    /* elapsedSeconds keeps running cards' timers fresh. */
-  }, [threads, fileEdits, expandedToolIds, collapsedThreadIds, rightContentWidth, rightColumnScrollableHeight, elapsedSeconds]);
+  }, [threads, fileEdits, expandedToolIds, collapsedThreadIds, rightContentWidth, elapsedSeconds]);
 
   const maxRightScroll = Math.max(0, allRightLines.length - rightColumnScrollableHeight);
   maxRightScrollRef.current = maxRightScroll;
 
-  /* Follows the newest cards like a terminal until the user scrolls up. */
   const effectiveRightScroll = isRightUserScrolledRef.current
     ? Math.min(rightScrollTop, maxRightScroll)
     : maxRightScroll;

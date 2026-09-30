@@ -1,12 +1,3 @@
-/*
- * buildActivityLines: lays out the right panel as a card stream.
- *
- * Quiet calls (reads, searches) collapse into one readable line between cards.
- * Edits, writes, commands and failures get cards with real content. The newest
- * cards stay open and older ones fold to a single line once space runs out, so
- * the panel never piles up. Every row is exactly `width` cells wide.
- */
-
 import React from "react";
 import { Text } from "ink";
 import type { Thread, ThreadStep, FileEditRecord, RightLine } from "../../types.js";
@@ -23,17 +14,11 @@ export interface ActivityOptions {
   threads: Thread[];
   edits: FileEditRecord[];
   width: number;
-  /* Rows available to the scrolling area; drives how many cards stay open. */
-  viewportHeight: number;
-  /* Cards and strips whose default open/folded state the user flipped. */
   toggledIds?: Set<string>;
-  /* Earlier turns the user opened (they are folded by default). */
   openedTurnIds?: Set<string>;
   cwd?: string;
   now?: number;
 }
-
-/* ---------- row primitives ---------- */
 
 interface Seg {
   text: string;
@@ -50,7 +35,6 @@ interface RowMeta {
   editFilePath?: string;
 }
 
-/* Truncates segments to fit `width` cells and pads the remainder. */
 function row(id: string, segs: Seg[], width: number, meta: RowMeta = {}, fillBg?: string): RightLine {
   const fitted: Seg[] = [];
   let used = 0;
@@ -95,8 +79,6 @@ function blank(id: string, width: number): RightLine {
   return row(id, [], width);
 }
 
-/* ---------- verbs and status ---------- */
-
 function verbColor(verb: string, failed: boolean): string {
   if (failed) return theme.error;
   switch (verb) {
@@ -135,8 +117,6 @@ function fitTarget(card: CardModel, room: number): string {
   return card.targetIsPath ? truncateCellsStart(card.target, room) : truncateCells(card.target, room);
 }
 
-/* ---------- cards ---------- */
-
 interface BodyRow {
   segs: Seg[];
   bg?: string;
@@ -155,7 +135,6 @@ function diffBody(card: CardModel, inner: number): BodyRow[] {
     const markerColor = r.kind === "add" ? theme.diffAdd : r.kind === "del" ? theme.diffRemove : theme.muted;
     const bg = r.kind === "add" ? theme.bgDiffAdd : r.kind === "del" ? theme.bgDiffRemove : undefined;
     const codeRoom = Math.max(0, inner - gutter - 3);
-    /* Removed lines stay plain red so they read as "gone"; the rest are highlighted. */
     const code =
       r.kind === "del"
         ? { text: truncateCells(r.text, codeRoom), color: theme.diffRemove }
@@ -184,8 +163,6 @@ function codeBody(card: CardModel, inner: number): BodyRow[] {
   }));
 }
 
-/* Output and errors wrap rather than truncate: the end of a line is often the
- * part that matters (the missing path, the failing assertion). */
 function textBody(card: CardModel, inner: number): BodyRow[] {
   if (card.body.type !== "text") return [];
   if (card.body.lines.length === 0) {
@@ -230,7 +207,6 @@ function cardLines(card: CardModel, width: number, open: boolean, meta: RowMeta)
   const border = card.failed ? theme.error : card.running ? theme.accent : theme.border;
   const inner = Math.max(1, width - 4);
 
-  /* ╭ verb target ─────── status ╮ */
   const fixed = 2 + cellWidth(verb) + 1 + (statusW ? 1 + statusW : 0) + 2 + 1;
   const target = fitTarget(card, width - fixed - 1);
   const fill = Math.max(1, width - fixed - cellWidth(target));
@@ -319,8 +295,6 @@ function bodyRow(id: string, b: BodyRow, width: number, border: string, meta: Ro
   );
 }
 
-/* ---------- quiet strip ---------- */
-
 interface StripGroup {
   verb: string;
   targets: string[];
@@ -328,7 +302,6 @@ interface StripGroup {
   items: QuietItem[];
 }
 
-/* Merges consecutive calls with the same verb: "read auth.ts, crypto.ts". */
 function groupQuiet(items: QuietItem[]): StripGroup[] {
   const groups: StripGroup[] = [];
   for (const item of items) {
@@ -367,7 +340,6 @@ function stripLines(items: QuietItem[], width: number, open: boolean, meta: RowM
     });
   }
 
-  /* Pack groups onto lines as whole units separated by " · ". */
   const groups = groupQuiet(items);
   const units = groups.map((g) => {
     const search = g.verb === "search" && g.items[0]?.result ? ` ${g.items[0].result.split(" · ")[0]}` : "";
@@ -408,8 +380,6 @@ function stripLines(items: QuietItem[], width: number, open: boolean, meta: RowM
   return lines.map((segs, i) => row(`${idBase}_${i}`, [{ text: "  " }, ...segs], width, meta));
 }
 
-/* ---------- turns ---------- */
-
 type Block = { type: "strip"; id: string; items: QuietItem[] } | { type: "card"; id: string; card: CardModel };
 
 function toBlocks(steps: ThreadStep[], cwd: string, now: number): Block[] {
@@ -428,7 +398,6 @@ function toBlocks(steps: ThreadStep[], cwd: string, now: number): Block[] {
   return blocks;
 }
 
-/* Clicking any row of a block toggles it open or folded. */
 function renderBlock(block: Block, open: boolean, width: number): RightLine[] {
   const meta: RowMeta = { toolId: block.id };
   if (block.type === "strip") return stripLines(block.items, width, open, meta, `strip_${block.id}`);
@@ -460,8 +429,6 @@ function turnSummary(thread: Thread, width: number, open: boolean): RightLine {
     { threadId: thread.id }
   );
 }
-
-/* ---------- changes footer ---------- */
 
 function changesLine(edits: FileEditRecord[], width: number, cwd: string): RightLine | null {
   if (edits.length === 0) return null;
@@ -504,13 +471,19 @@ function changesLine(edits: FileEditRecord[], width: number, cwd: string): Right
   );
 }
 
-/* ---------- entry point ---------- */
+function focusedCardId(steps: ThreadStep[], blocks: Block[]): string | undefined {
+  const running = steps.filter((s) => s.type === "tool" && s.isRunning);
+  if (running.length > 0) {
+    const cardIds = new Set(blocks.filter((b) => b.type === "card").map((b) => b.id));
+    return running.map((s) => s.id).reverse().find((id) => cardIds.has(id));
+  }
+  return [...blocks].reverse().find((b) => b.type === "card")?.id;
+}
 
 export function buildActivityLines({
   threads,
   edits,
   width,
-  viewportHeight,
   toggledIds = new Set(),
   openedTurnIds = new Set(),
   cwd = process.cwd(),
@@ -551,29 +524,10 @@ export function buildActivityLines({
       lines.push(turnSummary(latest, width, true));
     }
 
-    /* Decide which cards stay open: newest first, while they fit on screen. */
-    const strips = latestBlocks.filter((b) => b.type === "strip");
-    const cards = latestBlocks.filter((b): b is Extract<Block, { type: "card" }> => b.type === "card");
-    const fixed =
-      lines.length +
-      strips.reduce((n, b) => n + renderBlock(b, flip(b.id, false), width).length, 0) +
-      cards.length +
-      (footer ? 2 : 0);
-    let budget = viewportHeight - fixed;
-    const openCards = new Set<string>();
-    for (let i = cards.length - 1; i >= 0; i--) {
-      const extra = cardLines(cards[i].card, width, true, {}).length - 1;
-      const isNewest = i === cards.length - 1;
-      if (extra <= budget || isNewest) {
-        openCards.add(cards[i].id);
-        budget -= extra;
-      } else {
-        break;
-      }
-    }
+    const openCard = focusedCardId(latest.steps, latestBlocks);
 
     for (const block of latestBlocks) {
-      const byDefault = block.type === "card" ? openCards.has(block.id) : false;
+      const byDefault = block.type === "card" && block.id === openCard;
       lines.push(...renderBlock(block, flip(block.id, byDefault), width));
     }
   }

@@ -56,8 +56,6 @@ function richSteps(): ThreadStep[] {
   ];
 }
 
-/* ---------- cells ---------- */
-
 test("cells: width counts wide glyphs as two and ignores ANSI", () => {
   assert.equal(cellWidth("abc"), 3);
   assert.equal(cellWidth("日本"), 4);
@@ -81,8 +79,6 @@ test("cells: output sanitizing resolves progress redraws, tabs and color codes",
   assert.equal(sanitizeOutputLine("progress 10%\rprogress 100%"), "progress 100%");
   assert.equal(sanitizeOutputLine("\x1b[32m✓\x1b[0m a\tb"), "✓ a  b");
 });
-
-/* ---------- describeStep ---------- */
 
 test("describeStep: reads, lists and searches are quiet with readable results", () => {
   const [list, grep, read] = richSteps();
@@ -130,15 +126,12 @@ test("parseUnifiedDiff: real line numbers, trimmed context, gaps between hunks",
   );
 });
 
-/* ---------- layout ---------- */
-
 test("activity: every row is exactly the panel width, at every width", () => {
   for (const width of [24, 37, 45, 62, 90]) {
     const lines = buildActivityLines({
       threads: [turn("t1", 1, "fix the auth check 日本", richSteps())],
       edits: [{ filePath: "/repo/src/auth.ts", type: "edit", diffLines: [], linesAdded: 3, linesRemoved: 2, timestamp: 0 }],
       width,
-      viewportHeight: 200,
       cwd: CWD,
     });
     for (const line of lines) {
@@ -148,8 +141,9 @@ test("activity: every row is exactly the panel width, at every width", () => {
 });
 
 test("activity: quiet calls merge into one line and cards show real content", () => {
-  const text = plain(buildActivityLines({ threads: [turn("t1", 1, "fix", richSteps())], edits: [], width: 62, viewportHeight: 200, cwd: CWD }));
-  /* The quiet line packs whole items and wraps onto a second row when needed. */
+  const steps = richSteps();
+  const all = new Set(steps.slice(4, 7).map((s) => s.id));
+  const text = plain(buildActivityLines({ threads: [turn("t1", 1, "fix", steps)], edits: [], width: 62, toggledIds: all, cwd: CWD }));
   assert.match(text[0], /^  list src\/ · search "checkToken" 2 hits\s*$/);
   assert.match(text[1], /^  read auth\.ts, crypto\.ts\s*$/);
   assert.ok(text.some((l) => /╭ edit\s+src\/auth\.ts .*\+3 −2 ╮/.test(l)));
@@ -158,12 +152,24 @@ test("activity: quiet calls merge into one line and cards show real content", ()
   assert.ok(text.some((l) => l.includes("tests: 14 passed")));
 });
 
-test("activity: newest cards stay open and older ones fold when space runs out", () => {
-  const lines = plain(buildActivityLines({ threads: [turn("t1", 1, "fix", richSteps())], edits: [], width: 62, viewportHeight: 14, cwd: CWD }));
-  const editLine = lines.find((l) => l.includes("edit"));
-  const writeHeader = lines.find((l) => l.includes("write"));
-  assert.ok(editLine?.trimStart().startsWith("▸ edit"), "oldest card folds to one line");
-  assert.ok(writeHeader?.trimStart().startsWith("╭ write"), "newest card stays open");
+test("activity: when idle, only the newest card is open", () => {
+  const lines = plain(buildActivityLines({ threads: [turn("t1", 1, "fix", richSteps())], edits: [], width: 62, cwd: CWD }));
+  const headers = lines.filter((l) => /^\s*(╭|▸|✕|◌)/.test(l)).map((l) => l.trim().slice(0, 7).trimEnd());
+  assert.deepEqual(headers, ["▸ edit", "▸ run", "✕ run", "╭ write"]);
+});
+
+test("activity: while running, the running card is open and the rest are folded", () => {
+  const steps = richSteps().slice(0, 6);
+  steps[5] = { ...steps[5], isRunning: true, output: "", startTime: Date.now() - 3000 };
+  const lines = plain(buildActivityLines({ threads: [turn("t1", 1, "fix", steps)], edits: [], width: 62, cwd: CWD }));
+  assert.ok(lines.some((l) => /^\s*▸ edit/.test(l)), "finished edit is folded");
+  assert.ok(lines.some((l) => /^\s*╭ run\s+npm test.*running 3\.0s ╮/.test(l)), "running command is open with a live timer");
+
+  const readRunning = richSteps().slice(0, 5);
+  readRunning.push(tool("read_file", { filePath: "src/router.ts" }, "", { isRunning: true }));
+  const quiet = plain(buildActivityLines({ threads: [turn("t1", 1, "fix", readRunning)], edits: [], width: 62, cwd: CWD }));
+  assert.ok(quiet.some((l) => /^\s*▸ edit/.test(l)), "a running read folds every card");
+  assert.ok(quiet.some((l) => l.includes("read router.ts …")), "the quiet line shows the read in progress");
 });
 
 test("activity: clicking flips a card's default state", () => {
@@ -175,7 +181,6 @@ test("activity: clicking flips a card's default state", () => {
       threads: [turn("t1", 1, "fix", steps)],
       edits: [],
       width: 62,
-      viewportHeight: 14,
       toggledIds: new Set([editId, writeId]),
       cwd: CWD,
     })
@@ -188,13 +193,13 @@ test("activity: earlier turns fold to a summary line until opened", () => {
   const old = turn("t1", 1, "explore the repo", [tool("list_dir", { dirPath: "." }, "a"), tool("bash", { command: "ls" }, "x", { isError: true })]);
   const now = turn("t2", 2, "fix the auth check", richSteps());
 
-  const folded = buildActivityLines({ threads: [old, now], edits: [], width: 62, viewportHeight: 200, cwd: CWD });
+  const folded = buildActivityLines({ threads: [old, now], edits: [], width: 62, cwd: CWD });
   const first = folded[0];
   assert.equal(first.threadId, "t1");
   assert.match(stripAnsi(textOf(first.node)), /▸ turn 1 · explore the repo · 2 calls · 1 failed/);
   assert.ok(!plain(folded).some((l) => l.includes("run   ls")), "earlier cards hidden while folded");
 
-  const opened = plain(buildActivityLines({ threads: [old, now], edits: [], width: 62, viewportHeight: 200, openedTurnIds: new Set(["t1"]), cwd: CWD }));
+  const opened = plain(buildActivityLines({ threads: [old, now], edits: [], width: 62, openedTurnIds: new Set(["t1"]), cwd: CWD }));
   assert.match(opened[0], /▾ turn 1/);
   assert.ok(opened.some((l) => /✕ run\s+ls/.test(l)), "opened turn shows its calls, folded");
 });
@@ -204,13 +209,13 @@ test("activity: changes footer summarizes edits and opens the diff", () => {
     { filePath: "/repo/src/auth.ts", type: "edit", diffLines: [], linesAdded: 3, linesRemoved: 2, timestamp: 0 },
     { filePath: "/repo/src/auth.test.ts", type: "write", diffLines: [], linesAdded: 5, linesRemoved: 0, timestamp: 1 },
   ];
-  const lines = buildActivityLines({ threads: [turn("t1", 1, "fix", richSteps())], edits, width: 62, viewportHeight: 200, cwd: CWD });
+  const lines = buildActivityLines({ threads: [turn("t1", 1, "fix", richSteps())], edits, width: 62, cwd: CWD });
   const footer = lines[lines.length - 1];
   assert.match(stripAnsi(textOf(footer.node)), /◇ 2 files changed\s+\+8 −2\s+review ›/);
   assert.equal(footer.editFilePath, "/repo/src/auth.test.ts");
 });
 
 test("activity: empty state when nothing has run", () => {
-  const text = plain(buildActivityLines({ threads: [], edits: [], width: 40, viewportHeight: 20, cwd: CWD }));
+  const text = plain(buildActivityLines({ threads: [], edits: [], width: 40, cwd: CWD }));
   assert.ok(text.some((l) => l.includes("no tool calls yet")));
 });
