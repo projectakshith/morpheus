@@ -1,7 +1,23 @@
 import React, { useState, useEffect } from "react";
-import { Box, Text, useInput } from "ink";
+import { Text, useInput } from "ink";
 import { theme } from "../theme.js";
 import type { TokenUsage } from "../../core/types.js";
+import {
+  Modal,
+  Split,
+  Section,
+  Blank,
+  ListRow,
+  KeyValue,
+  StatusValue,
+  Callout,
+  RowList,
+  Lines,
+  wrapWords,
+  formatTokens,
+  statusStyle,
+  type Status,
+} from "./ui/kit.js";
 
 export interface SettingsSelectorProps {
   currentModel: string;
@@ -15,19 +31,38 @@ export interface SettingsSelectorProps {
   width?: number;
   height?: number;
   maxSteps?: number;
-  onUpdateMaxSteps?: (steps: number) => void;
+  onUpdateMaxSteps?: (steps: number | undefined) => void;
   sessionId?: string;
+  sessionTitle?: string;
   usage?: TokenUsage;
 }
 
+type SectionKey = "providers" | "runtime" | "session";
+
 interface SettingItem {
   id: string;
-  category: "providers" | "execution" | "session";
+  section: SectionKey;
   label: string;
   value: string;
-  hint: string;
+  status?: Status;
+  heading: string;
+  description: string;
+  details: Array<{ k: string; v: string; color?: string }>;
+  cta: string;
+  ctaTone?: "accent" | "warning" | "danger" | "muted";
   action: () => void;
 }
+
+const SECTIONS: Array<{ key: SectionKey; title: string }> = [
+  { key: "providers", title: "providers" },
+  { key: "runtime", title: "runtime" },
+  { key: "session", title: "session" },
+];
+
+const STATUS_TIMEOUT_MS = 4000;
+const STEP_BUDGETS: Array<number | undefined> = [undefined, 15, 25, 50, 100];
+
+type ProviderId = "neo" | "claude" | "codex" | "antigravity" | "openrouter" | "local";
 
 export function SettingsSelector({
   currentModel,
@@ -40,26 +75,30 @@ export function SettingsSelector({
   baseURL = "http://127.0.0.1:8787/v1",
   width = 80,
   height = 24,
-  maxSteps = 25,
+  maxSteps,
   onUpdateMaxSteps,
   sessionId = "active",
+  sessionTitle,
   usage,
 }: SettingsSelectorProps) {
-  const [providerStatuses, setProviderStatuses] = useState<Record<string, string>>({
-    neo: "checking...",
-    claude: "checking...",
-    codex: "checking...",
-    antigravity: "checking...",
-    openrouter: "checking...",
-    local: "checking...",
+  const [statuses, setStatuses] = useState<Record<ProviderId, Status>>({
+    neo: "checking",
+    claude: "checking",
+    codex: "checking",
+    antigravity: "checking",
+    openrouter: "checking",
+    local: "checking",
   });
   const [selectedIndex, setSelectedIndex] = useState(0);
-  const [actionFeedback, setActionFeedback] = useState<string | null>(null);
+  const [feedback, setFeedback] = useState<string | null>(null);
+  const [confirmReset, setConfirmReset] = useState(false);
+
+  const rootBase = baseURL.endsWith("/v1") ? baseURL.slice(0, -3) : baseURL;
 
   useEffect(() => {
-    let isMounted = true;
-    const checkProviders = async () => {
-      const nextStatus: Record<string, string> = {
+    let mounted = true;
+    (async () => {
+      const next: Record<ProviderId, Status> = {
         neo: "offline",
         claude: "offline",
         codex: "offline",
@@ -67,190 +106,148 @@ export function SettingsSelector({
         openrouter: "offline",
         local: "offline",
       };
-
-      const rootBase = baseURL.endsWith("/v1") ? baseURL.slice(0, -3) : baseURL;
       try {
-        const res = await fetch(`${rootBase}/v1/auth/status`, { signal: AbortSignal.timeout(800) });
+        const res = await fetch(`${rootBase}/v1/auth/status`, { signal: AbortSignal.timeout(STATUS_TIMEOUT_MS) });
         if (res.ok) {
-          nextStatus.neo = "online";
-          const data = (await res.json()) as {
-            providers?: Array<{ provider: string; authenticated: boolean }>;
-          };
-          if (Array.isArray(data.providers)) {
-            for (const p of data.providers) {
-              nextStatus[p.provider] = p.authenticated ? "online" : "unauthenticated";
-            }
+          next.neo = "online";
+          const data = (await res.json()) as { providers?: Array<{ provider: string; authenticated: boolean }> };
+          for (const p of data.providers ?? []) {
+            if (p.provider in next) next[p.provider as ProviderId] = p.authenticated ? "online" : "needs-login";
           }
-        } else {
-          nextStatus.neo = "offline";
         }
       } catch {
-        nextStatus.neo = "offline";
       }
-
-      if (isMounted) {
-        setProviderStatuses(nextStatus);
-      }
-    };
-
-    checkProviders();
+      if (mounted) setStatuses(next);
+    })();
     return () => {
-      isMounted = false;
+      mounted = false;
     };
-  }, [baseURL]);
+  }, [rootBase]);
+
+  const provider = (
+    id: ProviderId,
+    label: string,
+    heading: string,
+    description: string,
+    details: SettingItem["details"],
+    fix: string
+  ): SettingItem => {
+    const status = statuses[id];
+    const s = statusStyle(status);
+    return {
+      id,
+      section: "providers",
+      label,
+      value: s.label,
+      status,
+      heading,
+      description,
+      details,
+      cta: status === "online" ? "connected" : fix,
+      ctaTone: status === "online" ? "muted" : "warning",
+      action: () => setFeedback(status === "online" ? `${label} is connected.` : fix),
+    };
+  };
+
+  const budgetLabel = maxSteps === undefined ? "auto" : `${maxSteps} steps`;
+  const nextBudget = STEP_BUDGETS[(STEP_BUDGETS.indexOf(maxSteps) + 1) % STEP_BUDGETS.length];
 
   const items: SettingItem[] = [
-    /* Providers */
     {
-      id: "neo",
-      category: "providers",
-      label: "neo router (8787)",
-      value: providerStatuses.neo || "checking",
-      hint: "[enter to inspect router]",
-      action: () => {
-        if (onOpenNeoModal) {
-          onOpenNeoModal();
-        } else {
-          setActionFeedback(
-            providerStatuses.neo === "online"
-              ? "neo router online on port 8787."
-              : "neo router offline. run `cd ~/Developer/neo && npm run dev`."
-          );
-        }
-      },
+      ...provider(
+        "neo",
+        "neo router",
+        "Neo router",
+        "Local proxy every model request goes through. It holds your provider logins.",
+        [
+          { k: "endpoint", v: rootBase },
+          { k: "port", v: "8787" },
+        ],
+        "start it with `cd ~/Developer/neo && npm run dev`"
+      ),
+      cta: onOpenNeoModal ? "enter opens the router inspector" : "enter checks the router",
+      ctaTone: "accent",
+      action: () => (onOpenNeoModal ? onOpenNeoModal() : setFeedback(statuses.neo === "online" ? "router is online." : "router is offline.")),
     },
-    {
-      id: "claude",
-      category: "providers",
-      label: "claude (anthropic pro)",
-      value: providerStatuses.claude || "checking",
-      hint: "[enter to check claude]",
-      action: () => {
-        setActionFeedback(
-          providerStatuses.claude === "online"
-            ? "claude authenticated via keychain (pro)."
-            : "claude unauthenticated. run `claude auth login`."
-        );
-      },
-    },
-    {
-      id: "codex",
-      category: "providers",
-      label: "codex (chatgpt plus)",
-      value: providerStatuses.codex || "checking",
-      hint: "[enter to check codex]",
-      action: () => {
-        setActionFeedback(
-          providerStatuses.codex === "online"
-            ? "codex authenticated via ~/.codex/auth.json."
-            : "codex unauthenticated. run `codex login`."
-        );
-      },
-    },
-    {
-      id: "antigravity",
-      category: "providers",
-      label: "antigravity oauth",
-      value: providerStatuses.antigravity || "checking",
-      hint: "[enter to check]",
-      action: () => {
-        setActionFeedback(
-          providerStatuses.antigravity === "online"
-            ? "antigravity oauth authenticated via neo."
-            : "run `/login antigravity` to authenticate."
-        );
-      },
-    },
-    {
-      id: "openrouter",
-      category: "providers",
-      label: "openrouter cloud",
-      value: providerStatuses.openrouter || "checking",
-      hint: "[enter to check]",
-      action: () => {
-        setActionFeedback(
-          providerStatuses.openrouter === "online"
-            ? "openrouter api key configured in neo."
-            : "run `/login openrouter <api-key>` to configure key."
-        );
-      },
-    },
-    {
-      id: "local",
-      category: "providers",
-      label: "local ollama (11434)",
-      value: providerStatuses.local || "checking",
-      hint: "[enter to probe]",
-      action: () => {
-        setActionFeedback(
-          providerStatuses.local === "online"
-            ? "local ollama online with on-device models."
-            : "ensure `ollama serve` is active on port 11434."
-        );
-      },
-    },
-
-    /* Execution */
+    provider("claude", "claude", "Claude", "Anthropic models through your Claude Pro login.", [{ k: "login", v: "claude pro · keychain" }], "run `claude auth login`"),
+    provider("codex", "codex", "Codex", "OpenAI models through your ChatGPT Plus login.", [{ k: "login", v: "~/.codex/auth.json" }], "run `codex login`"),
+    provider("antigravity", "antigravity", "Antigravity", "Google models through Cloud Code OAuth.", [{ k: "login", v: "oauth 2.0 (pkce)" }], "run `/login antigravity`"),
+    provider("openrouter", "openrouter", "OpenRouter", "Hosted open models billed to your OpenRouter key.", [{ k: "login", v: "api key in neo" }], "run `/login openrouter <key>`"),
+    provider("local", "local ollama", "Local Ollama", "On-device models; free and private, slower on big tasks.", [{ k: "endpoint", v: "127.0.0.1:11434" }], "start it with `ollama serve`"),
     {
       id: "model",
-      category: "execution",
-      label: "active model",
+      section: "runtime",
+      label: "model",
       value: currentModel,
-      hint: "[enter to switch model]",
-      action: () => {
-        onOpenModelSelector();
-      },
+      heading: "Model",
+      description: "The model the agent uses for every step of a task.",
+      details: [
+        { k: "current", v: currentModel, color: theme.accentBright },
+        { k: "routed via", v: "neo router" },
+      ],
+      cta: "enter opens the model catalog",
+      action: onOpenModelSelector,
     },
     {
       id: "usage",
-      category: "execution",
-      label: "token & model usage",
-      value: usage?.totalTokens ? `${(usage.totalTokens / 1000).toFixed(1)}k tokens` : "0 tokens",
-      hint: "[enter to open usage]",
-      action: () => {
-        if (onOpenUsageModal) {
-          onOpenUsageModal();
-        } else {
-          setActionFeedback(`total tokens: ${usage?.totalTokens ?? 0}`);
-        }
-      },
+      section: "runtime",
+      label: "usage",
+      value: `${formatTokens(usage?.totalTokens)} tokens`,
+      heading: "Usage",
+      description: "Tokens spent in this session across every model.",
+      details: [
+        { k: "total", v: `${formatTokens(usage?.totalTokens)} tokens` },
+        { k: "in / out", v: `${formatTokens(usage?.promptTokens)} / ${formatTokens(usage?.completionTokens)}` },
+        { k: "peak context", v: `${formatTokens(usage?.peakContextTokens)} of ${formatTokens(usage?.contextLimit ?? 128_000)}` },
+      ],
+      cta: onOpenUsageModal ? "enter opens the usage dashboard" : "",
+      action: () => onOpenUsageModal?.(),
     },
     {
       id: "steps",
-      category: "execution",
+      section: "runtime",
       label: "step budget",
-      value: `${maxSteps} steps`,
-      hint: "[enter to cycle budget]",
-      action: () => {
-        if (onUpdateMaxSteps) {
-          const stepsCycle = [15, 25, 50, 100];
-          const curIdx = stepsCycle.indexOf(maxSteps);
-          const next = stepsCycle[(curIdx + 1) % stepsCycle.length];
-          onUpdateMaxSteps(next);
-        }
-      },
+      value: budgetLabel,
+      heading: "Step budget",
+      description:
+        maxSteps === undefined
+          ? "Automatic: starts at 25 steps and extends while the agent is making progress."
+          : `Fixed: the agent stops after ${maxSteps} steps, even mid-task.`,
+      details: [
+        { k: "current", v: budgetLabel, color: theme.accentBright },
+        { k: "next", v: nextBudget === undefined ? "auto" : `${nextBudget} steps` },
+      ],
+      cta: onUpdateMaxSteps ? "enter cycles auto → 15 → 25 → 50 → 100" : "set with --max-steps when launching",
+      ctaTone: onUpdateMaxSteps ? "accent" : "muted",
+      action: () => onUpdateMaxSteps?.(nextBudget),
     },
-
-    /* Session */
     {
       id: "sessions",
-      category: "session",
-      label: "manage sessions",
-      value: sessionId.slice(0, 16) + (sessionId.length > 16 ? "…" : ""),
-      hint: "[enter to browse past sessions]",
-      action: () => {
-        onOpenSessionSelector();
-      },
+      section: "session",
+      label: "sessions",
+      value: sessionTitle && sessionTitle !== "New Session" ? sessionTitle : "new session",
+      heading: "Sessions",
+      description: "Conversations are saved automatically and can be resumed later.",
+      details: [
+        { k: "current", v: sessionTitle || "New Session" },
+        { k: "id", v: sessionId },
+      ],
+      cta: "enter browses saved sessions",
+      action: onOpenSessionSelector,
     },
     {
       id: "reset",
-      category: "session",
-      label: "start fresh session",
-      value: "reset context",
-      hint: "[enter to reset context]",
+      section: "session",
+      label: "start fresh",
+      value: "",
+      heading: "Start fresh",
+      description: "Saves this session and starts a new one with an empty context.",
+      details: [],
+      cta: confirmReset ? "press enter again to start fresh" : "enter to start a new session",
+      ctaTone: confirmReset ? "danger" : "warning",
       action: () => {
-        onResetSession();
-        setActionFeedback("context reset. fresh session created.");
+        if (confirmReset) onResetSession();
+        else setConfirmReset(true);
       },
     },
   ];
@@ -260,342 +257,94 @@ export function SettingsSelector({
       onClose();
       return;
     }
-
     if (key.return) {
-      const cur = items[selectedIndex];
-      if (cur) {
-        cur.action();
-      }
+      items[selectedIndex]?.action();
       return;
     }
-
-    if (key.upArrow || input === "k") {
-      setSelectedIndex((prev) => (prev > 0 ? prev - 1 : items.length - 1));
-      setActionFeedback(null);
-      return;
-    }
-
-    if (key.downArrow || input === "j") {
-      setSelectedIndex((prev) => (prev < items.length - 1 ? prev + 1 : 0));
-      setActionFeedback(null);
-      return;
+    const move = key.upArrow || input === "k" ? -1 : key.downArrow || input === "j" ? 1 : 0;
+    if (move !== 0) {
+      setSelectedIndex((prev) => (prev + move + items.length) % items.length);
+      setFeedback(null);
+      setConfirmReset(false);
     }
   });
 
-  const categories: Array<{
-    key: "providers" | "execution" | "session";
-    title: string;
-  }> = [
-    { key: "providers", title: "ai providers" },
-    { key: "execution", title: "execution & runtime" },
-    { key: "session", title: "session & workspace" },
-  ];
-
-  const totalContentWidth = Math.max(40, width - 6);
-  const leftWidth = Math.min(52, Math.max(38, Math.floor(totalContentWidth * 0.48)));
-  const rightWidth = Math.max(30, totalContentWidth - leftWidth - 3);
-  const bodyHeight = Math.max(10, height - 4);
-
-  const selectedItem = items[selectedIndex] || items[0];
+  const selected = items[selectedIndex] ?? items[0];
+  const neo = statusStyle(statuses.neo);
 
   return (
-    <Box
-      flexDirection="column"
-      borderStyle="round"
-      borderColor={theme.secondary}
+    <Modal
+      title="settings"
+      context={`router ${rootBase.replace(/^https?:\/\//, "")}`}
       width={width}
       height={height}
-      paddingX={2}
-      paddingY={1}
-      overflow="hidden"
+      aside={
+        <Text color={neo.color}>
+          {neo.dot} {statuses.neo === "online" ? "router online" : neo.label}
+        </Text>
+      }
+      hints={[
+        { keys: "↑↓", label: "move" },
+        { keys: "enter", label: "open" },
+        { keys: "esc", label: "close" },
+      ]}
     >
-      {/* Top Header */}
-      <Box height={1} width={totalContentWidth} justifyContent="space-between" marginBottom={1} overflow="hidden">
-        <Box flexDirection="row">
-          <Text bold color={theme.accentBright}>
-            morpheus · settings
-          </Text>
-          <Text color={theme.muted}> · </Text>
-          <Text color={theme.text}>router: {baseURL}</Text>
-        </Box>
-        <Text color={theme.muted}>
-          [↑/↓ move · enter action · esc close]
-        </Text>
-      </Box>
-
-      {/* Main Two-Column Master-Detail Layout */}
-      <Box flexDirection="row" width={totalContentWidth} height={bodyHeight} overflow="hidden">
-        {/* Left Column: Settings List */}
-        <Box flexDirection="column" width={leftWidth} height={bodyHeight} overflow="hidden">
-          {categories.map((cat) => {
-            const catItems = items.filter((it) => it.category === cat.key);
-            if (catItems.length === 0) return null;
-
-            return (
-              <Box key={cat.key} flexDirection="column" marginBottom={1}>
-                <Text bold color={theme.secondary}>
-                  {cat.title}
-                </Text>
-
-                {catItems.map((item) => {
-                  const globalIdx = items.findIndex((it) => it.id === item.id);
-                  const isSelected = globalIdx === selectedIndex;
-
-                  const isOnline = item.value === "online";
-                  const valColor = isOnline
-                    ? theme.accentBright
-                    : item.value === "offline" || item.value === "unauthenticated"
-                    ? theme.error
-                    : theme.secondary;
-
-                  return (
-                    <Box
-                      key={item.id}
-                      flexDirection="row"
-                      justifyContent="space-between"
-                      paddingLeft={1}
-                    >
-                      <Box flexDirection="row">
-                        <Text color={isSelected ? theme.accentBright : theme.muted}>
-                          {isSelected ? "▶ " : "  "}
-                        </Text>
-                        <Text
-                          bold={isSelected}
-                          color={isSelected ? theme.accentBright : theme.text}
-                        >
-                          {item.label}
-                        </Text>
-                      </Box>
-
-                      <Text color={valColor} bold={isOnline}>
-                        [{item.value}]
-                      </Text>
-                    </Box>
-                  );
-                })}
-              </Box>
-            );
-          })}
-        </Box>
-
-        {/* Vertical Divider */}
-        <Box width={1} height={bodyHeight} flexDirection="column" overflow="hidden" marginX={1}>
-          {Array.from({ length: bodyHeight }).map((_, i) => (
-            <Box key={`div_${i}`} height={1}>
-              <Text color={theme.border}>│</Text>
-            </Box>
-          ))}
-        </Box>
-
-        {/* Right Column: Clean Inspector Pane */}
-        <Box flexDirection="column" width={rightWidth} height={bodyHeight} overflow="hidden" paddingLeft={2}>
-          <Box marginBottom={1}>
-            <Text bold color={theme.accentBright}>
-              inspector & details
-            </Text>
-          </Box>
-
-          {selectedItem.id === "neo" && (
-            <Box flexDirection="column">
-              <Box flexDirection="row" justifyContent="space-between">
-                <Text color={theme.muted}>service</Text>
-                <Text bold color={theme.secondary}>neo proxy router v0.1.0</Text>
-              </Box>
-              <Box flexDirection="row" justifyContent="space-between">
-                <Text color={theme.muted}>endpoint</Text>
-                <Text color={theme.text}>http://127.0.0.1:8787</Text>
-              </Box>
-              <Box flexDirection="row" justifyContent="space-between">
-                <Text color={theme.muted}>status</Text>
-                <Text bold color={providerStatuses.neo === "online" ? theme.accentBright : theme.error}>
-                  {providerStatuses.neo === "online" ? "[online]" : "[offline]"}
-                </Text>
-              </Box>
-              <Box marginTop={1} paddingX={1} borderStyle="single" borderColor={theme.accent}>
-                <Text color={theme.accentBright}>press [enter] to open dedicated neo window.</Text>
-              </Box>
-            </Box>
+      {({ width: w, height: h }) => (
+        <Split
+          width={w}
+          height={h}
+          left={(lw) => (
+            <RowList
+              height={h}
+              rows={SECTIONS.flatMap((section, si) => [
+                ...(si > 0 ? [{ key: `gap_${section.key}`, node: <Blank /> }] : []),
+                { key: `sec_${section.key}`, node: <Section label={section.title} width={lw} /> },
+                ...items
+                  .filter((it) => it.section === section.key)
+                  .map((it) => {
+                    const s = it.status ? statusStyle(it.status) : undefined;
+                    return {
+                      key: it.id,
+                      focus: it.id === selected.id,
+                      node: (
+                        <ListRow
+                          label={it.label}
+                          value={it.value}
+                          valueColor={s?.color}
+                          icon={s?.dot}
+                          iconColor={s?.color}
+                          selected={it.id === selected.id}
+                          width={lw}
+                        />
+                      ),
+                    };
+                  }),
+              ])}
+            />
           )}
-
-          {selectedItem.id === "codex" && (
-            <Box flexDirection="column">
-              <Box flexDirection="row" justifyContent="space-between">
-                <Text color={theme.muted}>service</Text>
-                <Text bold color={theme.secondary}>openai codex (chatgpt plus)</Text>
-              </Box>
-              <Box flexDirection="row" justifyContent="space-between">
-                <Text color={theme.muted}>endpoint</Text>
-                <Text color={theme.text}>chatgpt.com/backend-api/codex/responses</Text>
-              </Box>
-              <Box flexDirection="row" justifyContent="space-between">
-                <Text color={theme.muted}>status</Text>
-                <Text bold color={providerStatuses.codex === "online" ? theme.accentBright : theme.error}>
-                  {providerStatuses.codex === "online" ? "[authenticated]" : "[inactive]"}
-                </Text>
-              </Box>
-              <Box marginTop={1} paddingX={1} borderStyle="single" borderColor={theme.accent}>
-                <Text color={theme.accentBright}>run `codex login` to manage chatgpt credentials.</Text>
-              </Box>
-            </Box>
-          )}
-
-          {selectedItem.id === "antigravity" && (
-            <Box flexDirection="column">
-              <Box flexDirection="row" justifyContent="space-between">
-                <Text color={theme.muted}>adapter</Text>
-                <Text bold color={theme.secondary}>google cloud code (antigravity)</Text>
-              </Box>
-              <Box flexDirection="row" justifyContent="space-between">
-                <Text color={theme.muted}>auth type</Text>
-                <Text color={theme.text}>oauth 2.0 pkce</Text>
-              </Box>
-              <Box flexDirection="row" justifyContent="space-between">
-                <Text color={theme.muted}>status</Text>
-                <Text bold color={providerStatuses.antigravity === "online" ? theme.accentBright : theme.error}>
-                  {providerStatuses.antigravity === "online" ? "[authenticated]" : "[unauthenticated]"}
-                </Text>
-              </Box>
-              <Box marginTop={1} paddingX={1} borderStyle="single" borderColor={theme.border}>
-                <Text color={theme.text}>run `/login antigravity` to refresh oauth session.</Text>
-              </Box>
-            </Box>
-          )}
-
-          {selectedItem.id === "openrouter" && (
-            <Box flexDirection="column">
-              <Box flexDirection="row" justifyContent="space-between">
-                <Text color={theme.muted}>gateway</Text>
-                <Text bold color={theme.secondary}>openrouter cloud</Text>
-              </Box>
-              <Box flexDirection="row" justifyContent="space-between">
-                <Text color={theme.muted}>status</Text>
-                <Text bold color={providerStatuses.openrouter === "online" ? theme.accentBright : theme.error}>
-                  {providerStatuses.openrouter === "online" ? "[key active]" : "[no key]"}
-                </Text>
-              </Box>
-              <Box marginTop={1} paddingX={1} borderStyle="single" borderColor={theme.border}>
-                <Text color={theme.text}>run `/login openrouter &lt;key&gt;` to configure credentials.</Text>
-              </Box>
-            </Box>
-          )}
-
-          {selectedItem.id === "local" && (
-            <Box flexDirection="column">
-              <Box flexDirection="row" justifyContent="space-between">
-                <Text color={theme.muted}>engine</Text>
-                <Text bold color={theme.secondary}>local ollama node</Text>
-              </Box>
-              <Box flexDirection="row" justifyContent="space-between">
-                <Text color={theme.muted}>endpoint</Text>
-                <Text color={theme.text}>http://127.0.0.1:11434</Text>
-              </Box>
-              <Box flexDirection="row" justifyContent="space-between">
-                <Text color={theme.muted}>status</Text>
-                <Text bold color={providerStatuses.local === "online" ? theme.accentBright : theme.error}>
-                  {providerStatuses.local === "online" ? "[online]" : "[offline]"}
-                </Text>
-              </Box>
-              <Box marginTop={1} paddingX={1} borderStyle="single" borderColor={theme.border}>
-                <Text color={theme.text}>ensure `ollama serve` is active on port 11434.</Text>
-              </Box>
-            </Box>
-          )}
-
-          {selectedItem.id === "model" && (
-            <Box flexDirection="column">
-              <Box flexDirection="row" justifyContent="space-between">
-                <Text color={theme.muted}>current model</Text>
-                <Text bold color={theme.accentBright}>{currentModel}</Text>
-              </Box>
-              <Box flexDirection="row" justifyContent="space-between">
-                <Text color={theme.muted}>router target</Text>
-                <Text color={theme.text}>neo proxy (8787)</Text>
-              </Box>
-              <Box marginTop={1} paddingX={1} borderStyle="single" borderColor={theme.accent}>
-                <Text color={theme.accentBright}>press [enter] to open model catalog.</Text>
-              </Box>
-            </Box>
-          )}
-
-          {selectedItem.id === "usage" && (
-            <Box flexDirection="column">
-              <Box flexDirection="row" justifyContent="space-between">
-                <Text color={theme.muted}>session tokens</Text>
-                <Text bold color={theme.accentBright}>{usage?.totalTokens?.toLocaleString() ?? 0} tokens</Text>
-              </Box>
-              <Box flexDirection="row" justifyContent="space-between">
-                <Text color={theme.muted}>prompt / output</Text>
-                <Text color={theme.text}>{usage?.promptTokens?.toLocaleString() ?? 0} in · {usage?.completionTokens?.toLocaleString() ?? 0} out</Text>
-              </Box>
-              <Box flexDirection="row" justifyContent="space-between">
-                <Text color={theme.muted}>peak context</Text>
-                <Text color={theme.secondary}>{usage?.peakContextTokens?.toLocaleString() ?? 0} tokens</Text>
-              </Box>
-              <Box marginTop={1} paddingX={1} borderStyle="single" borderColor={theme.accent}>
-                <Text color={theme.accentBright}>press [enter] to open full usage & quotas dashboard.</Text>
-              </Box>
-            </Box>
-          )}
-
-          {selectedItem.id === "steps" && (
-            <Box flexDirection="column">
-              <Box flexDirection="row" justifyContent="space-between">
-                <Text color={theme.muted}>current runway</Text>
-                <Text bold color={theme.accentBright}>{maxSteps} consecutive steps</Text>
-              </Box>
-              <Box flexDirection="row" justifyContent="space-between">
-                <Text color={theme.muted}>cycle options</Text>
-                <Text color={theme.text}>15 → 25 → 50 → 100</Text>
-              </Box>
-              <Box marginTop={1} paddingX={1} borderStyle="single" borderColor={theme.border}>
-                <Text color={theme.secondary}>press [enter] to cycle step budget.</Text>
-              </Box>
-            </Box>
-          )}
-
-          {selectedItem.id === "sessions" && (
-            <Box flexDirection="column">
-              <Box flexDirection="row" justifyContent="space-between">
-                <Text color={theme.muted}>session id</Text>
-                <Text bold color={theme.accentBright}>{sessionId.slice(0, 18)}</Text>
-              </Box>
-              <Box marginTop={1} paddingX={1} borderStyle="single" borderColor={theme.accent}>
-                <Text color={theme.accentBright}>press [enter] to open session explorer.</Text>
-              </Box>
-            </Box>
-          )}
-
-          {selectedItem.id === "reset" && (
-            <Box flexDirection="column">
-              <Box flexDirection="row" justifyContent="space-between">
-                <Text color={theme.muted}>action</Text>
-                <Text bold color={theme.error}>reset context</Text>
-              </Box>
-              <Box marginTop={1} paddingX={1} borderStyle="single" borderColor={theme.error}>
-                <Text color={theme.error}>press [enter] to archive active context and restart.</Text>
-              </Box>
-            </Box>
-          )}
-
-          {actionFeedback && (
-            <Box marginTop={1} borderStyle="single" borderColor={theme.accent} paddingX={1}>
-              <Text color={theme.accentBright} bold>
-                {actionFeedback}
+          right={(rw, rh) => (
+            <Lines height={rh}>
+              <Text bold color={theme.text}>
+                {selected.heading}
               </Text>
-            </Box>
+              {wrapWords(selected.description, rw).map((line) => (
+                <Text color={theme.muted}>{line}</Text>
+              ))}
+              <Blank />
+              {selected.status ? <StatusValue status={selected.status} width={rw} /> : null}
+              {selected.details.map((d) => (
+                <KeyValue k={d.k} v={d.v} color={d.color} width={rw} />
+              ))}
+              {selected.cta ? <Blank /> : null}
+              {selected.cta ? <Callout text={selected.cta} tone={selected.ctaTone} width={rw} /> : null}
+              {feedback ? <Blank /> : null}
+              {feedback
+                ? wrapWords(feedback, rw).map((line) => <Text color={theme.secondary}>{line}</Text>)
+                : null}
+            </Lines>
           )}
-        </Box>
-      </Box>
-
-      {/* Bottom Status / Key Hints */}
-      <Box height={1} width={totalContentWidth} justifyContent="space-between" marginTop={1} overflow="hidden">
-        <Text color={theme.muted}>
-          {selectedItem.hint}
-        </Text>
-        <Text color={theme.secondary}>
-          morpheus
-        </Text>
-      </Box>
-    </Box>
+        />
+      )}
+    </Modal>
   );
 }

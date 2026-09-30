@@ -75,6 +75,8 @@ export function App({
   const visibleRightLinesRef = useRef<RightLine[]>([]);
   const currentRightScrollRef = useRef(0);
 
+  const [stepBudget, setStepBudget] = useState<number | undefined>(maxSteps);
+
   const {
     status,
     stepCount,
@@ -85,6 +87,7 @@ export function App({
     fileEdits,
     findings,
     sessionId,
+    sessionTitle,
     loadSessionById,
     resetSession,
     executeTask,
@@ -97,7 +100,7 @@ export function App({
     baseURL,
     isLocal,
     isVerbose,
-    maxSteps,
+    maxSteps: stepBudget,
     initialTask,
     resumeSessionId,
     isUserScrolledRef,
@@ -389,8 +392,10 @@ export function App({
             usage={usage}
             width={terminalWidth}
             height={effectiveWorkspaceHeight}
-            maxSteps={maxSteps}
+            maxSteps={stepBudget}
+            onUpdateMaxSteps={setStepBudget}
             sessionId={sessionId}
+            sessionTitle={sessionTitle}
             onOpenModelSelector={() => openModal("model")}
             onOpenSessionSelector={() => openModal("session")}
             onOpenNeoModal={() => openModal("neo")}
@@ -460,7 +465,7 @@ export function App({
                 statusInfo={{
                   status,
                   stepCount,
-                  maxSteps,
+                  maxSteps: stepBudget,
                   usage,
                   elapsedSeconds,
                   queueCount: queuedCount,
@@ -475,7 +480,7 @@ export function App({
         <StatusBar
           status={status}
           stepCount={stepCount}
-          maxSteps={maxSteps}
+          maxSteps={stepBudget}
           usage={usage}
           elapsedSeconds={elapsedSeconds}
           width={terminalWidth}
