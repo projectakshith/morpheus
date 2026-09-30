@@ -1,7 +1,3 @@
-/*
- * SessionSelector: Interactive modal to browse, resume, and manage sessions via arrow keys.
- */
-
 import React, { useState, useEffect } from "react";
 import { Box, Text, useInput } from "ink";
 import { listSessions, deleteSession, type SessionSummary } from "../../core/session.js";
@@ -25,6 +21,7 @@ export interface SessionSelectorProps {
   onNewSession: () => void;
   onClose: () => void;
   width?: number;
+  height?: number;
 }
 
 export function SessionSelector({
@@ -32,7 +29,8 @@ export function SessionSelector({
   onSelectSession,
   onNewSession,
   onClose,
-  width = 72,
+  width = 80,
+  height = 24,
 }: SessionSelectorProps) {
   const [sessions, setSessions] = useState<SessionSummary[]>([]);
   const [selectedIndex, setSelectedIndex] = useState(0);
@@ -40,7 +38,7 @@ export function SessionSelector({
 
   const loadList = async () => {
     try {
-      const list = await listSessions(process.cwd(), 15);
+      const list = await listSessions(process.cwd(), 30);
       setSessions(list);
     } catch {
       setSessions([]);
@@ -53,11 +51,10 @@ export function SessionSelector({
     loadList();
   }, []);
 
-  /* Total selectable items: Option 0 is "+ Start Fresh Session", Option 1..N are sessions */
   const totalItems = 1 + sessions.length;
 
   useInput((input, key) => {
-    if (key.escape) {
+    if (key.escape || input === "q" || input === "Q") {
       onClose();
       return;
     }
@@ -102,99 +99,213 @@ export function SessionSelector({
     }
   });
 
-  const boxWidth = Math.min(width - 4, 76);
+  const totalContentWidth = Math.max(40, width - 6);
+  const leftWidth = Math.min(52, Math.max(38, Math.floor(totalContentWidth * 0.48)));
+  const rightWidth = Math.max(30, totalContentWidth - leftWidth - 3);
+  const bodyHeight = Math.max(10, height - 4);
+
+  const selectedSession = selectedIndex > 0 ? sessions[selectedIndex - 1] : null;
 
   return (
     <Box
       flexDirection="column"
       borderStyle="round"
       borderColor={theme.accent}
-      paddingX={1}
+      width={width}
+      height={height}
+      paddingX={2}
       paddingY={1}
-      width={boxWidth}
+      overflow="hidden"
     >
-      <Box marginBottom={1} justifyContent="space-between">
-        <Text bold color={theme.accentBright}>
-          RESUME SESSION
-        </Text>
-        <Text color={theme.muted}>
-          [↑/↓ navigate · Enter select · D delete · Esc close]
-        </Text>
-      </Box>
-
-      {/* Item 0: New Session */}
-      <Box
-        flexDirection="row"
-        justifyContent="space-between"
-        paddingLeft={1}
-        marginBottom={1}
-      >
+      {/* Top Header */}
+      <Box height={1} width={totalContentWidth} justifyContent="space-between" marginBottom={1} overflow="hidden">
         <Box flexDirection="row">
-          <Text color={selectedIndex === 0 ? theme.accentBright : theme.muted}>
-            {selectedIndex === 0 ? "▶ " : "  "}
+          <Text bold color={theme.accentBright}>
+            morpheus · session explorer
           </Text>
-          <Text
-            bold={selectedIndex === 0}
-            color={selectedIndex === 0 ? theme.accentBright : theme.secondary}
-          >
-            + Start Fresh Session
-          </Text>
+          <Text color={theme.muted}> · </Text>
+          <Text color={theme.text}>active: {currentSessionId.slice(0, 16)}</Text>
         </Box>
-        <Text color={theme.muted}>[clears working context]</Text>
+        <Text color={theme.muted}>
+          [↑/↓ move · enter resume · n new · d delete · esc close]
+        </Text>
       </Box>
 
-      {isLoading ? (
-        <Box paddingLeft={1}>
-          <Text color={theme.muted}>Loading recent sessions...</Text>
-        </Box>
-      ) : sessions.length === 0 ? (
-        <Box paddingLeft={1}>
-          <Text color={theme.muted}>No previous saved sessions found in this repository.</Text>
-        </Box>
-      ) : (
-        sessions.map((s, idx) => {
-          const itemIdx = idx + 1;
-          const isHighlighted = itemIdx === selectedIndex;
-          const isCurrent = s.id === currentSessionId;
-          const age = formatAge(s.updatedAt);
+      {/* Main Two-Column Layout */}
+      <Box flexDirection="row" width={totalContentWidth} height={bodyHeight} overflow="hidden">
+        {/* Left Column: Sessions List */}
+        <Box flexDirection="column" width={leftWidth} height={bodyHeight} overflow="hidden">
+          <Box marginBottom={1}>
+            <Text bold color={theme.secondary}>
+              saved sessions ({sessions.length})
+            </Text>
+          </Box>
 
-          const maxTitleLen = Math.max(16, boxWidth - 36);
-          const safeTitle =
-            s.title.length > maxTitleLen ? `${s.title.slice(0, maxTitleLen - 1)}…` : s.title;
+          {/* Option 0: Start Fresh */}
+          <Box
+            flexDirection="row"
+            justifyContent="space-between"
+            paddingLeft={1}
+            marginBottom={1}
+          >
+            <Box flexDirection="row">
+              <Text color={selectedIndex === 0 ? theme.accentBright : theme.muted}>
+                {selectedIndex === 0 ? "▶ " : "  "}
+              </Text>
+              <Text
+                bold={selectedIndex === 0}
+                color={selectedIndex === 0 ? theme.accentBright : theme.secondary}
+              >
+                + fresh session
+              </Text>
+            </Box>
+            <Text color={theme.muted}>[new context]</Text>
+          </Box>
 
-          return (
-            <Box
-              key={s.id}
-              flexDirection="row"
-              justifyContent="space-between"
-              paddingLeft={1}
-            >
-              <Box flexDirection="row">
-                <Text color={isHighlighted ? theme.accentBright : theme.muted}>
-                  {isHighlighted ? "▶ " : "  "}
-                </Text>
-                <Text
-                  bold={isHighlighted}
-                  color={isHighlighted ? theme.accentBright : isCurrent ? theme.secondary : undefined}
+          {/* Sessions List */}
+          {isLoading ? (
+            <Box paddingLeft={1}>
+              <Text color={theme.muted}>loading sessions...</Text>
+            </Box>
+          ) : sessions.length === 0 ? (
+            <Box paddingLeft={1}>
+              <Text color={theme.muted}>no previous sessions found.</Text>
+            </Box>
+          ) : (
+            sessions.slice(0, Math.max(5, bodyHeight - 4)).map((s, idx) => {
+              const isSelected = selectedIndex === idx + 1;
+              const isCurrent = s.id === currentSessionId;
+
+              return (
+                <Box
+                  key={s.id}
+                  flexDirection="row"
+                  justifyContent="space-between"
+                  paddingLeft={1}
                 >
-                  {isCurrent ? "◈ " : "  "}
-                  {safeTitle}
-                </Text>
-                {isCurrent && (
-                  <Text color={theme.accentBright} bold>
-                    {" "}[CURRENT]
-                  </Text>
-                )}
+                  <Box flexDirection="row">
+                    <Text color={isSelected ? theme.accentBright : theme.muted}>
+                      {isSelected ? "▶ " : "  "}
+                    </Text>
+                    <Text
+                      bold={isSelected}
+                      color={
+                        isSelected
+                          ? theme.accentBright
+                          : isCurrent
+                          ? theme.secondary
+                          : theme.text
+                      }
+                    >
+                      {s.id.slice(0, 18)}
+                    </Text>
+                  </Box>
+
+                  <Box flexDirection="row">
+                    <Text color={theme.muted}>{formatAge(s.updatedAt)}</Text>
+                    {isCurrent && (
+                      <Text color={theme.accentBright} bold>
+                        {" "}[active]
+                      </Text>
+                    )}
+                  </Box>
+                </Box>
+              );
+            })
+          )}
+        </Box>
+
+        {/* Vertical Divider */}
+        <Box width={1} height={bodyHeight} flexDirection="column" overflow="hidden" marginX={1}>
+          {Array.from({ length: bodyHeight }).map((_, i) => (
+            <Box key={`div_${i}`} height={1}>
+              <Text color={theme.border}>│</Text>
+            </Box>
+          ))}
+        </Box>
+
+        {/* Right Column: Session Preview & Details */}
+        <Box flexDirection="column" width={rightWidth} height={bodyHeight} overflow="hidden" paddingLeft={2}>
+          <Box marginBottom={1}>
+            <Text bold color={theme.accentBright}>
+              session details
+            </Text>
+          </Box>
+
+          {selectedIndex === 0 ? (
+            <Box flexDirection="column">
+              <Box flexDirection="row" justifyContent="space-between">
+                <Text color={theme.muted}>target action</Text>
+                <Text bold color={theme.accentBright}>fresh session</Text>
               </Box>
-              <Box flexDirection="row">
-                <Text color={theme.muted}>
-                  {s.turnCount} turns · {age}
+              <Box flexDirection="row" justifyContent="space-between">
+                <Text color={theme.muted}>scope</Text>
+                <Text color={theme.text}>clear thread context and memory</Text>
+              </Box>
+              <Box marginTop={1} paddingX={1} borderStyle="single" borderColor={theme.accent}>
+                <Text color={theme.accentBright} bold>
+                  press [enter] or [n] to create a fresh session.
                 </Text>
               </Box>
             </Box>
-          );
-        })
-      )}
+          ) : selectedSession ? (
+            <Box flexDirection="column">
+              <Box flexDirection="row" justifyContent="space-between">
+                <Text color={theme.muted}>session id</Text>
+                <Text bold color={theme.secondary}>{selectedSession.id}</Text>
+              </Box>
+              <Box flexDirection="row" justifyContent="space-between">
+                <Text color={theme.muted}>created</Text>
+                <Text color={theme.text}>{new Date(selectedSession.createdAt).toLocaleTimeString()}</Text>
+              </Box>
+              <Box flexDirection="row" justifyContent="space-between">
+                <Text color={theme.muted}>last modified</Text>
+                <Text color={theme.text}>{formatAge(selectedSession.updatedAt)}</Text>
+              </Box>
+              <Box flexDirection="row" justifyContent="space-between">
+                <Text color={theme.muted}>turns recorded</Text>
+                <Text bold color={theme.accentBright}>{selectedSession.turnCount} turn(s)</Text>
+              </Box>
+              {selectedSession.model && (
+                <Box flexDirection="row" justifyContent="space-between">
+                  <Text color={theme.muted}>last model</Text>
+                  <Text color={theme.text}>{selectedSession.model}</Text>
+                </Box>
+              )}
+              {selectedSession.title && (
+                <Box marginTop={1} flexDirection="column">
+                  <Text color={theme.muted}>task title:</Text>
+                  <Text color={theme.text}>
+                    "{selectedSession.title.slice(0, 100)}{selectedSession.title.length > 100 ? "…" : ""}"
+                  </Text>
+                </Box>
+              )}
+
+              <Box marginTop={1} paddingX={1} borderStyle="single" borderColor={selectedSession.id === currentSessionId ? theme.accentBright : theme.border}>
+                <Text color={selectedSession.id === currentSessionId ? theme.accentBright : theme.secondary} bold>
+                  {selectedSession.id === currentSessionId
+                    ? "active session"
+                    : "press [enter] to resume this session."}
+                </Text>
+              </Box>
+            </Box>
+          ) : (
+            <Box>
+              <Text color={theme.muted}>select a session to view details.</Text>
+            </Box>
+          )}
+        </Box>
+      </Box>
+
+      {/* Bottom Status / Key Hints */}
+      <Box height={1} width={totalContentWidth} justifyContent="space-between" marginTop={1} overflow="hidden">
+        <Text color={theme.muted}>
+          [enter resume · n new · d delete · esc close]
+        </Text>
+        <Text color={theme.secondary}>
+          morpheus
+        </Text>
+      </Box>
     </Box>
   );
 }

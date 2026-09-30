@@ -12,6 +12,8 @@ import { InputBox, POPUP_TOTAL_HEIGHT } from "./InputBox.js";
 import { ModelSelector, AVAILABLE_MODELS } from "./ModelSelector.js";
 import { SessionSelector } from "./SessionSelector.js";
 import { SettingsSelector } from "./SettingsSelector.js";
+import { NeoModal } from "./NeoModal.js";
+import { UsageModal } from "./UsageModal.js";
 import { DiffModal } from "./DiffModal.js";
 import { gatherContext } from "../../core/context.js";
 import { MORPHEUS_VERSION } from "../../index.js";
@@ -35,7 +37,7 @@ export function App({
   resumeSessionId,
 }: AppProps) {
   const [currentModel, setCurrentModel] = useState(model);
-  const [activeModal, setActiveModal] = useState<"none" | "model" | "session" | "settings" | "diff">("none");
+  const [activeModal, setActiveModal] = useState<"none" | "model" | "session" | "settings" | "diff" | "neo" | "usage">("none");
   const [selectedDiffFile, setSelectedDiffFile] = useState<string | null>(null);
   const [scrollOffset, setScrollOffset] = useState(0);
   const [promptHistory, setPromptHistory] = useState<string[]>([]);
@@ -51,7 +53,7 @@ export function App({
 
   const isModelSelectorOpen = activeModal === "model";
   const setIsModelSelectorOpen = (open: boolean) => setActiveModal(open ? "model" : "none");
-  const openModal = (m: "model" | "session" | "settings" | "diff") => setActiveModal(m);
+  const openModal = (m: "model" | "session" | "settings" | "diff" | "neo" | "usage") => setActiveModal(m);
   const closeModal = () => {
     setActiveModal("none");
     setSelectedDiffFile(null);
@@ -337,79 +339,87 @@ export function App({
 
       <Box flexDirection="row" width={terminalWidth} height={effectiveWorkspaceHeight} overflow="hidden">
         {activeModal === "model" ? (
-          <Box
+          <ModelSelector
+            currentModel={currentModel}
+            usage={usage}
             width={terminalWidth}
             height={effectiveWorkspaceHeight}
-            alignItems="center"
-            justifyContent="center"
-          >
-            <ModelSelector
-              currentModel={currentModel}
-              width={Math.min(terminalWidth, 80)}
-              onSelect={(selectedId) => {
-                setCurrentModel(selectedId);
-                closeModal();
-                const switchThread: Thread = {
-                  id: `thread_${Date.now()}`,
-                  index: threads.length + 1,
-                  prompt: `/model ${selectedId}`,
-                  response: `Switched active model to: \`${selectedId}\`\nAll future turns will route through Neo using this model.`,
-                  isStreaming: false,
-                  steps: [],
-                  isExpanded: false,
-                  status: "completed",
-                  stepCount: 0,
-                  startTime: Date.now(),
-                  durationMs: 0,
-                };
-                setThreads((prev) => [...prev, switchThread]);
-              }}
-              onClose={closeModal}
-            />
-          </Box>
+            onSelect={(selectedId) => {
+              setCurrentModel(selectedId);
+              closeModal();
+              const switchThread: Thread = {
+                id: `thread_${Date.now()}`,
+                index: threads.length + 1,
+                prompt: `/model ${selectedId}`,
+                response: `Switched active model to: \`${selectedId}\`\nAll future turns will route through Neo using this model.`,
+                isStreaming: false,
+                steps: [],
+                isExpanded: false,
+                status: "completed",
+                stepCount: 0,
+                startTime: Date.now(),
+                durationMs: 0,
+              };
+              setThreads((prev) => [...prev, switchThread]);
+            }}
+            onClose={closeModal}
+          />
         ) : activeModal === "session" ? (
-          <Box
+          <SessionSelector
+            currentSessionId={sessionId}
             width={terminalWidth}
             height={effectiveWorkspaceHeight}
-            alignItems="center"
-            justifyContent="center"
-          >
-            <SessionSelector
-              currentSessionId={sessionId}
-              width={Math.min(terminalWidth, 80)}
-              onSelectSession={async (targetId) => {
-                closeModal();
-                await loadSessionById(targetId);
-              }}
-              onNewSession={() => {
-                closeModal();
-                resetSession();
-              }}
-              onClose={closeModal}
-            />
-          </Box>
+            onSelectSession={async (targetId) => {
+              closeModal();
+              await loadSessionById(targetId);
+            }}
+            onNewSession={() => {
+              closeModal();
+              resetSession();
+            }}
+            onClose={closeModal}
+          />
         ) : activeModal === "settings" ? (
-          <Box
+          <SettingsSelector
+            currentModel={currentModel}
+            baseURL={baseURL}
+            usage={usage}
             width={terminalWidth}
             height={effectiveWorkspaceHeight}
-            alignItems="center"
-            justifyContent="center"
-          >
-            <SettingsSelector
-              currentModel={currentModel}
-              baseURL={baseURL}
-              width={Math.min(terminalWidth, 80)}
-              maxSteps={maxSteps}
-              sessionId={sessionId}
-              onOpenModelSelector={() => openModal("model")}
-              onOpenSessionSelector={() => openModal("session")}
-              onResetSession={() => {
-                resetSession();
-                closeModal();
-              }}
-              onClose={closeModal}
-            />
-          </Box>
+            maxSteps={maxSteps}
+            sessionId={sessionId}
+            onOpenModelSelector={() => openModal("model")}
+            onOpenSessionSelector={() => openModal("session")}
+            onOpenNeoModal={() => openModal("neo")}
+            onOpenUsageModal={() => openModal("usage")}
+            onResetSession={() => {
+              resetSession();
+              closeModal();
+            }}
+            onClose={closeModal}
+          />
+        ) : activeModal === "neo" ? (
+          <NeoModal
+            baseURL={baseURL}
+            currentModel={currentModel}
+            usage={usage}
+            width={terminalWidth}
+            height={effectiveWorkspaceHeight}
+            onOpenModelSelector={() => openModal("model")}
+            onOpenSettings={() => openModal("settings")}
+            onClose={closeModal}
+          />
+        ) : activeModal === "usage" ? (
+          <UsageModal
+            currentModel={currentModel}
+            usage={usage}
+            baseURL={baseURL}
+            sessionId={sessionId}
+            width={terminalWidth}
+            height={effectiveWorkspaceHeight}
+            onOpenModelSelector={() => openModal("model")}
+            onClose={closeModal}
+          />
         ) : activeModal === "diff" ? (
           <DiffModal
             fileEdits={fileEdits}
