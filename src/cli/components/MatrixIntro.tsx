@@ -73,7 +73,8 @@ interface StripCell {
   bold?: boolean;
 }
 
-const GREET_END = 0.24;
+const TYPE_END = 0.12;
+const RAIN_START = 0.26;
 const DECODING_KINDS = new Set<StripCell["kind"]>(["title", "sub", "num"]);
 
 function clamp01(v: number): number {
@@ -96,36 +97,6 @@ function decodeText(text: string, t: number, tick: number, seed = 0): Array<{ ch
   });
 }
 
-function buildGreeting(W: number, H: number, t: number, tick: number, name: string): FeedLine[] {
-  const rows = [{ text: `wake up, ${name}…`, t: clamp01(t / 0.75), fg: "210;255;195" }];
-  const y0 = Math.floor(H / 2);
-  const typing = rows.findIndex((r) => r.t < 1);
-  const cursorOn = ((tick >> 3) & 1) === 0;
-  const lines: FeedLine[] = [];
-  for (let y = 0; y < H; y++) {
-    let line = "\x1b[48;2;13;12;12m";
-    const rowIdx = y === y0 ? 0 : -1;
-    const row = rows[rowIdx];
-    if (row && (row.t > 0 || rowIdx === 0)) {
-      const x0 = Math.max(0, Math.floor((W - Array.from(row.text).length) / 2));
-      const decoded = decodeText(row.text, row.t, tick, rowIdx);
-      let body = "";
-      let width = 0;
-      for (const c of decoded) {
-        if (!c) break;
-        body += c.settled ? `\x1b[38;2;${row.fg};1m${c.ch}` : `\x1b[38;2;95;145;75m${c.ch}`;
-        width++;
-      }
-      const cursor = typing === rowIdx && cursorOn ? "\x1b[38;2;165;240;135m▌" : " ";
-      line += " ".repeat(x0) + body + cursor + " ".repeat(Math.max(0, W - x0 - width - 1));
-    } else {
-      line += " ".repeat(W);
-    }
-    lines.push({ id: `full_intro_${y}`, threadId: "intro", node: <Text wrap="truncate-end">{line + "\x1b[0m"}</Text> });
-  }
-  return lines;
-}
-
 export function buildFullScreenIntro(
   width: number,
   height: number,
@@ -137,14 +108,27 @@ export function buildFullScreenIntro(
   const W = Math.max(20, width);
   const H = Math.max(8, height);
 
-  if (greetName && progress < GREET_END) return buildGreeting(W, H, progress / GREET_END, tick, greetName);
-  const rainProgress = greetName ? (progress - GREET_END) / (1 - GREET_END) : progress;
+  const rainProgress = greetName ? Math.max(0, (progress - RAIN_START) / (1 - RAIN_START)) : progress;
 
   const rawQuote = quote || MATRIX_QUOTES[0];
   const fullQuote = `· ${rawQuote} ·`;
   const quoteText = fullQuote.length <= W - 4 ? fullQuote : rawQuote.length <= W - 2 ? rawQuote : "";
 
   const stripY = Math.floor(H / 2);
+
+  const greet = new Map<string, { ch: string; settled: boolean }>();
+  if (greetName) {
+    const text = `wake up, ${greetName}…`;
+    const typed = clamp01(progress / TYPE_END);
+    const x0 = Math.max(0, Math.floor((W - Array.from(text).length) / 2));
+    let x = x0;
+    for (const c of decodeText(text, typed, tick)) {
+      if (!c) break;
+      if (x < W) greet.set(`${x},${stripY}`, c);
+      x++;
+    }
+    if (((tick >> 3) & 1) === 0 && x < W) greet.set(`${x},${stripY}`, { ch: "▌", settled: true });
+  }
   const quoteY = Math.max(1, Math.min(stripY - 3, Math.floor(H * 0.1)));
 
   const cells = new Map<string, StripCell>();
@@ -228,7 +212,7 @@ export function buildFullScreenIntro(
       const speed = 0.9 + colHash(x * 5 + 19) * 0.25;
       const rainP = Math.min(1, Math.max(0, (rainProgress - delay) / 0.42));
       const frontier = rainP * (H + 6) * speed;
-      const dist = frontier - y;
+      const dist = frontier > 0 ? frontier - y : -Infinity;
 
       const cell = cells.get(`${x},${y}`);
       let ch = " ";
@@ -304,7 +288,12 @@ export function buildFullScreenIntro(
         }
       } else {
         bgCode = "\x1b[48;2;22;20;21m";
-        if (cell) {
+        const letter = greet.get(`${x},${y}`);
+        if (letter) {
+          const swallowing = dist > -3 || !letter.settled;
+          ch = swallowing ? glyphAt(x, tick, y) : letter.ch;
+          fgCode = dist > -3 ? "\x1b[38;2;152;217;118;1m" : letter.settled ? "\x1b[38;2;210;255;195;1m" : "\x1b[38;2;95;145;75m";
+        } else if (cell && !greetName) {
           ch = cell.ch;
           if (cell.kind === "badge") {
             fgCode = "\x1b[38;2;95;135;85m";
