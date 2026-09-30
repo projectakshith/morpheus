@@ -4,7 +4,6 @@ export type AppStatus = "idle" | "running" | "error" | "aborted";
 
 export interface ThreadStep {
   id: string;
-  /* "note" is narration the model wrote between tool calls. */
   type: "thinking" | "tool" | "note";
   content?: string;
   name?: string;
@@ -31,6 +30,7 @@ export interface Thread {
   stepCount: number;
   startTime: number;
   durationMs?: number;
+  model?: string;
 }
 
 export interface AppProps {
@@ -97,4 +97,3 @@ export interface DiffColumnProps {
   lines: RightLine[];
   statusInfo?: ColumnStatusInfo;
 }
-

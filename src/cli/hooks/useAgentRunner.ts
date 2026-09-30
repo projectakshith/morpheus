@@ -8,6 +8,7 @@ import type { ChatMessage, Finding, TokenUsage, ToolResult } from "../../core/ty
 import { isToolError } from "../../utils/errors.js";
 import type { Thread, ThreadStep, FileEditRecord, AppStatus } from "../types.js";
 import { extractDiffRecord } from "../utils/diffRecord.js";
+import { accumulateUsage } from "../stats.js";
 import { commandRegistry } from "../commands/registry.js";
 import {
   generateSessionId,
@@ -24,11 +25,8 @@ import {
   type TitleSource,
 } from "../../core/sessionTitle.js";
 
-/* Model title attempts per session, so a model that can't title doesn't cost a call every turn. */
 const MAX_TITLE_ATTEMPTS = 2;
 
-/* Sessions saved before titles were tracked: keep any real title rather than
- * risk overwriting a manual rename; only placeholder-ish ones can be upgraded. */
 function inferTitleSource(title: string | undefined): TitleSource {
   if (!title || title === "Resumed Session" || title === "Untitled Session" || title === PLACEHOLDER_TITLE) {
     return "placeholder";
@@ -96,9 +94,7 @@ export function useAgentRunner({
   openModal,
   closeModal,
 }: AgentRunnerOptions) {
-  /* Starts idle even with an initial task: executeTask queues anything submitted
-   * while status is "running", so a pre-set "running" would queue the initial
-   * task behind a run that never started. executeAgentTurn sets "running" itself. */
+    /* Starts idle even with an initial task: executeTask queues anything submitted while running. */
   const [status, setStatus] = useState<AppStatus>("idle");
   const [stepCount, setStepCount] = useState(0);
   const [elapsedSeconds, setElapsedSeconds] = useState(0);
@@ -132,7 +128,6 @@ export function useAgentRunner({
   const sessionIdRef = useRef(sessionId);
   sessionIdRef.current = sessionId;
 
-  /* The title lives in a ref too, so async saves never write a stale closure copy. */
   const titleRef = useRef<{ title: string; source: TitleSource }>({
     title: PLACEHOLDER_TITLE,
     source: "placeholder",
@@ -204,7 +199,6 @@ export function useAgentRunner({
     setUsage(undefined);
   };
 
-  /* Saves from refs, for writes that happen outside a turn (renames, late titles). */
   const persistSession = (id: string = sessionIdRef.current) => {
     saveSession({
       id,
@@ -222,14 +216,11 @@ export function useAgentRunner({
     }).catch(() => {});
   };
 
-  /* A user rename is final: generated titles never replace it. */
   const renameSession = (title: string) => {
     applyTitle(title, "manual");
     persistSession();
   };
 
-  /* Upgrades the title once per session, in the background, after a turn that
-   * says what the session is about. Failure just keeps the current title. */
   const maybeGenerateTitle = (prompt: string, response: string) => {
     const { source } = titleRef.current;
     if (source === "generated" || source === "manual" || isTrivialPrompt(prompt) || !response.trim()) return;
@@ -247,7 +238,6 @@ export function useAgentRunner({
     const operator = new Operator({ model: currentModel, baseURL, isLocal });
     generateSessionTitle(operator, prompt, response).then((title) => {
       if (titleAttemptsRef.current.sessionId === targetSession) titleAttemptsRef.current.inFlight = false;
-      /* The user may have switched sessions or renamed this one while we waited. */
       if (!title || sessionIdRef.current !== targetSession) return;
       const latest = titleRef.current.source;
       if (latest === "generated" || latest === "manual") return;
@@ -363,7 +353,6 @@ export function useAgentRunner({
   const executeAgentTurn = async (taskText: string, existingThreadId?: string) => {
     isExecutingRef.current = true;
 
-    /* Instant title from the first descriptive prompt; a model title may replace it after the turn. */
     if (titleRef.current.source === "placeholder") {
       const instant = promptTitle(taskText);
       if (instant) applyTitle(instant, "prompt");
@@ -396,6 +385,7 @@ export function useAgentRunner({
             ? {
                 ...t,
                 status: "running",
+                model: currentModel,
                 response: "",
                 isStreaming: false,
                 steps: [],
@@ -415,6 +405,7 @@ export function useAgentRunner({
         steps: [],
         isExpanded: false,
         status: "running",
+        model: currentModel,
         stepCount: 0,
         startTime,
       };
@@ -650,7 +641,6 @@ export function useAgentRunner({
           );
           activeTools.delete(callId || name);
 
-          /* A failed edit changed nothing, so it must not count as a changed file. */
           const editRecord = isError ? null : extractDiffRecord(
             name,
             currentTool?.args || {},
@@ -668,8 +658,6 @@ export function useAgentRunner({
             content: note,
             startTime: Date.now(),
           };
-          /* Interim text leaves the answer block and becomes its own timeline entry,
-           * so the final answer streams into a clean response. */
           setThreads((prev) =>
             prev.map((t) =>
               t.id === threadId
@@ -766,17 +754,7 @@ export function useAgentRunner({
       if (result.usage) {
         const turnUsage = result.usage;
         setUsage((prev) => {
-          const byModel = { ...(prev?.byModel || {}) };
-          const cur = byModel[currentModel] || { promptTokens: 0, completionTokens: 0, totalTokens: 0 };
-          byModel[currentModel] = {
-            promptTokens: cur.promptTokens + turnUsage.promptTokens,
-            completionTokens: cur.completionTokens + turnUsage.completionTokens,
-            totalTokens: cur.totalTokens + turnUsage.totalTokens,
-          };
-          const next = {
-            ...turnUsage,
-            byModel,
-          };
+          const next = accumulateUsage(prev, turnUsage, currentModel);
           usageRef.current = next;
           return next;
         });
