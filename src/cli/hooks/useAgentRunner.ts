@@ -76,7 +76,10 @@ export function useAgentRunner({
   openModal,
   closeModal,
 }: AgentRunnerOptions) {
-  const [status, setStatus] = useState<AppStatus>(initialTask ? "running" : "idle");
+  /* Starts idle even with an initial task: executeTask queues anything submitted
+   * while status is "running", so a pre-set "running" would queue the initial
+   * task behind a run that never started. executeAgentTurn sets "running" itself. */
+  const [status, setStatus] = useState<AppStatus>("idle");
   const [stepCount, setStepCount] = useState(0);
   const [elapsedSeconds, setElapsedSeconds] = useState(0);
   const [usage, setUsage] = useState<TokenUsage | undefined>();
