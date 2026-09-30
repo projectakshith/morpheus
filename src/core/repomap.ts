@@ -4,7 +4,6 @@ import path from "node:path";
 export interface RepoMapOptions {
   maxFiles?: number;
   maxDepth?: number;
-  /* Hard cap on output size, since the map is injected into every system prompt. */
   maxChars?: number;
 }
 
@@ -158,7 +157,6 @@ function scanDirectory(
   return lines;
 }
 
-/* Shortens a "path: a, b, c" entry to `max` chars, cutting between symbols. */
 function shortenEntry(line: string, max: number): string {
   if (line.length <= max) return line;
   const head = line.slice(0, Math.max(0, max - 1));
@@ -168,14 +166,19 @@ function shortenEntry(line: string, max: number): string {
   return `${cut}…`;
 }
 
-/**
- * Fits entries into `maxChars` while keeping every file listed when possible:
- * finds the largest per-entry length that fits and trims only entries longer
- * than it. Files are dropped from the end only if even bare paths don't fit.
- */
 function fitToBudget(lines: string[], maxChars: number): string[] {
   const total = (ls: string[]) => ls.reduce((n, l) => n + l.length, 0) + Math.max(0, ls.length - 1);
   if (total(lines) <= maxChars) return lines;
+
+  const withoutArgs = (line: string) => line.replace(/(\w)\(([^()]*)\)/g, "$1()");
+  const byLength = lines.map((l, i) => i).sort((a, b) => lines[b].length - lines[a].length);
+  const slim = [...lines];
+  for (const i of byLength) {
+    if (total(slim) <= maxChars) return slim;
+    slim[i] = withoutArgs(slim[i]);
+  }
+  if (total(slim) <= maxChars) return slim;
+  lines = slim;
 
   const minEntry = (line: string) => Math.min(line.length, line.indexOf(": ") + 3);
   let kept = [...lines];
@@ -191,6 +194,17 @@ function fitToBudget(lines: string[], maxChars: number): string[] {
     else hi = mid - 1;
   }
   return kept.map((l) => shortenEntry(l, Math.max(lo, minEntry(l))));
+}
+
+function pickCentralFiles(lines: string[], maxFiles: number): string[] {
+  if (lines.length <= maxFiles) return lines;
+  const filePath = (line: string) => line.slice(0, line.indexOf(":"));
+  const rank = (line: string) => {
+    const p = filePath(line);
+    return (/\/index\.[a-z]+$/.test(p) ? 0 : 100) + p.split("/").length;
+  };
+  const kept = new Set([...lines].sort((a, b) => rank(a) - rank(b)).slice(0, maxFiles));
+  return lines.filter((line) => kept.has(line));
 }
 
 export function generateRepoMap(
@@ -215,5 +229,5 @@ export function generateRepoMap(
     lines.push(...scanDirectory(cwd, cwd, maxDepth));
   }
 
-  return fitToBudget(lines.slice(0, maxFiles), maxChars).join("\n");
+  return fitToBudget(pickCentralFiles(lines, maxFiles), maxChars).join("\n");
 }

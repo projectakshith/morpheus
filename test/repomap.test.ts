@@ -31,14 +31,16 @@ describe("generateRepoMap (Skeleton Repo Map)", () => {
 });
 
 describe("generateRepoMap size budget", () => {
-  it("never exceeds maxChars and trims long entries before dropping files", () => {
+  it("never exceeds maxChars; drops args, then trims, before dropping files", () => {
     const full = generateRepoMap(process.cwd(), { maxChars: 100_000 }).split("\n");
     const tight = generateRepoMap(process.cwd(), { maxChars: 2000 });
     assert.ok(tight.length <= 2000);
     const tightLines = tight.split("\n");
     assert.equal(tightLines.length, full.length, "every file stays listed when bare paths fit");
+    const withoutArgs = (line: string) => line.replace(/(\w)\(([^()]*)\)/g, "$1()");
     tightLines.forEach((line, i) => {
-      assert.ok(line === full[i] || (line.endsWith("…") && full[i].startsWith(line.slice(0, -1))), line);
+      const shortened = line.endsWith("…") ? line.slice(0, -1) : line;
+      assert.ok(full[i].startsWith(shortened) || withoutArgs(full[i]).startsWith(shortened), line);
     });
 
     const tiny = generateRepoMap(process.cwd(), { maxChars: 300 });
