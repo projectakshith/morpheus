@@ -24,6 +24,7 @@ import { buildThreadFeedLines } from "./ThreadFeed.js";
 import { useTerminalLayout } from "../hooks/useTerminalLayout.js";
 import { useMouseEvents } from "../hooks/useMouseEvents.js";
 import { useAgentRunner } from "../hooks/useAgentRunner.js";
+import { useStreamReveal, REDUCED_MOTION } from "../hooks/useStreamReveal.js";
 
 export type { Thread, ThreadStep, AppProps, FeedLine };
 
@@ -230,6 +231,18 @@ export function App({
     }
   }, []);
 
+  /* Only one thread streams at a time: the running one, or the latest while its glow settles. */
+  const revealThread = useMemo(
+    () => [...threads].reverse().find((t) => t.status === "running") ?? threads[threads.length - 1],
+    [threads]
+  );
+  const reveal = useStreamReveal(
+    revealThread?.response ?? "",
+    Boolean(revealThread?.isStreaming),
+    !REDUCED_MOTION,
+    revealThread?.id
+  );
+
   const allFeedLines = useMemo<FeedLine[]>(() => {
     return buildThreadFeedLines({
       threads,
@@ -239,8 +252,11 @@ export function App({
       expandedThinkingIds,
       matrixQuote,
       elapsedSeconds,
+      streamReveal: revealThread
+        ? { threadId: revealThread.id, text: reveal.text, glow: reveal.glow }
+        : undefined,
     });
-  }, [threads, leftWidth, maxLineWidth, feedHeight, expandedThinkingIds, matrixQuote, elapsedSeconds]);
+  }, [threads, leftWidth, maxLineWidth, feedHeight, expandedThinkingIds, matrixQuote, elapsedSeconds, revealThread, reveal.text, reveal.glow]);
 
   const maxScroll = Math.max(0, allFeedLines.length - effectiveFeedHeight);
   maxScrollRef.current = maxScroll;

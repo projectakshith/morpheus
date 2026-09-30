@@ -9,6 +9,7 @@ import { buildHeroFeedLines } from "./MatrixIntro.js";
 import { CyberPulse } from "./CyberPulse.js";
 import { theme } from "../theme.js";
 import { glyphs } from "../glyphs.js";
+import { applyTrail } from "../effects/streamReveal.js";
 
 export interface BuildFeedOptions {
   threads: Thread[];
@@ -19,6 +20,8 @@ export interface BuildFeedOptions {
   collapsedThinkingIds?: Set<string>;
   matrixQuote?: string;
   elapsedSeconds?: number;
+  /* Live reveal of one thread's response; other threads render their full text. */
+  streamReveal?: { threadId: string; text: string; glow: number };
 }
 
 function toRel(filePath: string, cwd: string = process.cwd()): string {
@@ -146,6 +149,7 @@ export function buildThreadFeedLines({
   expandedThinkingIds,
   collapsedThinkingIds,
   matrixQuote,
+  streamReveal,
 }: BuildFeedOptions): FeedLine[] {
   const lines: FeedLine[] = [];
 
@@ -376,42 +380,55 @@ export function buildThreadFeedLines({
         ),
       });
 
+      const reveal = streamReveal?.threadId === thread.id ? streamReveal : undefined;
       const formatter = new MarkdownFormatter();
-      const rawLines = thread.response.split("\n");
+      const rawLines = (reveal ? reveal.text : thread.response).split("\n");
       const formattedLines: string[] = [];
       for (const raw of rawLines) {
         formattedLines.push(...formatter.processLine(raw));
       }
       formattedLines.push(...formatter.flush());
 
-      formattedLines.forEach((mLine) => {
-        const wrapped = wrapLine(mLine, maxLineWidth);
-        wrapped.forEach((wLine) => {
-          const vis = visibleLength(wLine);
-          if (vis === 0) {
-            lines.push({
-              id: `${thread.id}_asst_line_${lines.length}`,
-              threadId: thread.id,
-              node: (
-                <Text backgroundColor={theme.bg}>
-                  {" ".repeat(leftWidth)}
-                </Text>
-              ),
-            });
-            return;
-          }
-          const visLen = 2 + vis;
-          const pad = Math.max(0, leftWidth - visLen);
+      const wrappedLines = formattedLines.flatMap((mLine) => wrapLine(mLine, maxLineWidth));
+      /* The trail goes on after wrapping: it swaps colors (and at most one
+       * single-cell glyph), so visible widths and padding stay exact. */
+      if (reveal && reveal.glow > 0) {
+        let tail = wrappedLines.length - 1;
+        while (tail > 0 && visibleLength(wrappedLines[tail]) === 0) tail--;
+        if (tail >= 0) {
+          wrappedLines[tail] = applyTrail(wrappedLines[tail], reveal.glow, {
+            deep: theme.accent,
+            bright: theme.accentBright,
+            settled: theme.text,
+          }, { scramble: Math.random });
+        }
+      }
+
+      wrappedLines.forEach((wLine) => {
+        const vis = visibleLength(wLine);
+        if (vis === 0) {
           lines.push({
             id: `${thread.id}_asst_line_${lines.length}`,
             threadId: thread.id,
             node: (
-              <Text backgroundColor={theme.bg} wrap="truncate-end">
-                <Text color={theme.text}>  {wLine}</Text>
-                {" ".repeat(pad)}
+              <Text backgroundColor={theme.bg}>
+                {" ".repeat(leftWidth)}
               </Text>
             ),
           });
+          return;
+        }
+        const visLen = 2 + vis;
+        const pad = Math.max(0, leftWidth - visLen);
+        lines.push({
+          id: `${thread.id}_asst_line_${lines.length}`,
+          threadId: thread.id,
+          node: (
+            <Text backgroundColor={theme.bg} wrap="truncate-end">
+              <Text color={theme.text}>  {wLine}</Text>
+              {" ".repeat(pad)}
+            </Text>
+          ),
         });
       });
     }
