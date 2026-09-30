@@ -32,6 +32,29 @@ describe("CommandRegistry", () => {
     assert.ok((threadCreated as Thread).response.includes("/login"));
   });
 
+  it("dispatches /morpheus command and renders TrueColor avatar", async () => {
+    let threadCreated: Thread | null = null;
+    const ctx: CommandContext = {
+      taskText: "/morpheus",
+      baseURL: "http://127.0.0.1:8787/v1",
+      currentModel: "flash",
+      setCurrentModel: () => {},
+      setIsModelSelectorOpen: () => {},
+      setThreads: (updater) => {
+        const next = typeof updater === "function" ? updater([]) : updater;
+        threadCreated = next[0] || null;
+      },
+      setPromptHistory: () => {},
+      threadsCount: 0,
+    };
+
+    const handled = await commandRegistry.dispatch("/morpheus", ctx);
+    assert.equal(handled, true);
+    assert.ok(threadCreated);
+    assert.ok((threadCreated as Thread).response.includes("Free your mind"));
+    assert.ok((threadCreated as Thread).response.includes("\x1b[38;2;"));
+  });
+
   it("dispatches /model switch command and updates model state", async () => {
     let switchedModel = "";
     let threadCreated: Thread | null = null;

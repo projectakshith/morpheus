@@ -21,6 +21,7 @@ export class HelpCommand implements CommandHandler {
 • \`/sessions\` - List recent persistent sessions in this repository
 • \`/queue\` or \`/clear-queue\` - View or clear background queued tasks
 • \`/stop\` or \`/abort\` - Halt active execution and clear pending queue
+• \`/morpheus\` or \`/avatar\` - Display operative Morpheus TrueColor avatar
 • \`/resume [id]\` - Restore past session and conversation history
 • \`/new\` - Start a fresh conversation session
 • \`/help\` - Show this overview

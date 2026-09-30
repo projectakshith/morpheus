@@ -10,6 +10,7 @@ import { stopCommand } from "./stop.js";
 import { queueCommand } from "./queue.js";
 import { skillsCommand } from "./skills.js";
 import { helpCommand } from "./help.js";
+import { morpheusCommand } from "./morpheus.js";
 
 export class CommandRegistry {
   private handlers: CommandHandler[] = [];
@@ -26,6 +27,7 @@ export class CommandRegistry {
     this.register(queueCommand);
     this.register(skillsCommand);
     this.register(helpCommand);
+    this.register(morpheusCommand);
   }
 
   public register(handler: CommandHandler): void {
