@@ -1,9 +1,3 @@
-/*
- * describeStep: turns a raw tool step into a display model for the activity
- * panel. Low-signal reads become one-line "quiet" items; anything that changes
- * the workspace, runs a command, or fails becomes a card with a readable body.
- */
-
 import path from "node:path";
 import type { ThreadStep } from "../../types.js";
 import { sanitizeOutputLine } from "../../utils/cells.js";
@@ -21,7 +15,6 @@ export interface QuietItem {
   stepId: string;
   verb: string;
   target: string;
-  /* Short outcome for the detail view, e.g. "10 lines" or "4 hits". */
   result: string;
   running: boolean;
 }
@@ -34,7 +27,6 @@ export interface DiffRow {
 
 export interface TextLine {
   text: string;
-  /* stderr, or an error message; rendered in the error color. */
   error: boolean;
 }
 
@@ -50,13 +42,13 @@ export interface CardModel {
   stepId: string;
   verb: CardVerb;
   target: string;
-  /* Paths truncate from the left to keep the file name; commands from the right. */
   targetIsPath: boolean;
   status: string;
   running: boolean;
   failed: boolean;
   added?: number;
   removed?: number;
+  filePath?: string;
   body: CardBody;
 }
 
@@ -98,7 +90,6 @@ function plainLines(output: string | undefined, error: boolean): TextLine[] {
   return outputLines(output).map((text) => ({ text, error }));
 }
 
-/* Bash output marks stderr with a "[stderr]" line; only what follows it is an error. */
 function bashLines(output: string): TextLine[] {
   const lines: TextLine[] = [];
   let inStderr = false;
@@ -122,8 +113,6 @@ export function formatDuration(ms: number): string {
   return `${mins}m ${Math.floor((ms % 60_000) / 1000)}s`;
 }
 
-/* Parses a unified diff into display rows with real line numbers, keeping one
- * line of context around each change and marking skipped regions as gaps. */
 export function parseUnifiedDiff(diffText: string): { rows: DiffRow[]; added: number; removed: number } {
   const all: DiffRow[] = [];
   let oldNo = 0;
@@ -157,7 +146,6 @@ export function parseUnifiedDiff(diffText: string): { rows: DiffRow[]; added: nu
     }
   }
 
-  /* Keep changes plus one context line on each side; collapse the rest. */
   const keep = all.map((row, i) => {
     if (row.kind === "add" || row.kind === "del" || row.kind === "gap") return true;
     const near = (j: number) => all[j] && (all[j].kind === "add" || all[j].kind === "del");
@@ -287,7 +275,7 @@ export function describeStep(step: ThreadStep, cwd: string, now: number = Date.n
       const { rows, added, removed } = parseUnifiedDiff(step.output ?? "");
       return {
         kind: "card",
-        card: { ...base, verb: "edit", target: filePath, targetIsPath: true, status: "", added, removed, body: { type: "diff", rows, lang: langFor(filePath) } },
+        card: { ...base, verb: "edit", target: filePath, targetIsPath: true, status: "", added, removed, filePath: str(args.filePath), body: { type: "diff", rows, lang: langFor(filePath) } },
       };
     }
 
@@ -310,7 +298,7 @@ export function describeStep(step: ThreadStep, cwd: string, now: number = Date.n
       }
       return {
         kind: "card",
-        card: { ...base, verb: "write", target: filePath, targetIsPath: true, status: plural(lines.length, "line"), added: lines.length, body: { type: "code", lines, lang: langFor(filePath) } },
+        card: { ...base, verb: "write", target: filePath, targetIsPath: true, status: plural(lines.length, "line"), added: lines.length, filePath: str(args.filePath), body: { type: "code", lines, lang: langFor(filePath) } },
       };
     }
 

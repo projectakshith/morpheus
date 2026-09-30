@@ -249,18 +249,19 @@ function cardLines(card: CardModel, width: number, open: boolean, meta: RowMeta)
   const shown = hidden === 0 ? body : keepTail ? body.slice(-limit) : body.slice(0, limit);
   const lines: RightLine[] = [header];
 
-  /* Command output keeps its tail (results, errors), so the note goes on top. */
   if (hidden > 0 && keepTail) {
     const note = `⋯ ${hidden} earlier line${hidden === 1 ? "" : "s"}`;
     lines.push(bodyRow(`${id}_earlier`, { segs: [{ text: note, color: theme.muted, italic: true }] }, width, border, meta));
   }
 
+  const bodyMeta: RowMeta = card.filePath ? { editFilePath: card.filePath } : meta;
   shown.forEach((b, i) => {
-    lines.push(bodyRow(`${id}_b${i}`, b, width, border, meta));
+    lines.push(bodyRow(`${id}_b${i}`, b, width, border, bodyMeta));
   });
 
-  /* ╰─ 12 more lines ──────╯  (the note costs no extra row) */
-  const moreNote = hidden > 0 && !keepTail ? ` ${hidden} more line${hidden === 1 ? "" : "s"} ` : "";
+  const more = hidden > 0 && !keepTail ? `${hidden} more line${hidden === 1 ? "" : "s"}` : "";
+  const openHint = card.filePath ? "click for full diff" : "";
+  const moreNote = more || openHint ? ` ${[more, openHint].filter(Boolean).join(" · ")} ` : "";
   const footerFill = Math.max(0, width - 2 - 1 - cellWidth(moreNote));
   lines.push(
     row(
@@ -272,13 +273,12 @@ function cardLines(card: CardModel, width: number, open: boolean, meta: RowMeta)
         { text: "╯", color: border },
       ],
       width,
-      meta
+      bodyMeta
     )
   );
   return lines;
 }
 
-/* │ content (padded, tinted) │ */
 function bodyRow(id: string, b: BodyRow, width: number, border: string, meta: RowMeta): RightLine {
   const inner = Math.max(1, width - 4);
   const used = Math.min(inner, segsWidth(b.segs));

@@ -3,6 +3,7 @@ import { Box, Text, useInput } from "ink";
 import path from "node:path";
 import { execSync } from "node:child_process";
 import { theme } from "../theme.js";
+import { HintLine } from "./ui/kit.js";
 import { highlightCode, getLangFromPath } from "../highlight.js";
 import { visibleLength } from "../utils/text.js";
 import type { FileEditRecord } from "../types.js";
@@ -15,7 +16,7 @@ export interface DiffModalProps {
   onClose: () => void;
 }
 
-interface ConsolidatedFileDiff {
+export interface ConsolidatedFileDiff {
   filePath: string;
   relPath: string;
   linesAdded: number;
@@ -25,12 +26,43 @@ interface ConsolidatedFileDiff {
 
 export interface ParsedDiffLine {
   raw: string;
-  type: "add" | "rem" | "ctx" | "hunk" | "header";
+  type: "add" | "rem" | "ctx" | "hunk" | "header" | "change";
   oldNum?: number;
   newNum?: number;
   marker: string;
   codeText: string;
 }
+
+export function groupEditsByFile(fileEdits: FileEditRecord[], cwd: string): ConsolidatedFileDiff[] {
+  const files: ConsolidatedFileDiff[] = [];
+  const byFile = new Map<string, FileEditRecord[]>();
+  for (const edit of fileEdits) {
+    const key = path.resolve(cwd, edit.filePath);
+    byFile.set(key, [...(byFile.get(key) ?? []), edit]);
+  }
+
+  for (const [absPath, edits] of byFile) {
+    const relPath = path.relative(cwd, absPath);
+    const newestFirst = [...edits].sort((a, b) => b.timestamp - a.timestamp);
+    const diffLines = newestFirst.flatMap((edit, i) => {
+      const stats = edit.type === "write" ? `${edit.linesAdded} lines` : `+${edit.linesAdded} −${edit.linesRemoved}`;
+      const label = `${edit.type === "write" ? "wrote file" : "edit"} · ${stats}${i === 0 ? " · latest" : ""}`;
+      const body = edit.type === "write" ? [`@@ -0,0 +1,${edit.linesAdded} @@`, ...edit.diffLines] : edit.diffLines;
+      return edits.length > 1 ? [`${CHANGE_MARKER}${label}`, ...body] : body;
+    });
+    files.push({
+      filePath: absPath,
+      relPath: relPath.startsWith("..") ? absPath : relPath,
+      linesAdded: edits.reduce((n, e) => n + e.linesAdded, 0),
+      linesRemoved: edits.reduce((n, e) => n + e.linesRemoved, 0),
+      diffLines,
+    });
+  }
+
+  return files;
+}
+
+export const CHANGE_MARKER = "\u0000change:";
 
 export function parseDiffLines(diffLines: string[]): { parsed: ParsedDiffLine[]; maxLineNum: number } {
   const parsed: ParsedDiffLine[] = [];
@@ -39,6 +71,13 @@ export function parseDiffLines(diffLines: string[]): { parsed: ParsedDiffLine[];
   let maxNum = 1;
 
   for (const raw of diffLines) {
+    if (raw.startsWith(CHANGE_MARKER)) {
+      oldLine = 1;
+      newLine = 1;
+      parsed.push({ raw, type: "change", codeText: raw.slice(CHANGE_MARKER.length), marker: " " });
+      continue;
+    }
+
     const hunkMatch = raw.match(/^@@\s+-(\d+)(?:,\d+)?\s+\+(\d+)(?:,\d+)?\s+@@(.*)$/);
     if (hunkMatch) {
       oldLine = parseInt(hunkMatch[1], 10);
@@ -138,28 +177,7 @@ export function DiffModal({
   const consolidatedFiles = useMemo<ConsolidatedFileDiff[]>(() => {
     const map = new Map<string, ConsolidatedFileDiff>();
 
-    fileEdits.forEach((edit) => {
-      const existing = map.get(edit.filePath);
-      const relPath = path.isAbsolute(edit.filePath)
-        ? path.relative(cwd, edit.filePath)
-        : edit.filePath;
-
-      if (!existing) {
-        map.set(edit.filePath, {
-          filePath: edit.filePath,
-          relPath: relPath.startsWith("..") ? edit.filePath : relPath,
-          linesAdded: edit.linesAdded,
-          linesRemoved: edit.linesRemoved,
-          diffLines: edit.diffLines && edit.diffLines.length > 0 ? [...edit.diffLines] : [],
-        });
-      } else {
-        existing.linesAdded += edit.linesAdded;
-        existing.linesRemoved += edit.linesRemoved;
-        if (edit.diffLines && edit.diffLines.length > 0) {
-          existing.diffLines = [...existing.diffLines, ...edit.diffLines];
-        }
-      }
-    });
+    for (const file of groupEditsByFile(fileEdits, cwd)) map.set(file.filePath, file);
 
     if (map.size === 0) {
       try {
@@ -206,7 +224,8 @@ export function DiffModal({
 
   const initialIndex = useMemo(() => {
     if (!selectedFilePath || consolidatedFiles.length === 0) return 0;
-    const foundIdx = consolidatedFiles.findIndex((f) => f.filePath === selectedFilePath);
+    const target = path.resolve(cwd, selectedFilePath);
+    const foundIdx = consolidatedFiles.findIndex((f) => f.filePath === target);
     return foundIdx !== -1 ? foundIdx : 0;
   }, [selectedFilePath, consolidatedFiles]);
 
@@ -401,19 +420,19 @@ export function DiffModal({
           <Text color={theme.text} bold>
             {activeFile?.relPath || "No modified files"}
           </Text>
-          {lang ? <Text color={theme.muted}> [{lang.toUpperCase()}]</Text> : null}
+          {lang ? <Text color={theme.muted}>{` · ${lang.toLowerCase()}`}</Text> : null}
           {activeFile ? (
             <Text>
-              {" "}
+              {"  "}
               <Text color={theme.diffAdd} bold>+{activeFile.linesAdded} </Text>
-              <Text color={theme.diffRemove} bold>-{activeFile.linesRemoved}</Text>
+              <Text color={theme.diffRemove} bold>−{activeFile.linesRemoved}</Text>
             </Text>
           ) : null}
         </Text>
         <Text color={theme.muted} wrap="truncate-end">
           lines {scrollOffset + 1}–{Math.min(parsedLines.length, scrollOffset + codeViewHeight)} of {parsedLines.length}
           {maxScroll > 0 ? ` (${Math.round((scrollOffset / maxScroll) * 100)}%)` : ""}
-          {" · "}<Text color={theme.accent}>[esc]</Text> close
+          {"   "}<Text color={theme.secondary}>esc</Text> close
         </Text>
       </Box>
 
@@ -437,33 +456,33 @@ export function DiffModal({
               const sanitizedCode = pLine.codeText.replace(/\t/g, "  ");
 
               if (pLine.type === "hunk") {
-                const oldGutter = " ".repeat(Math.max(0, numWidth - 2)) + "@@";
-                const newGutter = "@@" + " ".repeat(Math.max(0, numWidth - 2));
-                const padHunk = Math.max(0, availableCodeWidth - visibleLength(sanitizedCode));
+                const hunk = sanitizedCode.match(/^@@ -\d+(?:,\d+)? \+(\d+)(?:,\d+)? @@\s*(.*)$/);
+                const label = hunk ? `line ${hunk[1]}${hunk[2] ? ` · ${hunk[2]}` : ""}` : sanitizedCode;
+                const gutter = isDualColumn
+                  ? `${" ".repeat(numWidth)}   ${" ".repeat(numWidth)}   ⋯   `
+                  : `${" ".repeat(numWidth)}   ⋯   `;
                 return (
                   <Box key={`diff_l_${scrollOffset + idx}`} height={1} overflow="hidden">
                     <Text backgroundColor={theme.bgColumn} wrap="truncate-end">
-                      {isDualColumn ? (
-                        <>
-                          <Text color={theme.accent}>{oldGutter}</Text>
-                          <Text color={theme.border}> │ </Text>
-                          <Text color={theme.accent}>{newGutter}</Text>
-                          <Text color={theme.border}> │ </Text>
-                          <Text color={theme.accent}>~</Text>
-                          <Text color={theme.border}> │ </Text>
-                        </>
-                      ) : (
-                        <>
-                          <Text color={theme.accent}>{" ".repeat(Math.max(0, numWidth - 2))}@@</Text>
-                          <Text color={theme.border}> │ </Text>
-                          <Text color={theme.accent}>~</Text>
-                          <Text color={theme.border}> │ </Text>
-                        </>
-                      )}
-                      <Text color={theme.accentBright} bold italic>
-                        {sanitizedCode}
-                        {" ".repeat(padHunk)}
+                      <Text color={theme.muted}>{gutter}</Text>
+                      <Text color={theme.muted} italic>
+                        {label}
+                        {" ".repeat(Math.max(0, availableCodeWidth - visibleLength(label)))}
                       </Text>
+                    </Text>
+                  </Box>
+                );
+              }
+
+              if (pLine.type === "change") {
+                const label = `── ${pLine.codeText} `;
+                return (
+                  <Box key={`diff_l_${scrollOffset + idx}`} height={1} overflow="hidden">
+                    <Text wrap="truncate-end">
+                      <Text color={theme.accentBright} bold>
+                        {label}
+                      </Text>
+                      <Text color={theme.border}>{"─".repeat(Math.max(0, leftWidth - visibleLength(label)))}</Text>
                     </Text>
                   </Box>
                 );
@@ -694,12 +713,18 @@ export function DiffModal({
 
       {/* Minimal Bottom Bar */}
       <Box height={1} width={width} justifyContent="space-between" overflow="hidden">
-        <Text color={theme.muted} wrap="truncate-end">
-          <Text color={theme.accent}>[↑/↓]</Text> scroll code · <Text color={theme.accent}>[←/→]</Text> file · <Text color={theme.accent}>[1-9]</Text> jump · <Text color={theme.accent}>[q]</Text> exit
-        </Text>
+        <HintLine
+          hints={[
+            { keys: "↑↓", label: "scroll" },
+            { keys: "←→", label: "file" },
+            { keys: "1-9", label: "jump" },
+            { keys: "tab", label: "pane" },
+            { keys: "esc", label: "close" },
+          ]}
+        />
         <Text wrap="truncate-end">
           <Text color={theme.diffAdd} bold>+{totalAdded} </Text>
-          <Text color={theme.diffRemove} bold>-{totalRemoved} </Text>
+          <Text color={theme.diffRemove} bold>−{totalRemoved} </Text>
           <Text color={theme.muted}>across {consolidatedFiles.length} {consolidatedFiles.length === 1 ? "file" : "files"}</Text>
         </Text>
       </Box>
