@@ -29,3 +29,19 @@ describe("generateRepoMap (Skeleton Repo Map)", () => {
     }
   });
 });
+
+describe("generateRepoMap size budget", () => {
+  it("never exceeds maxChars and trims long entries before dropping files", () => {
+    const full = generateRepoMap(process.cwd(), { maxChars: 100_000 }).split("\n");
+    const tight = generateRepoMap(process.cwd(), { maxChars: 2000 });
+    assert.ok(tight.length <= 2000);
+    const tightLines = tight.split("\n");
+    assert.equal(tightLines.length, full.length, "every file stays listed when bare paths fit");
+    tightLines.forEach((line, i) => {
+      assert.ok(line === full[i] || (line.endsWith("…") && full[i].startsWith(line.slice(0, -1))), line);
+    });
+
+    const tiny = generateRepoMap(process.cwd(), { maxChars: 300 });
+    assert.ok(tiny.length <= 300 && tiny.length > 0, "drops files only when paths alone don't fit");
+  });
+});

@@ -4,6 +4,8 @@ import path from "node:path";
 export interface RepoMapOptions {
   maxFiles?: number;
   maxDepth?: number;
+  /* Hard cap on output size, since the map is injected into every system prompt. */
+  maxChars?: number;
 }
 
 interface SymbolExtraction {
@@ -156,12 +158,48 @@ function scanDirectory(
   return lines;
 }
 
+/* Shortens a "path: a, b, c" entry to `max` chars, cutting between symbols. */
+function shortenEntry(line: string, max: number): string {
+  if (line.length <= max) return line;
+  const head = line.slice(0, Math.max(0, max - 1));
+  const lastComma = head.lastIndexOf(", ");
+  const pathEnd = line.indexOf(": ") + 2;
+  const cut = lastComma > pathEnd ? head.slice(0, lastComma) : head;
+  return `${cut}…`;
+}
+
+/**
+ * Fits entries into `maxChars` while keeping every file listed when possible:
+ * finds the largest per-entry length that fits and trims only entries longer
+ * than it. Files are dropped from the end only if even bare paths don't fit.
+ */
+function fitToBudget(lines: string[], maxChars: number): string[] {
+  const total = (ls: string[]) => ls.reduce((n, l) => n + l.length, 0) + Math.max(0, ls.length - 1);
+  if (total(lines) <= maxChars) return lines;
+
+  const minEntry = (line: string) => Math.min(line.length, line.indexOf(": ") + 3);
+  let kept = [...lines];
+  while (kept.length > 0 && kept.reduce((n, l) => n + minEntry(l), 0) + kept.length - 1 > maxChars) {
+    kept.pop();
+  }
+
+  let lo = 1;
+  let hi = Math.max(...kept.map((l) => l.length));
+  while (lo < hi) {
+    const mid = Math.ceil((lo + hi) / 2);
+    if (total(kept.map((l) => shortenEntry(l, Math.max(mid, minEntry(l))))) <= maxChars) lo = mid;
+    else hi = mid - 1;
+  }
+  return kept.map((l) => shortenEntry(l, Math.max(lo, minEntry(l))));
+}
+
 export function generateRepoMap(
   cwd: string,
   options: RepoMapOptions = {}
 ): string {
   const maxFiles = options.maxFiles ?? 30;
   const maxDepth = options.maxDepth ?? 3;
+  const maxChars = options.maxChars ?? 3200;
 
   const candidateDirs = ["src", "lib", "app", "bin"];
   const lines: string[] = [];
@@ -177,10 +215,5 @@ export function generateRepoMap(
     lines.push(...scanDirectory(cwd, cwd, maxDepth));
   }
 
-  const selected = lines.slice(0, maxFiles);
-  if (selected.length === 0) {
-    return "";
-  }
-
-  return selected.join("\n");
+  return fitToBudget(lines.slice(0, maxFiles), maxChars).join("\n");
 }
