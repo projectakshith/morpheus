@@ -485,7 +485,6 @@ export function ModelSelector({
   const isActive = (m: ModelOption) => m.id === currentModel || (m.id === "flash" && currentModel.includes("flash"));
   const selectedIsActive = isActive(selectedModel);
   const modelUsage = usage?.byModel?.[selectedModel.id];
-  const counts = CATEGORY_TABS.map((t) => models.filter((m) => m.category === t.key).length);
 
   return (
     <Modal
@@ -504,7 +503,7 @@ export function ModelSelector({
         <>
           <Box height={1} flexShrink={0}>
             <Tabs
-              tabs={CATEGORY_TABS.map((t, i) => ({ label: t.label.replace(/ \(free\)$/, ""), count: counts[i] }))}
+              tabs={CATEGORY_TABS.map((t) => ({ label: t.label.replace(/ \(free\)$/, "") }))}
               active={CATEGORY_TABS.findIndex((t) => t.key === activeCategory)}
             />
           </Box>
