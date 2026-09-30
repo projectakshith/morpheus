@@ -99,25 +99,47 @@ export async function executeBash(
       finish({ output: `Error: ${formatError(err)}`, metadata: { isError: true } });
     });
 
+    const formatStream = (name: "stdout" | "stderr") => {
+      const stream = streams[name];
+      const retained = Buffer.byteLength(stream.head + stream.tail, "utf-8");
+      const omitted = Math.max(0, stream.bytes - retained);
+      return `${stream.head}${omitted > 0 ? `\n... [${omitted} bytes omitted from ${name}] ...\n` : ""}${stream.tail}`.trim();
+    };
+
     proc.on("close", async (code) => {
       if (stopReason === "cancelled") {
         finish({ output: "[Command cancelled by user.]", metadata: { cancelled: true } });
         return;
       }
       if (stopReason === "timeout") {
+        const partialOutput = [
+          formatStream("stdout"),
+          ...(formatStream("stderr") ? [`[stderr]\n${formatStream("stderr")}`] : []),
+        ]
+          .filter(Boolean)
+          .join("\n\n");
+        let diagnostic = partialOutput;
+        let outputPath: string | undefined;
+        try {
+          if (partialOutput) {
+            const captured = await truncateOutput(partialOutput);
+            diagnostic = captured.content;
+            outputPath = captured.outputPath;
+          }
+        } catch {
+          diagnostic = partialOutput.slice(0, 32 * 1024);
+        }
         finish({
-          output: `Error: Command timed out after ${timeoutMs / 1000}s: ${params.command}`,
-          metadata: { isError: true, timedOut: true },
+          output: [
+            `Error: Command timed out after ${timeoutMs / 1000}s: ${params.command}`,
+            diagnostic,
+          ]
+            .filter(Boolean)
+            .join("\n\n"),
+          metadata: { isError: true, timedOut: true, outputPath },
         });
         return;
       }
-
-      const formatStream = (name: "stdout" | "stderr") => {
-        const stream = streams[name];
-        const retained = Buffer.byteLength(stream.head + stream.tail, "utf-8");
-        const omitted = Math.max(0, stream.bytes - retained);
-        return `${stream.head}${omitted > 0 ? `\n... [${omitted} bytes omitted from ${name}] ...\n` : ""}${stream.tail}`.trim();
-      };
 
       const combined = [
         formatStream("stdout"),
