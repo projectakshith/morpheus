@@ -344,6 +344,7 @@ export function App({
             usage={usage}
             width={terminalWidth}
             height={effectiveWorkspaceHeight}
+            baseURL={baseURL}
             onSelect={(selectedId) => {
               setCurrentModel(selectedId);
               closeModal();
@@ -351,7 +352,7 @@ export function App({
                 id: `thread_${Date.now()}`,
                 index: threads.length + 1,
                 prompt: `/model ${selectedId}`,
-                response: `Switched active model to: \`${selectedId}\`\nAll future turns will route through Neo using this model.`,
+                response: `switched active model to: \`${selectedId}\`\nall future turns will route through neo using this model.`,
                 isStreaming: false,
                 steps: [],
                 isExpanded: false,

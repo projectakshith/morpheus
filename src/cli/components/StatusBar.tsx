@@ -47,12 +47,12 @@ export function StatusBar({
 
   const statusLabel =
     status === "running"
-      ? "EXEC"
+      ? "running"
       : status === "aborted"
-      ? "STOP"
+      ? "stopped"
       : status === "error"
-      ? "FAIL"
-      : "IDLE";
+      ? "error"
+      : "idle";
 
   const queueStr = queueCount > 0 ? ` · +${queueCount}q` : "";
   const metricsStr = ` · ${glyphs.clock} ${timeStr} · step ${stepCount}/${maxSteps} · ctx ${peakCtx}/${limitCtx} · api ${totalTokens}${queueStr}`;

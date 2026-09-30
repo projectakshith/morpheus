@@ -59,32 +59,33 @@ export function SettingsSelector({
   useEffect(() => {
     let isMounted = true;
     const checkProviders = async () => {
-      const providers = ["claude", "codex", "antigravity", "openrouter", "local"];
-      const nextStatus: Record<string, string> = {};
+      const nextStatus: Record<string, string> = {
+        neo: "offline",
+        claude: "offline",
+        codex: "offline",
+        antigravity: "offline",
+        openrouter: "offline",
+        local: "offline",
+      };
 
       const rootBase = baseURL.endsWith("/v1") ? baseURL.slice(0, -3) : baseURL;
       try {
-        const hRes = await fetch(`${rootBase}/health`, { signal: AbortSignal.timeout(600) });
-        nextStatus.neo = hRes.ok ? "online" : "error";
+        const res = await fetch(`${rootBase}/v1/auth/status`, { signal: AbortSignal.timeout(800) });
+        if (res.ok) {
+          nextStatus.neo = "online";
+          const data = (await res.json()) as {
+            providers?: Array<{ provider: string; authenticated: boolean }>;
+          };
+          if (Array.isArray(data.providers)) {
+            for (const p of data.providers) {
+              nextStatus[p.provider] = p.authenticated ? "online" : "unauthenticated";
+            }
+          }
+        } else {
+          nextStatus.neo = "offline";
+        }
       } catch {
         nextStatus.neo = "offline";
-      }
-
-      for (const p of providers) {
-        try {
-          const url = baseURL.endsWith("/v1")
-            ? `${baseURL}/auth/status?provider=${p}`
-            : `${baseURL}/v1/auth/status?provider=${p}`;
-          const res = await fetch(url, { signal: AbortSignal.timeout(600) });
-          if (res.ok) {
-            const data = (await res.json()) as { authenticated?: boolean };
-            nextStatus[p] = data.authenticated ? "online" : "unauthenticated";
-          } else {
-            nextStatus[p] = "offline";
-          }
-        } catch {
-          nextStatus[p] = "offline";
-        }
       }
 
       if (isMounted) {
@@ -151,9 +152,13 @@ export function SettingsSelector({
       category: "providers",
       label: "antigravity oauth",
       value: providerStatuses.antigravity || "checking",
-      hint: "[enter to login]",
+      hint: "[enter to check]",
       action: () => {
-        setActionFeedback("run `/login antigravity` to authenticate.");
+        setActionFeedback(
+          providerStatuses.antigravity === "online"
+            ? "antigravity oauth authenticated via neo."
+            : "run `/login antigravity` to authenticate."
+        );
       },
     },
     {
@@ -161,9 +166,13 @@ export function SettingsSelector({
       category: "providers",
       label: "openrouter cloud",
       value: providerStatuses.openrouter || "checking",
-      hint: "[enter to configure]",
+      hint: "[enter to check]",
       action: () => {
-        setActionFeedback("run `/login openrouter <api-key>` to configure key.");
+        setActionFeedback(
+          providerStatuses.openrouter === "online"
+            ? "openrouter api key configured in neo."
+            : "run `/login openrouter <api-key>` to configure key."
+        );
       },
     },
     {
@@ -173,7 +182,11 @@ export function SettingsSelector({
       value: providerStatuses.local || "checking",
       hint: "[enter to probe]",
       action: () => {
-        setActionFeedback("ensure `ollama serve` is active on port 11434.");
+        setActionFeedback(
+          providerStatuses.local === "online"
+            ? "local ollama online with on-device models."
+            : "ensure `ollama serve` is active on port 11434."
+        );
       },
     },
 

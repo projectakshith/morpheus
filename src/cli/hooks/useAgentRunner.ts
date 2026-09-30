@@ -623,9 +623,13 @@ export function useAgentRunner({
           t.id === threadId
             ? {
                 ...t,
-                status: result.aborted ? "aborted" : "completed",
+                status: result.error ? "error" : result.aborted ? "aborted" : "completed",
                 isStreaming: false,
-                response: t.response || (result.aborted ? "*Task stopped.*" : "*Model produced no output.*"),
+                response: result.error
+                  ? `${t.response ? `${t.response}\n\n` : ""}Error: ${result.error}`
+                  : result.aborted
+                    ? t.response || "*Task stopped.*"
+                    : result.text || t.response || "*Model produced no output.*",
                 durationMs: Date.now() - t.startTime,
               }
             : t
@@ -659,7 +663,7 @@ export function useAgentRunner({
         usageRef.current = result.usage;
         setUsage(result.usage);
       }
-      setStatus(result.aborted ? "aborted" : "idle");
+      setStatus(result.error ? "error" : result.aborted ? "aborted" : "idle");
 
       /* Auto-save session asynchronously after successful turn */
       setTimeout(() => {
@@ -680,26 +684,44 @@ export function useAgentRunner({
     } catch (err: unknown) {
       setStatus("error");
       const errMsg = err instanceof Error ? err.message : String(err);
-      let errorResponse = `Error: ${errMsg}`;
+      const lowErr = errMsg.toLowerCase();
+      let errorResponse = `error: ${errMsg.toLowerCase()}`;
       if (
-        errMsg.includes("OPENROUTER_API_KEY") ||
-        errMsg.includes("OpenRouter API key") ||
-        errMsg.includes("OpenRouter is not configured") ||
-        errMsg.includes("OpenRouter")
+        lowErr.includes("claude") &&
+        (lowErr.includes("401") ||
+          lowErr.includes("403") ||
+          lowErr.includes("token") ||
+          lowErr.includes("oauth") ||
+          lowErr.includes("keychain"))
       ) {
-        errorResponse += `\n\n*OpenRouter is not authenticated. Type \`/login openrouter <api-key>\` to configure your API key.*`;
+        errorResponse += `\n\nclaude pro is not authenticated. run \`claude auth login\` in terminal or type \`/login claude <token>\`.`;
       } else if (
-        errMsg.includes("Antigravity") &&
-        (errMsg.includes("credentials") ||
-          errMsg.includes("Keychain") ||
-          errMsg.includes("401") ||
-          errMsg.includes("403") ||
-          errMsg.includes("unauthenticated") ||
-          errMsg.includes("OAuth error"))
+        lowErr.includes("codex") &&
+        (lowErr.includes("401") ||
+          lowErr.includes("403") ||
+          lowErr.includes("token") ||
+          lowErr.includes("auth.json"))
       ) {
-        errorResponse += `\n\n*Google Cloud Code is not authenticated. Type \`/login antigravity\` to authenticate via browser OAuth.*`;
-      } else if (errMsg.includes("fetch failed") || errMsg.includes("ECONNREFUSED")) {
-        errorResponse += `\n\n*Unable to connect to model proxy (${baseURL || "http://127.0.0.1:8787"}). Type \`/auth\` to check credentials or ensure Neo is running.*`;
+        errorResponse += `\n\ncodex session is not authenticated. run \`codex login\` in terminal or type \`/login codex <token>\`.`;
+      } else if (
+        lowErr.includes("openrouter") &&
+        (lowErr.includes("api key") ||
+          lowErr.includes("unauthorized") ||
+          lowErr.includes("401") ||
+          lowErr.includes("not configured"))
+      ) {
+        errorResponse += `\n\nopenrouter is not configured. type \`/login openrouter <api-key>\`.`;
+      } else if (
+        lowErr.includes("antigravity") &&
+        (lowErr.includes("credentials") ||
+          lowErr.includes("keychain") ||
+          lowErr.includes("401") ||
+          lowErr.includes("403") ||
+          lowErr.includes("unauthenticated"))
+      ) {
+        errorResponse += `\n\ngoogle cloud code is not authenticated. type \`/login antigravity\`.`;
+      } else if (lowErr.includes("fetch failed") || lowErr.includes("econnrefused")) {
+        errorResponse += `\n\nunable to connect to neo proxy (${baseURL || "http://127.0.0.1:8787"}). ensure neo daemon is running.`;
       }
       setThreads((prev) =>
         prev.map((t) =>

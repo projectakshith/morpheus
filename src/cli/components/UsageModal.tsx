@@ -200,6 +200,18 @@ export const MODEL_USAGE_CATALOG: ModelUsageSpec[] = [
     pricing: "$0.00 (local metal/gpu)",
   },
   {
+    id: "local/qwen3:14b",
+    name: "local/qwen3:14b",
+    category: "local",
+    provider: "local ollama (11434)",
+    contextLimit: "32,768 tokens",
+    contextTokens: 32768,
+    costTier: "zero cost (on-device)",
+    rateLimit: "unlimited (hardware)",
+    badge: "32k · local",
+    pricing: "$0.00 (local metal/gpu)",
+  },
+  {
     id: "local/llama3.3",
     name: "local/llama3.3",
     category: "local",
@@ -212,6 +224,66 @@ export const MODEL_USAGE_CATALOG: ModelUsageSpec[] = [
     pricing: "$0.00 (local metal/gpu)",
   },
   {
+    id: "cloud/nvidia/nemotron-3.5-lightning:free",
+    name: "cloud/nvidia/nemotron-3.5-lightning:free",
+    category: "cloud",
+    provider: "nvidia / openrouter",
+    contextLimit: "128,000 tokens",
+    contextTokens: 128000,
+    costTier: "$0.00 / 100% free",
+    rateLimit: "free tier",
+    badge: "128k · free",
+    pricing: "$0.00 (openrouter free)",
+  },
+  {
+    id: "cloud/nvidia/nemotron-3-ultra-550b-a55b:free",
+    name: "cloud/nvidia/nemotron-3-ultra-550b-a55b:free",
+    category: "cloud",
+    provider: "nvidia / openrouter",
+    contextLimit: "128,000 tokens",
+    contextTokens: 128000,
+    costTier: "$0.00 / 100% free",
+    rateLimit: "free tier",
+    badge: "128k · free",
+    pricing: "$0.00 (openrouter free)",
+  },
+  {
+    id: "cloud/qwen/qwen3.8-27b:free",
+    name: "cloud/qwen/qwen3.8-27b:free",
+    category: "cloud",
+    provider: "openrouter cloud",
+    contextLimit: "32,768 tokens",
+    contextTokens: 32768,
+    costTier: "$0.00 / 100% free",
+    rateLimit: "free tier",
+    badge: "32k · free",
+    pricing: "$0.00 (openrouter free)",
+  },
+  {
+    id: "cloud/deepseek/deepseek-r1:free",
+    name: "cloud/deepseek/deepseek-r1:free",
+    category: "cloud",
+    provider: "openrouter cloud",
+    contextLimit: "128,000 tokens",
+    contextTokens: 128000,
+    costTier: "$0.00 / 100% free",
+    rateLimit: "free tier",
+    badge: "128k · free",
+    pricing: "$0.00 (openrouter free)",
+  },
+  {
+    id: "cloud/meta-llama/llama-3.3-70b-instruct:free",
+    name: "cloud/meta-llama/llama-3.3-70b-instruct:free",
+    category: "cloud",
+    provider: "openrouter cloud",
+    contextLimit: "128,000 tokens",
+    contextTokens: 128000,
+    costTier: "$0.00 / 100% free",
+    rateLimit: "free tier",
+    badge: "128k · free",
+    pricing: "$0.00 (openrouter free)",
+  },
+  {
     id: "cloud/stealth/space-bunny-alpha",
     name: "cloud/stealth/space-bunny-alpha",
     category: "cloud",
@@ -220,8 +292,8 @@ export const MODEL_USAGE_CATALOG: ModelUsageSpec[] = [
     contextTokens: 1000000,
     costTier: "openrouter credits",
     rateLimit: "tier bound",
-    badge: "1m · credits",
-    pricing: "openrouter api",
+    badge: "1m · free",
+    pricing: "$0.00 (openrouter free)",
   },
 ];
 
@@ -276,69 +348,40 @@ export function UsageModal({
     const fetchUsage = async () => {
       const rootBase = baseURL.endsWith("/v1") ? baseURL.slice(0, -3) : baseURL;
       try {
-        const res = await fetch(`${rootBase}/v1/auth/status?provider=openrouter`, {
-          signal: AbortSignal.timeout(600),
+        const res = await fetch(`${rootBase}/v1/auth/status`, {
+          signal: AbortSignal.timeout(800),
         });
         if (res.ok) {
           const data = (await res.json()) as {
-            details?: { usage?: number; limit?: number; isFreeTier?: boolean };
+            providers?: Array<{
+              provider: string;
+              authenticated: boolean;
+              details?: Record<string, any>;
+            }>;
           };
-          if (data.details && isMounted) {
-            const used = data.details.usage ? `$${data.details.usage.toFixed(6)}` : "$0.00";
-            const lim = data.details.limit ? `$${data.details.limit.toFixed(2)}` : "$1.00";
-            setOpenRouterUsage(`${used} / ${lim}`);
-          }
-        }
-      } catch {}
-
-      try {
-        const clRes = await fetch(`${rootBase}/v1/auth/status?provider=claude`, {
-          signal: AbortSignal.timeout(600),
-        });
-        if (clRes.ok) {
-          const data = (await clRes.json()) as {
-            authenticated?: boolean;
-            details?: {
-              fiveHourUsedPercent?: string;
-              weeklyUsedPercent?: string;
-              fiveHourResetsAt?: string;
-              subscriptionType?: string;
-            };
-          };
-          if (data.authenticated && data.details && isMounted) {
-            setClaudeStatus({
-              fiveHour: data.details.fiveHourUsedPercent,
-              weekly: data.details.weeklyUsedPercent,
-              resetsAt: data.details.fiveHourResetsAt,
-              subscriptionType: data.details.subscriptionType,
-            });
-          }
-        }
-      } catch {}
-
-      try {
-        const cRes = await fetch(`${rootBase}/v1/auth/status?provider=codex`, {
-          signal: AbortSignal.timeout(600),
-        });
-        if (cRes.ok) {
-          const data = (await cRes.json()) as {
-            authenticated?: boolean;
-            details?: {
-              fiveHourUsedPercent?: string;
-              weeklyUsedPercent?: string;
-              fiveHourResetsAt?: string;
-              availableResetCredits?: number;
-              planType?: string;
-            };
-          };
-          if (data.authenticated && data.details && isMounted) {
-            setCodexStatus({
-              fiveHour: data.details.fiveHourUsedPercent,
-              weekly: data.details.weeklyUsedPercent,
-              resetsAt: data.details.fiveHourResetsAt,
-              resetCredits: data.details.availableResetCredits,
-              planType: data.details.planType,
-            });
+          if (Array.isArray(data.providers) && isMounted) {
+            for (const p of data.providers) {
+              if (p.provider === "openrouter" && p.details) {
+                const used = p.details.usage ? `$${Number(p.details.usage).toFixed(6)}` : "$0.00";
+                const lim = p.details.limit ? `$${Number(p.details.limit).toFixed(2)}` : "$1.00";
+                setOpenRouterUsage(`${used} / ${lim}`);
+              } else if (p.provider === "claude" && p.authenticated && p.details) {
+                setClaudeStatus({
+                  fiveHour: p.details.fiveHourUsedPercent,
+                  weekly: p.details.weeklyUsedPercent,
+                  resetsAt: p.details.fiveHourResetsAt,
+                  subscriptionType: p.details.subscriptionType,
+                });
+              } else if (p.provider === "codex" && p.authenticated && p.details) {
+                setCodexStatus({
+                  fiveHour: p.details.fiveHourUsedPercent,
+                  weekly: p.details.weeklyUsedPercent,
+                  resetsAt: p.details.fiveHourResetsAt,
+                  resetCredits: p.details.availableResetCredits,
+                  planType: p.details.planType,
+                });
+              }
+            }
           }
         }
       } catch {}
@@ -406,6 +449,16 @@ export function UsageModal({
     completionTokens,
     totalTokens,
   } : null);
+
+  const maxVisible = Math.max(4, bodyHeight - 2);
+  let startIdx = 0;
+  if (MODEL_USAGE_CATALOG.length > maxVisible) {
+    startIdx = Math.min(
+      Math.max(0, selectedIndex - Math.floor(maxVisible / 2)),
+      MODEL_USAGE_CATALOG.length - maxVisible
+    );
+  }
+  const visibleModels = MODEL_USAGE_CATALOG.slice(startIdx, startIdx + maxVisible);
 
   return (
     <Box
@@ -480,16 +533,19 @@ export function UsageModal({
 
       {/* Main Two-Column Layout */}
       <Box flexDirection="row" width={totalContentWidth} height={bodyHeight} overflow="hidden">
-        {/* Left Column: Models List */}
+        {/* Left Column: Models List with sliding window */}
         <Box flexDirection="column" width={leftWidth} height={bodyHeight} overflow="hidden">
-          <Box marginBottom={1}>
+          <Box marginBottom={1} justifyContent="space-between">
             <Text bold color={theme.secondary}>
               models & rate limits
             </Text>
+            <Text color={theme.muted}>
+              {selectedIndex + 1}/{MODEL_USAGE_CATALOG.length}
+            </Text>
           </Box>
 
-          {MODEL_USAGE_CATALOG.map((m, idx) => {
-            const isSelected = idx === selectedIndex;
+          {visibleModels.map((m) => {
+            const isSelected = m.id === selectedModel.id;
             const isActive =
               m.id === currentModel ||
               (m.id === "flash" && currentModel.includes("flash"));
