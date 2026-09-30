@@ -73,15 +73,72 @@ interface StripCell {
   bold?: boolean;
 }
 
+const GREET_END = 0.24;
+const DECODING_KINDS = new Set<StripCell["kind"]>(["title", "sub", "num"]);
+
+function clamp01(v: number): number {
+  return Math.max(0, Math.min(1, v));
+}
+
+function glyphAt(i: number, tick: number, seed = 0): string {
+  return MATRIX_CHARS[Math.floor(fastNoise(i + seed * 31, tick) * MATRIX_CHARS.length) % MATRIX_CHARS.length];
+}
+
+/* Typed text whose next few characters flicker as glyphs before settling. */
+function decodeText(text: string, t: number, tick: number, seed = 0): Array<{ ch: string; settled: boolean } | null> {
+  const chars = Array.from(text);
+  if (t >= 1) return chars.map((ch) => ({ ch, settled: true }));
+  const done = Math.floor(t * chars.length);
+  return chars.map((ch, i) => {
+    if (i < done) return { ch, settled: true };
+    if (i < done + 3 && ch !== " ") return { ch: glyphAt(i, tick, seed), settled: false };
+    return null;
+  });
+}
+
+function buildGreeting(W: number, H: number, t: number, tick: number, name: string): FeedLine[] {
+  const rows = [{ text: `wake up, ${name}…`, t: clamp01(t / 0.75), fg: "210;255;195" }];
+  const y0 = Math.floor(H / 2);
+  const typing = rows.findIndex((r) => r.t < 1);
+  const cursorOn = ((tick >> 3) & 1) === 0;
+  const lines: FeedLine[] = [];
+  for (let y = 0; y < H; y++) {
+    let line = "\x1b[48;2;13;12;12m";
+    const rowIdx = y === y0 ? 0 : -1;
+    const row = rows[rowIdx];
+    if (row && (row.t > 0 || rowIdx === 0)) {
+      const x0 = Math.max(0, Math.floor((W - Array.from(row.text).length) / 2));
+      const decoded = decodeText(row.text, row.t, tick, rowIdx);
+      let body = "";
+      let width = 0;
+      for (const c of decoded) {
+        if (!c) break;
+        body += c.settled ? `\x1b[38;2;${row.fg};1m${c.ch}` : `\x1b[38;2;95;145;75m${c.ch}`;
+        width++;
+      }
+      const cursor = typing === rowIdx && cursorOn ? "\x1b[38;2;165;240;135m▌" : " ";
+      line += " ".repeat(x0) + body + cursor + " ".repeat(Math.max(0, W - x0 - width - 1));
+    } else {
+      line += " ".repeat(W);
+    }
+    lines.push({ id: `full_intro_${y}`, threadId: "intro", node: <Text wrap="truncate-end">{line + "\x1b[0m"}</Text> });
+  }
+  return lines;
+}
+
 export function buildFullScreenIntro(
   width: number,
   height: number,
   progress: number,
   tick: number,
-  quote?: string
+  quote?: string,
+  greetName?: string
 ): FeedLine[] {
   const W = Math.max(20, width);
   const H = Math.max(8, height);
+
+  if (greetName && progress < GREET_END) return buildGreeting(W, H, progress / GREET_END, tick, greetName);
+  const rainProgress = greetName ? (progress - GREET_END) / (1 - GREET_END) : progress;
 
   const rawQuote = quote || MATRIX_QUOTES[0];
   const fullQuote = `· ${rawQuote} ·`;
@@ -169,7 +226,7 @@ export function buildFullScreenIntro(
       const seed = colHash(x);
       const delay = seed * 0.15;
       const speed = 0.9 + colHash(x * 5 + 19) * 0.25;
-      const rainP = Math.min(1, Math.max(0, (progress - delay) / 0.42));
+      const rainP = Math.min(1, Math.max(0, (rainProgress - delay) / 0.42));
       const frontier = rainP * (H + 6) * speed;
       const dist = frontier - y;
 
@@ -193,7 +250,11 @@ export function buildFullScreenIntro(
 
         bgCode = `\x1b[48;2;${gr};${gg};${gb}m`;
 
-        if (cell) {
+        const decoding = cell && DECODING_KINDS.has(cell.kind) && dist < 7 && fastNoise(x, y + tick) < (7 - dist) / 4;
+        if (cell && decoding) {
+          ch = glyphAt(x, tick, y);
+          fgCode = "\x1b[38;2;152;217;118;1m";
+        } else if (cell) {
           ch = cell.ch;
           if (cell.kind === "badge") {
             fgCode = "\x1b[38;2;255;255;255;1m";

@@ -9,6 +9,7 @@ import { Header } from "./Header.js";
 import { StatusBar } from "./StatusBar.js";
 import { DiffColumn, RIGHT_FOOTER_HEIGHT } from "./DiffColumn.js";
 import { buildActivityLines } from "./activity/buildActivityLines.js";
+import { greetingName } from "../intro/greeting.js";
 import { InputBox, POPUP_TOTAL_HEIGHT } from "./InputBox.js";
 import { ModelSelector, AVAILABLE_MODELS } from "./ModelSelector.js";
 import { SessionSelector } from "./SessionSelector.js";
@@ -51,6 +52,7 @@ export function App({
   const [isIntroActive, setIsIntroActive] = useState(!initialTask && !resumeSessionId);
   const [introProgress, setIntroProgress] = useState(0);
   const [introTick, setIntroTick] = useState(0);
+  const greetName = useMemo(() => greetingName(), []);
   const [matrixQuote] = useState(() => MATRIX_QUOTES[Math.floor(Math.random() * MATRIX_QUOTES.length)]);
 
   const isModelSelectorOpen = activeModal === "model";
@@ -307,8 +309,8 @@ export function App({
 
   const fullIntroLines = useMemo(() => {
     if (!isIntroActive) return [];
-    return buildFullScreenIntro(terminalWidth, terminalHeight, introProgress, introTick, matrixQuote);
-  }, [isIntroActive, terminalWidth, terminalHeight, introProgress, introTick, matrixQuote]);
+    return buildFullScreenIntro(terminalWidth, terminalHeight, introProgress, introTick, matrixQuote, REDUCED_MOTION ? undefined : greetName);
+  }, [isIntroActive, terminalWidth, terminalHeight, introProgress, introTick, matrixQuote, greetName]);
 
   if (isIntroActive) {
     return (
