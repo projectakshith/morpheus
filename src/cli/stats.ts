@@ -1,5 +1,6 @@
 import type { Thread, FileEditRecord } from "./types.js";
 import type { TokenUsage } from "../core/types.js";
+import type { SessionSummary } from "../core/session.js";
 
 export interface SessionStats {
   turns: number;
@@ -58,5 +59,28 @@ export function accumulateUsage(prev: TokenUsage | undefined, turn: TokenUsage, 
     peakContextTokens: Math.max(prev?.peakContextTokens ?? 0, turn.peakContextTokens ?? 0),
     contextLimit: turn.contextLimit ?? prev?.contextLimit,
     byModel,
+  };
+}
+
+export interface UsageTotals {
+  today: number;
+  allTime: number;
+  sessions: number;
+}
+
+export function usageTotals(
+  saved: SessionSummary[],
+  current: { id: string; totalTokens: number },
+  now: number = Date.now()
+): UsageTotals {
+  const day = new Date(now).toDateString();
+  const others = saved.filter((s) => s.id !== current.id);
+  const today = others.filter((s) => new Date(s.updatedAt).toDateString() === day).reduce((n, s) => n + s.totalTokens, 0);
+  const allTime = others.reduce((n, s) => n + s.totalTokens, 0);
+  const counted = current.totalTokens > 0 ? 1 : 0;
+  return {
+    today: today + current.totalTokens,
+    allTime: allTime + current.totalTokens,
+    sessions: others.length + counted,
   };
 }

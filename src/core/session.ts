@@ -35,6 +35,14 @@ export interface SessionSummary {
   updatedAt: number;
   model: string;
   turnCount: number;
+  totalTokens: number;
+}
+
+/* Sessions saved before usage totals accumulated kept only the last turn in totalTokens; byModel was always cumulative. */
+export function sessionTokenTotal(usage?: TokenUsage): number {
+  if (!usage) return 0;
+  const perModel = Object.values(usage.byModel ?? {}).reduce((n, m) => n + m.totalTokens, 0);
+  return perModel > 0 ? perModel : usage.totalTokens ?? 0;
 }
 
 export function generateSessionId(): string {
@@ -144,6 +152,7 @@ export async function listSessions(cwd?: string, limit = 20): Promise<SessionSum
           updatedAt: data.updatedAt || data.createdAt || 0,
           model: data.model || "",
           turnCount: Array.isArray(data.threads) ? data.threads.length : 0,
+          totalTokens: sessionTokenTotal(data.tokenUsage),
         });
       } catch {
         continue;

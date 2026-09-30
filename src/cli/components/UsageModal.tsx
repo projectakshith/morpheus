@@ -5,7 +5,8 @@ import type { TokenUsage } from "../../core/types.js";
 import { truncateCells } from "../utils/cells.js";
 import type { Thread, FileEditRecord } from "../types.js";
 import { PROVIDERS, providerLabel, type ProviderKey } from "../providers.js";
-import { sessionStats, formatWorkTime } from "../stats.js";
+import { sessionStats, formatWorkTime, usageTotals } from "../stats.js";
+import { listSessions, sessionTokenTotal, type SessionSummary } from "../../core/session.js";
 import {
   Modal,
   Split,
@@ -357,6 +358,16 @@ export function UsageModal({
     resetCredits?: number;
     planType?: string;
   } | null>(null);
+  const [savedSessions, setSavedSessions] = useState<SessionSummary[] | null>(null);
+
+  useEffect(() => {
+    let mounted = true;
+    listSessions(undefined, Number.MAX_SAFE_INTEGER).then((list) => mounted && setSavedSessions(list));
+    return () => {
+      mounted = false;
+    };
+  }, []);
+
   const [claudeStatus, setClaudeStatus] = useState<{
     fiveHour?: string;
     weekly?: string;
@@ -446,7 +457,8 @@ export function UsageModal({
   const isActive = (m: ModelUsageSpec) => m.id === currentModel || (m.id === "flash" && currentModel.includes("flash"));
   const activeSpec = ordered.find(isActive);
 
-  const totalTokens = usage?.totalTokens ?? 0;
+  const totalTokens = sessionTokenTotal(usage);
+  const totals = savedSessions ? usageTotals(savedSessions, { id: sessionId, totalTokens }) : null;
   const peakContext = usage?.peakContextTokens ?? 0;
   const contextLimit = usage?.contextLimit ?? 128_000;
   const maxModelTokens = Math.max(1, ...ordered.map(tokensOf));
@@ -478,7 +490,6 @@ export function UsageModal({
   return (
     <Modal
       title="usage"
-      context="this session"
       width={width}
       height={height}
       hints={[
@@ -494,6 +505,19 @@ export function UsageModal({
         const perTurn = stats.turns > 0 ? Math.round(totalTokens / stats.turns) : 0;
         return (
           <>
+            <Box height={1} flexShrink={0}>
+              <Text wrap="truncate-end">
+                <Text bold color={theme.accentBright}>{formatTokens(totalTokens)}</Text>
+                <Text color={theme.muted}> this session</Text>
+                <Text color={theme.border}>{"   ·   "}</Text>
+                <Text bold color={theme.text}>{totals ? formatTokens(totals.today) : "…"}</Text>
+                <Text color={theme.muted}> today</Text>
+                <Text color={theme.border}>{"   ·   "}</Text>
+                <Text bold color={theme.text}>{totals ? formatTokens(totals.allTime) : "…"}</Text>
+                <Text color={theme.muted}>{totals ? ` all time across ${totals.sessions} session${totals.sessions === 1 ? "" : "s"}` : " all time"}</Text>
+              </Text>
+            </Box>
+            <Box height={1} flexShrink={0} />
             <Box flexDirection="row" height={5} flexShrink={0}>
               <Box flexDirection="column" width={colW} marginRight={colGap}>
                 <Lines height={5}>
@@ -537,7 +561,7 @@ export function UsageModal({
             <Box height={1} flexShrink={0} />
             <Split
               width={w}
-              height={Math.max(3, h - 6)}
+              height={Math.max(3, h - 8)}
               left={(lw, lh) => (
                 <RowList
                   height={lh}

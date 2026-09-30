@@ -1,6 +1,8 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { accumulateUsage, sessionStats } from "../src/cli/stats";
+import { accumulateUsage, sessionStats, usageTotals } from "../src/cli/stats";
+import { sessionTokenTotal } from "../src/core/session";
+import { dayLabel } from "../src/cli/components/SessionSelector";
 import { providerOf } from "../src/cli/providers";
 import { groupEditsByFile, parseDiffLines } from "../src/cli/components/DiffModal";
 import { buildActivityLines } from "../src/cli/components/activity/buildActivityLines";
@@ -80,4 +82,32 @@ test("an open edit card folds from its header and opens the full diff from its b
   assert.equal(header?.toolId, "e1");
   assert.equal(header?.editFilePath, undefined);
   assert.ok(body.length > 0 && body.every((l) => l.editFilePath === "src/a.ts"));
+});
+
+test("dayLabel groups by calendar day, not by 24h windows", () => {
+  const now = new Date(2026, 8, 30, 9, 0).getTime();
+  assert.equal(dayLabel(new Date(2026, 8, 30, 0, 5).getTime(), now), "today");
+  assert.equal(dayLabel(new Date(2026, 8, 29, 23, 55).getTime(), now), "yesterday");
+  assert.equal(dayLabel(new Date(2026, 8, 26, 12, 0).getTime(), now), "saturday");
+  assert.equal(dayLabel(new Date(2026, 8, 20, 12, 0).getTime(), now), "sep 20");
+  assert.equal(dayLabel(new Date(2025, 11, 31, 12, 0).getTime(), now), "dec 31, 2025");
+});
+
+test("sessionTokenTotal trusts cumulative per-model numbers over an old last-turn total", () => {
+  assert.equal(sessionTokenTotal(undefined), 0);
+  assert.equal(sessionTokenTotal({ promptTokens: 0, completionTokens: 0, totalTokens: 500 }), 500);
+  assert.equal(
+    sessionTokenTotal({ promptTokens: 0, completionTokens: 0, totalTokens: 500, byModel: { a: { promptTokens: 0, completionTokens: 0, totalTokens: 3000 }, b: { promptTokens: 0, completionTokens: 0, totalTokens: 1000 } } }),
+    4000
+  );
+});
+
+test("usageTotals counts the open session live, once", () => {
+  const now = new Date(2026, 8, 30, 12, 0).getTime();
+  const saved = [
+    { id: "open", title: "", cwd: "", createdAt: 0, updatedAt: now, model: "", turnCount: 1, totalTokens: 10 },
+    { id: "a", title: "", cwd: "", createdAt: 0, updatedAt: now - 3_600_000, model: "", turnCount: 1, totalTokens: 100 },
+    { id: "b", title: "", cwd: "", createdAt: 0, updatedAt: now - 3 * 86_400_000, model: "", turnCount: 1, totalTokens: 1000 },
+  ];
+  assert.deepEqual(usageTotals(saved, { id: "open", totalTokens: 50 }, now), { today: 150, allTime: 1150, sessions: 3 });
 });
