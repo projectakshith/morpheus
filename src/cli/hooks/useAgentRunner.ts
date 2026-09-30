@@ -15,6 +15,26 @@ import {
   loadSession,
   loadLatestSession,
 } from "../../core/session.js";
+import { Operator } from "../../provider/operator.js";
+import {
+  PLACEHOLDER_TITLE,
+  generateSessionTitle,
+  isTrivialPrompt,
+  promptTitle,
+  type TitleSource,
+} from "../../core/sessionTitle.js";
+
+/* Model title attempts per session, so a model that can't title doesn't cost a call every turn. */
+const MAX_TITLE_ATTEMPTS = 2;
+
+/* Sessions saved before titles were tracked: keep any real title rather than
+ * risk overwriting a manual rename; only placeholder-ish ones can be upgraded. */
+function inferTitleSource(title: string | undefined): TitleSource {
+  if (!title || title === "Resumed Session" || title === "Untitled Session" || title === PLACEHOLDER_TITLE) {
+    return "placeholder";
+  }
+  return isTrivialPrompt(title) ? "placeholder" : "generated";
+}
 
 export interface AgentRunnerOptions {
   currentModel: string;
@@ -88,7 +108,7 @@ export function useAgentRunner({
   const [history, setHistory] = useState<ChatMessage[]>([]);
   const [findings, setFindings] = useState<Finding[]>([]);
   const [sessionId, setSessionId] = useState<string>(() => generateSessionId());
-  const [sessionTitle, setSessionTitle] = useState<string>("New Session");
+  const [sessionTitle, setSessionTitle] = useState<string>(PLACEHOLDER_TITLE);
   const [queuedCount, setQueuedCount] = useState<number>(0);
 
   const abortControllerRef = useRef<AbortController | null>(null);
@@ -109,6 +129,24 @@ export function useAgentRunner({
   fileEditsRef.current = fileEdits;
   const usageRef = useRef(usage);
   usageRef.current = usage;
+  const sessionIdRef = useRef(sessionId);
+  sessionIdRef.current = sessionId;
+
+  /* The title lives in a ref too, so async saves never write a stale closure copy. */
+  const titleRef = useRef<{ title: string; source: TitleSource }>({
+    title: PLACEHOLDER_TITLE,
+    source: "placeholder",
+  });
+  const titleAttemptsRef = useRef<{ sessionId: string; count: number; inFlight: boolean }>({
+    sessionId: "",
+    count: 0,
+    inFlight: false,
+  });
+
+  const applyTitle = (title: string, source: TitleSource) => {
+    titleRef.current = { title, source };
+    setSessionTitle(title);
+  };
 
   /* Resume session if requested on boot */
   useEffect(() => {
@@ -124,7 +162,7 @@ export function useAgentRunner({
 
       if (data) {
         setSessionId(data.id);
-        setSessionTitle(data.title || "Resumed Session");
+        applyTitle(data.title || PLACEHOLDER_TITLE, data.titleSource ?? inferTitleSource(data.title));
         sessionCreatedAtRef.current = data.createdAt || Date.now();
         if (data.model) setCurrentModel(data.model);
         if (data.threads) setThreads(data.threads);
@@ -143,7 +181,7 @@ export function useAgentRunner({
     if (!data) return false;
 
     setSessionId(data.id);
-    setSessionTitle(data.title || "Resumed Session");
+    applyTitle(data.title || PLACEHOLDER_TITLE, data.titleSource ?? inferTitleSource(data.title));
     sessionCreatedAtRef.current = data.createdAt || Date.now();
     if (data.model) setCurrentModel(data.model);
     setThreads(data.threads || []);
@@ -157,13 +195,65 @@ export function useAgentRunner({
   const resetSession = () => {
     const newId = generateSessionId();
     setSessionId(newId);
-    setSessionTitle("New Session");
+    applyTitle(PLACEHOLDER_TITLE, "placeholder");
     sessionCreatedAtRef.current = Date.now();
     setThreads([]);
     setHistory([]);
     setFindings([]);
     setFileEdits([]);
     setUsage(undefined);
+  };
+
+  /* Saves from refs, for writes that happen outside a turn (renames, late titles). */
+  const persistSession = (id: string = sessionIdRef.current) => {
+    saveSession({
+      id,
+      title: titleRef.current.title,
+      titleSource: titleRef.current.source,
+      cwd: process.cwd(),
+      createdAt: sessionCreatedAtRef.current,
+      updatedAt: Date.now(),
+      model: currentModel,
+      threads: threadsRef.current,
+      history: historyRef.current,
+      findings: findingsRef.current,
+      fileEdits: fileEditsRef.current,
+      tokenUsage: usageRef.current,
+    }).catch(() => {});
+  };
+
+  /* A user rename is final: generated titles never replace it. */
+  const renameSession = (title: string) => {
+    applyTitle(title, "manual");
+    persistSession();
+  };
+
+  /* Upgrades the title once per session, in the background, after a turn that
+   * says what the session is about. Failure just keeps the current title. */
+  const maybeGenerateTitle = (prompt: string, response: string) => {
+    const { source } = titleRef.current;
+    if (source === "generated" || source === "manual" || isTrivialPrompt(prompt) || !response.trim()) return;
+
+    const targetSession = sessionIdRef.current;
+    const attempts = titleAttemptsRef.current;
+    if (attempts.sessionId !== targetSession) {
+      titleAttemptsRef.current = { sessionId: targetSession, count: 0, inFlight: false };
+    }
+    const current = titleAttemptsRef.current;
+    if (current.inFlight || current.count >= MAX_TITLE_ATTEMPTS) return;
+    current.count++;
+    current.inFlight = true;
+
+    const operator = new Operator({ model: currentModel, baseURL, isLocal });
+    generateSessionTitle(operator, prompt, response).then((title) => {
+      if (titleAttemptsRef.current.sessionId === targetSession) titleAttemptsRef.current.inFlight = false;
+      /* The user may have switched sessions or renamed this one while we waited. */
+      if (!title || sessionIdRef.current !== targetSession) return;
+      const latest = titleRef.current.source;
+      if (latest === "generated" || latest === "manual") return;
+      applyTitle(title, "generated");
+      persistSession(targetSession);
+    });
   };
 
   const drainNextQueuedTask = () => {
@@ -227,7 +317,7 @@ export function useAgentRunner({
       sessionId,
       setSessionId,
       sessionTitle,
-      setSessionTitle,
+      setSessionTitle: renameSession,
       setHistory,
       setFindings,
       setFileEdits,
@@ -273,29 +363,10 @@ export function useAgentRunner({
   const executeAgentTurn = async (taskText: string, existingThreadId?: string) => {
     isExecutingRef.current = true;
 
-    let currentTitle = sessionTitle;
-    const isTrivialTitle =
-      !sessionTitle ||
-      sessionTitle === "New Session" ||
-      sessionTitle.length <= 8 ||
-      /^(hi+|hey+|hello+|so+|yo+|test|uh+|sup|ok|okay)\b/i.test(sessionTitle);
-
-    if (isTrivialTitle && taskText.trim().length > 0) {
-      const cleanPrompt = taskText
-        .replace(/^\/\w+\s*/, "")
-        .replace(/[#*`_~]/g, "")
-        .replace(/\s+/g, " ")
-        .trim();
-      if (cleanPrompt.length > 0) {
-        if (cleanPrompt.length <= 48) {
-          currentTitle = cleanPrompt;
-        } else {
-          const truncated = cleanPrompt.slice(0, 48);
-          const lastSpace = truncated.lastIndexOf(" ");
-          currentTitle = lastSpace > 24 ? `${truncated.slice(0, lastSpace)}…` : `${truncated}…`;
-        }
-        setSessionTitle(currentTitle);
-      }
+    /* Instant title from the first descriptive prompt; a model title may replace it after the turn. */
+    if (titleRef.current.source === "placeholder") {
+      const instant = promptTitle(taskText);
+      if (instant) applyTitle(instant, "prompt");
     }
 
     setStatus("running");
@@ -713,12 +784,16 @@ export function useAgentRunner({
         setUsage(result.usage);
       }
       setStatus(result.error ? "error" : result.aborted ? "aborted" : "idle");
+      if (!result.error && !result.aborted) {
+        maybeGenerateTitle(taskText, result.text);
+      }
 
       /* Auto-save session asynchronously after successful turn */
       setTimeout(() => {
         saveSession({
           id: sessionId,
-          title: currentTitle,
+          title: titleRef.current.title,
+          titleSource: titleRef.current.source,
           cwd: process.cwd(),
           createdAt: sessionCreatedAtRef.current,
           updatedAt: Date.now(),
@@ -790,7 +865,8 @@ export function useAgentRunner({
       setTimeout(() => {
         saveSession({
           id: sessionId,
-          title: currentTitle,
+          title: titleRef.current.title,
+          titleSource: titleRef.current.source,
           cwd: process.cwd(),
           createdAt: sessionCreatedAtRef.current,
           updatedAt: Date.now(),

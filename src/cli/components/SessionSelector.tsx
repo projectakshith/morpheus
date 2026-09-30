@@ -2,6 +2,12 @@ import React, { useState, useEffect } from "react";
 import { Box, Text, useInput } from "ink";
 import { listSessions, deleteSession, type SessionSummary } from "../../core/session.js";
 import { theme } from "../theme.js";
+import { displayTitle } from "../../core/sessionTitle.js";
+
+function fitText(text: string, max: number): string {
+  if (max <= 1) return "";
+  return text.length <= max ? text : `${text.slice(0, max - 1).trimEnd()}…`;
+}
 
 function formatAge(timestamp: number): string {
   if (!timestamp) return "unknown";
@@ -175,6 +181,10 @@ export function SessionSelector({
             sessions.slice(0, Math.max(5, bodyHeight - 4)).map((s, idx) => {
               const isSelected = selectedIndex === idx + 1;
               const isCurrent = s.id === currentSessionId;
+              const age = formatAge(s.updatedAt);
+              /* Row = padding + marker + title + gap + age [+ active tag]. */
+              const titleWidth = leftWidth - 4 - age.length - (isCurrent ? 9 : 0);
+              const title = fitText(displayTitle(s.title, s.createdAt), titleWidth);
 
               return (
                 <Box
@@ -197,12 +207,12 @@ export function SessionSelector({
                           : theme.text
                       }
                     >
-                      {s.id.slice(0, 18)}
+                      {title}
                     </Text>
                   </Box>
 
                   <Box flexDirection="row">
-                    <Text color={theme.muted}>{formatAge(s.updatedAt)}</Text>
+                    <Text color={theme.muted}>{age}</Text>
                     {isCurrent && (
                       <Text color={theme.accentBright} bold>
                         {" "}[active]
@@ -272,14 +282,12 @@ export function SessionSelector({
                   <Text color={theme.text}>{selectedSession.model}</Text>
                 </Box>
               )}
-              {selectedSession.title && (
-                <Box marginTop={1} flexDirection="column">
-                  <Text color={theme.muted}>task title:</Text>
-                  <Text color={theme.text}>
-                    "{selectedSession.title.slice(0, 100)}{selectedSession.title.length > 100 ? "…" : ""}"
-                  </Text>
-                </Box>
-              )}
+              <Box marginTop={1} flexDirection="column">
+                <Text color={theme.muted}>task title:</Text>
+                <Text color={theme.text}>
+                  "{fitText(displayTitle(selectedSession.title, selectedSession.createdAt), 100)}"
+                </Text>
+              </Box>
 
               <Box marginTop={1} paddingX={1} borderStyle="single" borderColor={selectedSession.id === currentSessionId ? theme.accentBright : theme.border}>
                 <Text color={selectedSession.id === currentSessionId ? theme.accentBright : theme.secondary} bold>

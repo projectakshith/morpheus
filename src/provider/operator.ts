@@ -32,6 +32,8 @@ export interface ChatStreamOptions {
   tools?: Record<string, ToolDefinition> | ToolDefinition[];
   system?: string;
   abortSignal?: AbortSignal;
+  /* Caps output for small side requests; defaults to the completion limit. */
+  maxTokens?: number;
 }
 
 interface AccumulatedToolCall {
@@ -322,7 +324,7 @@ export class Operator {
       model: this.model,
       messages: rawMessages,
       stream: true,
-      max_tokens: this.getCompletionTokenLimit(),
+      max_tokens: Math.min(options.maxTokens ?? Infinity, this.getCompletionTokenLimit()),
       stream_options: { include_usage: true },
     };
 
