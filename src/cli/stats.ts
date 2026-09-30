@@ -51,6 +51,16 @@ export function accumulateUsage(prev: TokenUsage | undefined, turn: TokenUsage, 
     promptTokens: cur.promptTokens + turn.promptTokens,
     completionTokens: cur.completionTokens + turn.completionTokens,
     totalTokens: cur.totalTokens + turn.totalTokens,
+    ...((cur.cachedInputTokens ?? 0) + (turn.cachedInputTokens ?? 0) > 0
+      ? { cachedInputTokens: (cur.cachedInputTokens ?? 0) + (turn.cachedInputTokens ?? 0) }
+      : {}),
+    ...((cur.cacheCreationInputTokens ?? 0) + (turn.cacheCreationInputTokens ?? 0) > 0
+      ? { cacheCreationInputTokens: (cur.cacheCreationInputTokens ?? 0) + (turn.cacheCreationInputTokens ?? 0) }
+      : {}),
+    ...((cur.reasoningTokens ?? 0) + (turn.reasoningTokens ?? 0) > 0
+      ? { reasoningTokens: (cur.reasoningTokens ?? 0) + (turn.reasoningTokens ?? 0) }
+      : {}),
+    ...((cur.reported === false || turn.reported === false) ? { reported: false } : {}),
   };
   return {
     promptTokens: (prev?.promptTokens ?? 0) + turn.promptTokens,
@@ -58,6 +68,16 @@ export function accumulateUsage(prev: TokenUsage | undefined, turn: TokenUsage, 
     totalTokens: (prev?.totalTokens ?? 0) + turn.totalTokens,
     peakContextTokens: Math.max(prev?.peakContextTokens ?? 0, turn.peakContextTokens ?? 0),
     contextLimit: turn.contextLimit ?? prev?.contextLimit,
+    ...((prev?.reported === false || turn.reported === false) ? { reported: false } : {}),
+    ...((prev?.cachedInputTokens ?? 0) + (turn.cachedInputTokens ?? 0) > 0
+      ? { cachedInputTokens: (prev?.cachedInputTokens ?? 0) + (turn.cachedInputTokens ?? 0) }
+      : {}),
+    ...((prev?.cacheCreationInputTokens ?? 0) + (turn.cacheCreationInputTokens ?? 0) > 0
+      ? { cacheCreationInputTokens: (prev?.cacheCreationInputTokens ?? 0) + (turn.cacheCreationInputTokens ?? 0) }
+      : {}),
+    ...((prev?.reasoningTokens ?? 0) + (turn.reasoningTokens ?? 0) > 0
+      ? { reasoningTokens: (prev?.reasoningTokens ?? 0) + (turn.reasoningTokens ?? 0) }
+      : {}),
     byModel,
   };
 }

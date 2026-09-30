@@ -22,6 +22,9 @@ test("Tools: write_file and read_file", async (t) => {
       content: "line one\nline two\nline three",
     });
     assert.match(res.output, /Successfully wrote/);
+    assert.equal(res.metadata?.changed, true);
+    const repeated = await writeFile({ filePath: targetFile, content: "line one\nline two\nline three" });
+    assert.equal(repeated.metadata?.changed, false, "same-content overwrites are not workspace progress");
   });
 
   await t.test("read_file returns numbered lines", async () => {
@@ -86,10 +89,19 @@ test("Tools: construct truncation spillover", async () => {
 
   assert.equal(res.truncated, true);
   assert.match(res.content, /\[TRUNCATED\]/);
+  assert.match(res.content, /model has not seen this content/);
   assert.ok(res.outputPath);
 
   const diskContent = await fs.readFile(res.outputPath, "utf-8");
   assert.equal(diskContent.split("\n").length, 3000);
+});
+
+test("Tool output limits can be set per tool", async () => {
+  const output = "x".repeat(20 * 1024);
+  const grep = await truncateOutput(output, { toolName: "grep_code" });
+  const read = await truncateOutput(output, { toolName: "read_file" });
+  assert.equal(grep.truncated, true);
+  assert.equal(read.truncated, false);
 });
 
 test("Tools: bash execution", async () => {
@@ -154,4 +166,3 @@ test("Tools: record_finding", async (t) => {
     assert.match(String(res), /Error: Both 'topic' and 'takeaway' are required/);
   });
 });
-

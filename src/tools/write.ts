@@ -21,6 +21,7 @@ export async function writeFile(
     }
   }
   const dir = path.dirname(fullPath);
+  const previousContent = (await exists(fullPath)) ? await fs.readFile(fullPath, "utf-8") : undefined;
 
   await fs.mkdir(dir, { recursive: true });
   await fs.writeFile(fullPath, params.content, "utf-8");
@@ -30,6 +31,7 @@ export async function writeFile(
 
   return {
     output: `Successfully wrote ${bytes} bytes (${lineCount} lines) to ${params.filePath}`,
+    metadata: { changed: previousContent !== params.content },
   };
 }
 

@@ -44,8 +44,32 @@ export interface TokenUsage {
   totalTokens: number;
   peakContextTokens?: number;
   contextLimit?: number;
-  byModel?: Record<string, { promptTokens: number; completionTokens: number; totalTokens: number }>;
+  /** False means the provider did not supply accounting; counts are not locally estimated. */
+  reported?: boolean;
+  /** Provider-reported cached input token detail (already included in promptTokens where applicable). */
+  cachedInputTokens?: number;
+  cacheCreationInputTokens?: number;
+  reasoningTokens?: number;
+  byModel?: Record<string, {
+    promptTokens: number;
+    completionTokens: number;
+    totalTokens: number;
+    cachedInputTokens?: number;
+    cacheCreationInputTokens?: number;
+    reasoningTokens?: number;
+    reported?: boolean;
+  }>;
 }
+
+export type AgentStopReason =
+  | "completed"
+  | "aborted"
+  | "error"
+  | "token_budget"
+  | "context_limit"
+  | "step_limit"
+  | "loop_guard"
+  | "truncated_tool";
 
 export interface Finding {
   topic: string;
@@ -90,6 +114,10 @@ export interface AgentOptions {
   baseURL?: string;
   isLocal?: boolean;
   maxSteps?: number;
+  /** Cumulative input + output token budget for one run. Defaults to 300,000. */
+  maxTotalTokens?: number;
+  /** Stable only for the lifetime of this run; used for provider-side prompt-cache affinity. */
+  promptCacheKey?: string;
   abortSignal?: AbortSignal;
   findings?: Finding[];
   onStepStart?: (stepNumber: number) => void;
@@ -108,6 +136,7 @@ export interface AgentRunResult {
   steps: number;
   messages: ChatMessage[];
   usage: TokenUsage;
+  stopReason?: AgentStopReason;
   findings?: Finding[];
   aborted?: boolean;
   error?: string;

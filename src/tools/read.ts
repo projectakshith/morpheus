@@ -58,7 +58,7 @@ export async function readFile(
       .map((e) => (e.isDirectory() ? `${e.name}/` : e.name))
       .sort()
       .join("\n");
-    const result = await truncateOutput(listing);
+    const result = await truncateOutput(listing, { toolName: "read_file" });
     return { output: result.content };
   }
 
@@ -79,7 +79,7 @@ export async function readFile(
       ? `\n\n[Lines ${offset}-${Math.min(offset + limit - 1, lines.length)} of ${lines.length} shown. Use offset=${offset + limit} to read more]`
       : "";
 
-  const result = await truncateOutput(`${numbered}${pagination}`);
+  const result = await truncateOutput(`${numbered}${pagination}`, { toolName: "read_file" });
   return { output: result.content };
 }
 

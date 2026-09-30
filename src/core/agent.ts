@@ -1,3 +1,5 @@
+import { createHash, randomUUID } from "node:crypto";
+import path from "node:path";
 import { createTools } from "../tools/index";
 import { Operator } from "../provider/operator";
 import { gatherContext, buildSystemPrompt } from "./context";
@@ -10,6 +12,8 @@ import { ToolCallGuard } from "./callGuard";
 import { matchSkills } from "./skills";
 import {
   calculateInitialStepBudget,
+  calculateExplorationTokenBudget,
+  DEFAULT_RUN_TOKEN_BUDGET,
   shouldExtendStepBudget,
   DEFAULT_HARD_MAX_STEPS,
 } from "./stepBudget";
@@ -20,6 +24,7 @@ import type {
   Finding,
   Skill,
   TokenUsage,
+  AgentStopReason,
   ToolCall,
   ToolDefinition,
 } from "./types";
@@ -27,9 +32,18 @@ import type {
 export { isConversationalStall };
 
 const DOOM_LOOP_THRESHOLD = 3;
-const REPEAT_ONLY_STEP_THRESHOLD = 3;
+const NO_PROGRESS_STEP_THRESHOLD = 3;
 const MAX_FINDINGS = 12;
 const MAX_FINDING_TAKEAWAY_CHARS = 320;
+type AgentLifecycle = "exploring" | "synthesizing" | "finished";
+const WORKSPACE_TOOLS = new Set([
+  "read_file",
+  "write_file",
+  "edit_file",
+  "list_dir",
+  "grep_code",
+  "outline_code",
+]);
 
 function compactFindingText(value: string, limit: number): string {
   const compact = value.replace(/\s+/g, " ").trim();
@@ -43,7 +57,7 @@ async function executeToolSafely(
   args: Record<string, unknown>,
   cwd: string,
   signal?: AbortSignal
-): Promise<{ output: string; isError: boolean }> {
+): Promise<{ output: string; isError: boolean; metadata?: Record<string, unknown> }> {
   try {
     const res = await tool.execute(args, cwd, signal);
     const output = typeof res === "string" ? res : res.output;
@@ -51,7 +65,7 @@ async function executeToolSafely(
       output,
       typeof res === "object" ? (res.metadata?.isError as boolean) : undefined
     );
-    return { output, isError };
+    return { output, isError, metadata: typeof res === "object" ? res.metadata : undefined };
   } catch (err: unknown) {
     return { output: `Error: ${formatError(err)}`, isError: true };
   }
@@ -100,10 +114,13 @@ export async function runAgent(
     apiKey: options.apiKey,
     baseURL: options.baseURL,
     isLocal: options.isLocal,
+    promptCacheKey: options.promptCacheKey ?? randomUUID(),
   });
+  const runTokenBudget = options.maxTotalTokens ?? DEFAULT_RUN_TOKEN_BUDGET;
+  const explorationTokenBudget = calculateExplorationTokenBudget(runTokenBudget);
 
   const logger = new SessionLogger();
-  await logger.init(prompt, cwd, operator.getModel());
+  await logger.init(prompt, cwd, operator.getModel(), runTokenBudget);
 
   const workingMessages: ChatMessage[] = [
     ...compactHistory(history),
@@ -126,23 +143,39 @@ export async function runAgent(
   let currentPromptTokens = 0;
   let peakContextTokens = 0;
   let wasAborted = false;
+  let lifecycle: AgentLifecycle = "exploring";
+  let stopReason: AgentStopReason | undefined;
+  let usageReported = true;
+  let usageEvents = 0;
+  let cachedInputTokens = 0;
+  let cacheCreationInputTokens = 0;
+  let reasoningTokens = 0;
   const userSpecifiedMaxSteps = options.maxSteps;
   let maxSteps = calculateInitialStepBudget({ prompt, userSpecifiedMaxSteps });
   const hardMaxSteps = userSpecifiedMaxSteps ?? DEFAULT_HARD_MAX_STEPS;
   const tokenSafetyCeiling = operator.getContextSafetyLimit();
   let hasModifiedFiles = false;
   const callGuard = new ToolCallGuard(cwd);
-  let consecutiveRepeatOnlySteps = 0;
+  let consecutiveNoProgressSteps = 0;
+  const usefulResultFingerprints = new Set<string>();
   let conversationalNudges = 0;
 
-  while (stepCount < maxSteps) {
+  while (lifecycle === "exploring" && stepCount < maxSteps) {
     if (options.abortSignal?.aborted) {
       wasAborted = true;
       break;
     }
 
+    const tokensUsed = promptTokens + completionTokens;
+    if (tokensUsed >= explorationTokenBudget) {
+      loopStopReason = `The run used ${tokensUsed.toLocaleString()} tokens. Stopping exploration at the ${runTokenBudget.toLocaleString()} token budget so I can summarize what I found.`;
+      stopReason = "token_budget";
+      break;
+    }
+
     /* Context safety ceiling guard: halt tool loop if active context window approaches provider limit */
     if (currentPromptTokens >= tokenSafetyCeiling) {
+      stopReason = "context_limit";
       break;
     }
 
@@ -184,16 +217,21 @@ export async function runAgent(
           options.onTextDelta?.(event.text);
         } else if (event.type === "reasoning" && event.reasoning) {
           options.onReasoningDelta?.(event.reasoning);
-          await logger.logReasoning(event.reasoning);
         } else if (event.type === "tool_call" && event.toolCall) {
           toolCalls.push(event.toolCall);
         } else if (event.type === "usage" && event.usage) {
+          usageEvents++;
+          usageReported &&= event.usage.reported !== false;
           currentPromptTokens = event.usage.promptTokens;
           if (currentPromptTokens > peakContextTokens) {
             peakContextTokens = currentPromptTokens;
           }
           promptTokens += event.usage.promptTokens;
           completionTokens += event.usage.completionTokens;
+          cachedInputTokens += event.usage.cachedInputTokens ?? 0;
+          cacheCreationInputTokens += event.usage.cacheCreationInputTokens ?? 0;
+          reasoningTokens += event.usage.reasoningTokens ?? 0;
+          await logger.logUsage(stepCount, event.usage.promptTokens, event.usage.completionTokens, event.usage);
         } else if (event.type === "finish") {
           finishReason = event.finishReason;
         }
@@ -204,6 +242,8 @@ export async function runAgent(
         break;
       }
       finalError = formatError(err);
+      stopReason = "error";
+      usageReported = false;
       fullResponse = accumulatedResponse;
       if (assistantContent.trim() && toolCalls.length === 0) {
         fullResponse = accumulatedResponse + assistantContent;
@@ -246,6 +286,7 @@ export async function runAgent(
           continue;
         }
         loopStopReason = "The provider truncated a tool call twice before it could be executed.";
+        stopReason = "truncated_tool";
         break;
       }
 
@@ -316,8 +357,7 @@ export async function runAgent(
       tool_calls: toolCalls,
     });
 
-    /* A step is a repeat if every call in it duplicates one made since the workspace
-     * last changed, whether skipped or re-run after compaction hid its result. */
+    /* Count new, in-workspace information as progress; unique command text alone is insufficient. */
     let stepMadeProgress = false;
 
     for (const toolCall of toolCalls) {
@@ -336,6 +376,7 @@ export async function runAgent(
       let outputStr = "";
       let isError = false;
       let toolExecuted = false;
+      let toolChanged = true;
 
       if (loopStopReason) {
         outputStr = "[Tool skipped because the run was stopped.]";
@@ -345,18 +386,41 @@ export async function runAgent(
       } else if (!targetTool) {
         outputStr = `Error: Tool '${toolName}' not found. Available tools: ${Object.keys(tools).join(", ")}`;
         isError = true;
-        stepMadeProgress = true;
       } else {
         const verdict = callGuard.check(toolName, parsedArgs, stepCount, compactedMessages);
-        if (!verdict.repeat) stepMadeProgress = true;
         if (verdict.skip) {
           outputStr = verdict.notice;
         } else {
           toolExecuted = true;
+          const toolStartedAt = Date.now();
           const executed = await executeToolSafely(targetTool, parsedArgs, cwd, options.abortSignal);
           outputStr = executed.output;
           isError = executed.isError;
+          toolChanged = executed.metadata?.changed !== false;
+          const toolDurationMs = Date.now() - toolStartedAt;
           callGuard.record(toolName, parsedArgs, stepCount, toolCall.id, outputStr, isError);
+          const requestedPath =
+            parsedArgs.filePath ?? parsedArgs.dirPath ?? parsedArgs.searchPath ?? parsedArgs.path;
+          const candidatePath = typeof requestedPath === "string" ? path.resolve(cwd, requestedPath) : cwd;
+          const relativePath = path.relative(cwd, candidatePath);
+          const isInsideWorkspace =
+            relativePath !== ".." && !relativePath.startsWith(`..${path.sep}`) && !path.isAbsolute(relativePath);
+          const inScope = !WORKSPACE_TOOLS.has(toolName) || isInsideWorkspace;
+          const isNoOpMutation = (toolName === "write_file" || toolName === "edit_file") && !toolChanged;
+          const usefulOutput =
+            !isError &&
+            !isNoOpMutation &&
+            outputStr.trim().length > 0 &&
+            !outputStr.includes("completed with no output") && !outputStr.includes("cancelled");
+          if (usefulOutput && inScope) {
+            const stableOutput = outputStr.replace(/tool_\d+_[a-z0-9]+\.log/g, "tool_<id>.log");
+            const fingerprint = createHash("sha256").update(`${toolName}\0${stableOutput}`).digest("hex");
+            if (!usefulResultFingerprints.has(fingerprint)) {
+              usefulResultFingerprints.add(fingerprint);
+              stepMadeProgress = true;
+            }
+          }
+          await logger.logToolTiming(stepCount, toolName, toolDurationMs, Buffer.byteLength(outputStr, "utf8"));
         }
       }
 
@@ -364,8 +428,13 @@ export async function runAgent(
       await logger.logToolResult(stepCount, toolName, outputStr, isError);
       if (options.abortSignal?.aborted) wasAborted = true;
 
-      if (toolExecuted && !isError && (toolName === "edit_file" || toolName === "write_file")) {
-        hasModifiedFiles = true;
+      if (toolExecuted && !isError && (toolName === "edit_file" || toolName === "write_file") &&
+        typeof parsedArgs.filePath === "string") {
+        const targetPath = path.resolve(cwd, parsedArgs.filePath);
+        const relativePath = path.relative(cwd, targetPath);
+        const isInsideWorkspace =
+          relativePath !== ".." && !relativePath.startsWith(`..${path.sep}`) && !path.isAbsolute(relativePath);
+        if (isInsideWorkspace && toolChanged) hasModifiedFiles = true;
       }
 
       if (isError) {
@@ -392,12 +461,14 @@ export async function runAgent(
 
       if (consecutiveErrors >= DOOM_LOOP_THRESHOLD) {
         loopStopReason = `Tool '${toolName}' returned the same error ${DOOM_LOOP_THRESHOLD} times in a row.`;
+        stopReason = "loop_guard";
       }
     }
 
-    consecutiveRepeatOnlySteps = stepMadeProgress ? 0 : consecutiveRepeatOnlySteps + 1;
-    if (!loopStopReason && consecutiveRepeatOnlySteps >= REPEAT_ONLY_STEP_THRESHOLD) {
-      loopStopReason = `The last ${REPEAT_ONLY_STEP_THRESHOLD} steps only repeated tool calls whose results were already available.`;
+    consecutiveNoProgressSteps = stepMadeProgress ? 0 : consecutiveNoProgressSteps + 1;
+    if (!loopStopReason && consecutiveNoProgressSteps >= NO_PROGRESS_STEP_THRESHOLD) {
+      loopStopReason = `No useful new tool results were produced in the last ${NO_PROGRESS_STEP_THRESHOLD} steps. Summarizing now.`;
+      stopReason = "loop_guard";
     }
 
     if (wasAborted || loopStopReason) break;
@@ -417,7 +488,12 @@ export async function runAgent(
     }
   }
 
+  if (!completedCleanly && !wasAborted && !finalError && !loopStopReason && !stopReason && stepCount >= maxSteps) {
+    stopReason = "step_limit";
+  }
+
   if (!wasAborted && !finalError && (!completedCleanly || !fullResponse.trim())) {
+    lifecycle = "synthesizing";
     stepCount++;
     options.onStepStart?.(stepCount);
     await logger.logStep(stepCount);
@@ -462,14 +538,19 @@ export async function runAgent(
           options.onTextDelta?.(event.text);
         } else if (event.type === "reasoning" && event.reasoning) {
           options.onReasoningDelta?.(event.reasoning);
-          await logger.logReasoning(event.reasoning);
         } else if (event.type === "usage" && event.usage) {
+          usageEvents++;
+          usageReported &&= event.usage.reported !== false;
           currentPromptTokens = event.usage.promptTokens;
           if (currentPromptTokens > peakContextTokens) {
             peakContextTokens = currentPromptTokens;
           }
           promptTokens += event.usage.promptTokens;
           completionTokens += event.usage.completionTokens;
+          cachedInputTokens += event.usage.cachedInputTokens ?? 0;
+          cacheCreationInputTokens += event.usage.cacheCreationInputTokens ?? 0;
+          reasoningTokens += event.usage.reasoningTokens ?? 0;
+          await logger.logUsage(stepCount, event.usage.promptTokens, event.usage.completionTokens, event.usage);
         } else if (event.type === "finish") {
           finalFinishReason = event.finishReason;
         }
@@ -489,6 +570,8 @@ export async function runAgent(
         wasAborted = true;
       } else {
         finalError = formatError(err);
+        stopReason = "error";
+        usageReported = false;
         if (fullResponse.trim()) {
           workingMessages.push({ role: "assistant", content: fullResponse });
         }
@@ -498,7 +581,13 @@ export async function runAgent(
 
   if (!wasAborted && !finalError && !fullResponse.trim()) {
     finalError = "The model returned no final response.";
+    stopReason = "error";
   }
+
+  if (wasAborted) stopReason = "aborted";
+  else if (finalError) stopReason = "error";
+  else if (!stopReason) stopReason = "completed";
+  lifecycle = "finished";
 
   const usage: TokenUsage = {
     promptTokens,
@@ -506,10 +595,15 @@ export async function runAgent(
     totalTokens: promptTokens + completionTokens,
     peakContextTokens,
     contextLimit: operator.getNumCtx(),
+    ...((usageEvents === 0 || !usageReported) ? { reported: false } : {}),
+    ...(cachedInputTokens > 0 ? { cachedInputTokens } : {}),
+    ...(cacheCreationInputTokens > 0 ? { cacheCreationInputTokens } : {}),
+    ...(reasoningTokens > 0 ? { reasoningTokens } : {}),
   };
 
   options.onUsage?.(usage);
   await logger.logAssistantResponse(fullResponse);
+  await logger.logStopReason(stopReason);
   await logger.logFinish(usage, wasAborted);
 
   return {
@@ -517,6 +611,7 @@ export async function runAgent(
     steps: stepCount,
     messages: workingMessages,
     usage,
+    stopReason,
     findings,
     aborted: wasAborted,
     error: finalError,

@@ -81,7 +81,7 @@ export async function executeHttpRequest(
       formattedBody || "(empty body)",
     ];
 
-    const result = await truncateOutput(outputLines.join("\n"));
+    const result = await truncateOutput(outputLines.join("\n"), { toolName: "http_request" });
     return {
       output: result.content,
       metadata: {

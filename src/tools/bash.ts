@@ -122,7 +122,7 @@ export async function executeBash(
         let outputPath: string | undefined;
         try {
           if (partialOutput) {
-            const captured = await truncateOutput(partialOutput);
+            const captured = await truncateOutput(partialOutput, { toolName: "bash" });
             diagnostic = captured.content;
             outputPath = captured.outputPath;
           }
@@ -154,7 +154,7 @@ export async function executeBash(
       );
       let processed: Awaited<ReturnType<typeof truncateOutput>>;
       try {
-        processed = await truncateOutput(raw);
+        processed = await truncateOutput(raw, { toolName: "bash" });
       } catch (err: unknown) {
         const preview = raw.slice(0, 50 * 1024);
         finish({

@@ -78,7 +78,7 @@ test("Intra-step compaction prevents token snowball", () => {
   const tool1 = compacted.find((m) => m.tool_call_id === "call_1");
   assert.ok(tool1);
   assert.ok(
-    typeof tool1.content === "string" && tool1.content.includes("[Operator: bash | 41 lines, done]"),
+    typeof tool1.content === "string" && tool1.content.includes("[Operator: bash | 41 lines omitted from context; this output is no longer visible."),
     "Early exploratory tool output must be tombstoned"
   );
 

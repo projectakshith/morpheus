@@ -22,27 +22,36 @@ afterEach(() => {
   globalThis.fetch = realFetch;
 });
 
-function sse(chunks: object[]): Response {
+function sse(chunks: object[], usage?: { promptTokens: number; completionTokens: number }): Response {
+  if (usage) {
+    chunks.push({
+      usage: {
+        prompt_tokens: usage.promptTokens,
+        completion_tokens: usage.completionTokens,
+        total_tokens: usage.promptTokens + usage.completionTokens,
+      },
+    });
+  }
   const body = chunks.map((c) => `data: ${JSON.stringify(c)}\n\n`).join("") + "data: [DONE]\n\n";
   return new Response(body, { status: 200 });
 }
 
-function toolCall(id: string, name: string, args: object): Response {
+function toolCall(id: string, name: string, args: object, usage?: { promptTokens: number; completionTokens: number }): Response {
   return sse([
     { choices: [{ delta: { tool_calls: [{ index: 0, id, function: { name, arguments: JSON.stringify(args) } }] } }] },
     { choices: [{ delta: {}, finish_reason: "tool_calls" }] },
-  ]);
+  ], usage);
 }
 
-function text(content: string): Response {
+function text(content: string, usage?: { promptTokens: number; completionTokens: number }): Response {
   return sse([
     { choices: [{ delta: { content } }] },
     { choices: [{ delta: {}, finish_reason: "stop" }] },
-  ]);
+  ], usage);
 }
 
-function scriptModel(turns: Response[]): { requests: Array<{ messages: any[]; tools?: unknown[] }> } {
-  const requests: Array<{ messages: any[]; tools?: unknown[] }> = [];
+function scriptModel(turns: Response[]): { requests: Array<{ messages: any[]; tools?: unknown[]; prompt_cache_key?: string }> } {
+  const requests: Array<{ messages: any[]; tools?: unknown[]; prompt_cache_key?: string }> = [];
   globalThis.fetch = (async (_url: unknown, init?: RequestInit) => {
     requests.push(JSON.parse(String(init?.body)));
     const next = turns[requests.length - 1];
@@ -64,7 +73,7 @@ test("Agent stops a redundant-call loop and still returns a final answer", async
     text("Summary after stop."),
   ]);
 
-  const result = await runAgent("inspect big.ts", [], { cwd: workspace, baseURL: "https://example.test/v1", apiKey: "k" });
+  const result = await runAgent("inspect big.ts", [], { cwd: workspace, baseURL: "http://127.0.0.1:8787/v1", apiKey: "k" });
 
   assert.equal(result.error, undefined);
   assert.equal(result.text, "Summary after stop.");
@@ -79,7 +88,31 @@ test("Agent stops a redundant-call loop and still returns a final answer", async
   const finalRequest = requests[requests.length - 1];
   assert.equal(requests.length, 5);
   assert.equal(finalRequest.tools, undefined, "final synthesis must not offer tools");
-  assert.match(finalRequest.messages[finalRequest.messages.length - 1].content, /only repeated tool calls/);
+  assert.match(finalRequest.messages[finalRequest.messages.length - 1].content, /No useful new tool results/);
+  assert.equal(result.stopReason, "loop_guard");
+  assert.ok(requests.every((request) => request.prompt_cache_key === requests[0].prompt_cache_key));
+  assert.ok(requests[0].prompt_cache_key, "provider prompt cache key is stable within the run");
+});
+
+test("Agent treats repeated output from novel commands as no progress", async () => {
+  scriptModel([
+    toolCall("b1", "bash", { command: "printf stable" }),
+    toolCall("b2", "bash", { command: "printf '%s' stable" }),
+    toolCall("b3", "bash", { command: "echo -n stable" }),
+    toolCall("b4", "bash", { command: "printf \"%s\" stable" }),
+    text("Stopped the unproductive loop."),
+  ]);
+
+  const result = await runAgent("inspect the project", [], { cwd: workspace, baseURL: "https://example.test/v1", apiKey: "k" });
+  assert.equal(result.text, "Stopped the unproductive loop.");
+  assert.equal(result.stopReason, "loop_guard");
+});
+
+test("Agent marks provider usage unavailable instead of reporting zero as measured", async () => {
+  scriptModel([text("Answered without usage metadata.")]);
+  const result = await runAgent("say hello", [], { cwd: workspace, baseURL: "https://example.test/v1", apiKey: "k" });
+  assert.equal(result.usage.promptTokens, 0);
+  assert.equal(result.usage.reported, false);
 });
 
 test("Agent re-reads a file once compaction has hidden the earlier contents", async () => {
@@ -114,6 +147,26 @@ test("Agent reruns a command after bash changed the workspace", async () => {
   assert.ok(rerun);
   assert.doesNotMatch(String(rerun.content), /already run|just run/);
   assert.match(String(rerun.content), /a\s+b/);
+});
+
+test("Agent stops exploration at its token budget and reserves a final answer", async () => {
+  const { requests } = scriptModel([
+    toolCall("budget_read", "read_file", { filePath: "big.ts" }, { promptTokens: 850, completionTokens: 20 }),
+    text("Partial findings, summarized.", { promptTokens: 100, completionTokens: 20 }),
+  ]);
+
+  const result = await runAgent("inspect the source", [], {
+    cwd: workspace,
+    baseURL: "https://example.test/v1",
+    apiKey: "k",
+    maxTotalTokens: 1_000,
+  });
+
+  assert.equal(result.text, "Partial findings, summarized.");
+  assert.equal(requests.length, 2, "do not start another tool cycle after crossing the exploration budget");
+  assert.match(requests[1].messages.at(-1).content, /token budget/);
+  assert.equal(result.usage.totalTokens, 990);
+  assert.equal(result.stopReason, "token_budget");
 });
 
 function textThenTool(content: string, id: string, name: string, args: object): Response {

@@ -14,6 +14,7 @@ export interface OperatorConfig {
   numCtx?: number;
   maxRetries?: number;
   retryBaseDelayMs?: number;
+  promptCacheKey?: string;
 }
 
 export interface StreamEvent {
@@ -31,6 +32,7 @@ export interface ChatStreamOptions {
   system?: string;
   abortSignal?: AbortSignal;
   maxTokens?: number;
+  promptCacheKey?: string;
 }
 
 interface AccumulatedToolCall {
@@ -182,10 +184,12 @@ export class Operator {
   private numCtx: number;
   private maxRetries: number;
   private retryBaseDelayMs: number;
+  private promptCacheKey?: string;
 
   constructor(config: OperatorConfig = {}) {
     this.maxRetries = Math.max(0, config.maxRetries ?? 3);
     this.retryBaseDelayMs = Math.max(0, config.retryBaseDelayMs ?? 1000);
+    this.promptCacheKey = config.promptCacheKey;
 
     /* Differentiate Neo router proxy on port 8787 from local Ollama */
     const isNeo = Boolean(
@@ -328,6 +332,9 @@ export class Operator {
     if (formattedTools) {
       payload.tools = formattedTools;
     }
+    const promptCacheKey = options.promptCacheKey ?? this.promptCacheKey;
+    const isNeoProxy = /(?:localhost|127\.0\.0\.1):8787(?:\/|$)/.test(this.baseURL);
+    if (promptCacheKey && isNeoProxy) payload.prompt_cache_key = promptCacheKey;
 
     const response = await this.fetchWithRetry(`${this.baseURL}/chat/completions`, {
       method: "POST",
@@ -356,6 +363,7 @@ export class Operator {
     let buffer = "";
     const toolCallsByIndex = new Map<number, AccumulatedToolCall>();
     let lastFinishReason: string | undefined;
+    let usageSeen = false;
 
     try {
       while (true) {
@@ -374,6 +382,7 @@ export class Operator {
 
           const dataStr = trimmed.slice(5).trim();
           if (dataStr === "[DONE]") {
+            if (!usageSeen) yield { type: "usage", usage: { promptTokens: 0, completionTokens: 0, totalTokens: 0, reported: false } };
             if (lastFinishReason === "length") {
               toolCallsByIndex.clear();
             } else {
@@ -402,12 +411,21 @@ export class Operator {
           }
 
           if (parsed.usage) {
+            usageSeen = true;
             yield {
               type: "usage",
               usage: {
                 promptTokens: parsed.usage.prompt_tokens ?? 0,
                 completionTokens: parsed.usage.completion_tokens ?? 0,
                 totalTokens: parsed.usage.total_tokens ?? 0,
+                reported:
+                  parsed.usage.reported !== false &&
+                  (typeof parsed.usage.prompt_tokens === "number" || typeof parsed.usage.completion_tokens === "number"),
+                cachedInputTokens:
+                  parsed.usage.cached_input_tokens ?? parsed.usage.prompt_tokens_details?.cached_tokens,
+                cacheCreationInputTokens: parsed.usage.cache_creation_input_tokens,
+                reasoningTokens:
+                  parsed.usage.reasoning_tokens ?? parsed.usage.completion_tokens_details?.reasoning_tokens,
               },
             };
           }
@@ -466,6 +484,7 @@ export class Operator {
           }
         }
       }
+      if (!usageSeen) yield { type: "usage", usage: { promptTokens: 0, completionTokens: 0, totalTokens: 0, reported: false } };
     } finally {
       reader.releaseLock();
     }

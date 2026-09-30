@@ -22,6 +22,27 @@ test("accumulateUsage adds turns up instead of replacing the session totals", ()
   assert.equal(perModel, second.totalTokens, "per-model totals match the session total");
 });
 
+test("accumulateUsage preserves cache and missing-provider usage details", () => {
+  const usage = accumulateUsage(undefined, {
+    promptTokens: 140,
+    completionTokens: 20,
+    totalTokens: 160,
+    cachedInputTokens: 30,
+    cacheCreationInputTokens: 10,
+  }, "claude/model");
+  const next = accumulateUsage(usage, {
+    promptTokens: 50,
+    completionTokens: 0,
+    totalTokens: 50,
+    reported: false,
+  }, "codex/model");
+  assert.equal(next.cachedInputTokens, 30);
+  assert.equal(next.cacheCreationInputTokens, 10);
+  assert.equal(next.reported, false);
+  assert.equal(next.byModel?.["claude/model"].cachedInputTokens, 30);
+  assert.equal(next.byModel?.["codex/model"].reported, false);
+});
+
 test("sessionStats counts agent turns, calls, time and changes", () => {
   const threads: Thread[] = [
     { id: "a", index: 1, prompt: "fix", response: "", isExpanded: false, status: "completed", stepCount: 2, startTime: 0, durationMs: 4000, model: "flash",

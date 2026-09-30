@@ -161,7 +161,7 @@ export function compactToolOutput(
     return `${preserved}\n... [${remainingCount} lines pruned for token efficiency]`;
   }
 
-  return `[Operator: ${toolName} | ${lines.length} lines, done]`;
+  return `[Operator: ${toolName} | ${lines.length} lines omitted from context; this output is no longer visible. Re-run with targeted arguments to recover details.]`;
 }
 
 export function compactHistory(

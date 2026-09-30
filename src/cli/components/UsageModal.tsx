@@ -524,7 +524,7 @@ export function UsageModal({
                   <Section label="tokens" width={colW} />
                   <Text wrap="truncate-end">
                     <Text bold color={theme.accentBright}>{formatTokens(totalTokens)}</Text>
-                    <Text color={theme.muted}>{`  ${formatTokens(usage?.promptTokens)} in · ${formatTokens(usage?.completionTokens)} out`}</Text>
+                    <Text color={theme.muted}>{`  ${formatTokens(usage?.promptTokens)} in · ${formatTokens(usage?.completionTokens)} out${usage?.cachedInputTokens ? ` · ${formatTokens(usage.cachedInputTokens)} cached` : ""}${usage?.reported === false ? " · provider usage unavailable" : ""}`}</Text>
                   </Text>
                   <KeyValue k="per turn" v={`${formatTokens(perTurn)} avg`} width={colW} keyWidth={11} />
                   <Meter value={peakContext} max={contextLimit} width={colW} label={`${formatTokens(peakContext)}/${formatTokens(contextLimit)} ctx`} />
@@ -623,7 +623,7 @@ export function UsageModal({
                       width={rw}
                     />
                     {modelUsage ? (
-                      <KeyValue k="in / out" v={`${formatTokens(modelUsage.promptTokens)} / ${formatTokens(modelUsage.completionTokens)}`} width={rw} />
+                      <KeyValue k="in / out" v={`${formatTokens(modelUsage.promptTokens)} / ${formatTokens(modelUsage.completionTokens)}${modelUsage.cachedInputTokens ? ` · ${formatTokens(modelUsage.cachedInputTokens)} cached` : ""}${modelUsage.reported === false ? " · unreported" : ""}`} width={rw} />
                     ) : null}
                     {turns > 0 ? <KeyValue k="turns" v={String(turns)} width={rw} /> : null}
                     <KeyValue k="context" v={selectedModel.contextLimit} width={rw} />

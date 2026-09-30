@@ -78,7 +78,7 @@ describe("compactHistory (Micro-Compaction Engine)", () => {
     if (turn1Result.type === "tool-result") {
       assert.ok(
         typeof turn1Result.result === "string" &&
-          turn1Result.result.includes("[Operator: bash | 51 lines, done]"),
+          turn1Result.result.includes("[Operator: bash | 51 lines omitted from context; this output is no longer visible."),
         "Historical successful output should be replaced with tombstone"
       );
     }

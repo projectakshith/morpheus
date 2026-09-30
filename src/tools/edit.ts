@@ -114,6 +114,7 @@ export async function editFile(
 
   return {
     output: `Successfully applied edits to ${params.filePath}.\n\n${patchLines}`,
+    metadata: { changed: raw !== finalContent },
   };
 }
 

@@ -2,10 +2,22 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import {
   calculateInitialStepBudget,
+  calculateExplorationTokenBudget,
   shouldExtendStepBudget,
   DEFAULT_MAX_STEPS,
   DEFAULT_HARD_MAX_STEPS,
+  DEFAULT_RUN_TOKEN_BUDGET,
+  MAX_FINAL_RESPONSE_RESERVE,
 } from "../src/core/stepBudget";
+
+test("exploration budget reserves tokens for the final answer", () => {
+  assert.equal(
+    calculateExplorationTokenBudget(DEFAULT_RUN_TOKEN_BUDGET),
+    DEFAULT_RUN_TOKEN_BUDGET - MAX_FINAL_RESPONSE_RESERVE
+  );
+  assert.equal(calculateExplorationTokenBudget(1_000), 850);
+  assert.equal(calculateExplorationTokenBudget(0), 0);
+});
 
 test("calculateInitialStepBudget assigns generous runway without keyword guessing", () => {
   assert.equal(

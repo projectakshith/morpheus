@@ -6,6 +6,13 @@ export const CONSTRUCT_DIR = path.join(os.homedir(), ".morpheus", "construct");
 export const MAX_LINES = 2000;
 export const MAX_BYTES = 32 * 1024;
 
+const TOOL_OUTPUT_LIMITS: Record<string, { maxLines: number; maxBytes: number }> = {
+  bash: { maxLines: 1200, maxBytes: 24 * 1024 },
+  grep_code: { maxLines: 800, maxBytes: 16 * 1024 },
+  http_request: { maxLines: 1200, maxBytes: 24 * 1024 },
+  read_file: { maxLines: 2000, maxBytes: 32 * 1024 },
+};
+
 export interface TruncationResult {
   content: string;
   truncated: boolean;
@@ -19,10 +26,11 @@ export interface TruncationResult {
  */
 export async function truncateOutput(
   text: string,
-  options: { maxLines?: number; maxBytes?: number } = {}
+  options: { maxLines?: number; maxBytes?: number; toolName?: string } = {}
 ): Promise<TruncationResult> {
-  const maxLines = options.maxLines ?? MAX_LINES;
-  const maxBytes = options.maxBytes ?? MAX_BYTES;
+  const toolLimit = options.toolName ? TOOL_OUTPUT_LIMITS[options.toolName] : undefined;
+  const maxLines = options.maxLines ?? toolLimit?.maxLines ?? MAX_LINES;
+  const maxBytes = options.maxBytes ?? toolLimit?.maxBytes ?? MAX_BYTES;
 
   const lines = text.split("\n");
   const totalBytes = Buffer.byteLength(text, "utf-8");
@@ -62,7 +70,7 @@ export async function truncateOutput(
 
   const omittedLines = Math.max(0, tailStart - headEnd - 1);
   const omittedBytes = Math.max(0, totalBytes - headBytes - tailBytes);
-  const marker = `... [${omittedLines} lines, ${omittedBytes} bytes omitted] ...`;
+  const marker = `... [${omittedLines} lines, ${omittedBytes} bytes omitted; the model has not seen this content] ...`;
   const previewLines = [...headLines, marker, ...tailLines];
 
   await fs.mkdir(CONSTRUCT_DIR, { recursive: true });
@@ -71,7 +79,7 @@ export async function truncateOutput(
   await fs.writeFile(fullPath, text, "utf-8");
 
   const preview = previewLines.join("\n");
-  const hint = `Captured output saved to: ${fullPath}\nUse grep or read_file with offset/limit to inspect sections.`;
+  const hint = `Captured output saved to: ${fullPath}\nThe omitted content was not shown to the model. Use grep or read_file with offset/limit to inspect it.`;
 
   return {
     content: `${preview}\n\n... [TRUNCATED] ...\n\n${hint}`,

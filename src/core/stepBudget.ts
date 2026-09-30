@@ -1,5 +1,14 @@
 export const DEFAULT_MAX_STEPS = 25;
 export const DEFAULT_HARD_MAX_STEPS = 50;
+export const DEFAULT_RUN_TOKEN_BUDGET = 300_000;
+export const MAX_FINAL_RESPONSE_RESERVE = 32_000;
+
+/** Keep room for one final synthesis request when exploration uses its budget. */
+export function calculateExplorationTokenBudget(totalBudget = DEFAULT_RUN_TOKEN_BUDGET): number {
+  if (!Number.isFinite(totalBudget) || totalBudget <= 0) return 0;
+  const reserve = Math.min(MAX_FINAL_RESPONSE_RESERVE, Math.floor(totalBudget * 0.15));
+  return Math.max(0, Math.floor(totalBudget) - reserve);
+}
 
 export interface StepBudgetOptions {
   userSpecifiedMaxSteps?: number;
