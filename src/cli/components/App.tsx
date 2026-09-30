@@ -427,6 +427,8 @@ export function App({
             height={effectiveWorkspaceHeight}
             onOpenModelSelector={() => openModal("model")}
             onClose={closeModal}
+            threads={threads}
+            fileEdits={fileEdits}
           />
         ) : activeModal === "diff" ? (
           <DiffModal

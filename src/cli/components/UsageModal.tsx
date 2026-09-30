@@ -1,7 +1,24 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useMemo } from "react";
 import { Box, Text, useInput } from "ink";
 import { theme } from "../theme.js";
 import type { TokenUsage } from "../../core/types.js";
+import { truncateCells } from "../utils/cells.js";
+import type { Thread, FileEditRecord } from "../types.js";
+import { PROVIDERS, providerLabel, type ProviderKey } from "../providers.js";
+import { sessionStats, formatWorkTime } from "../stats.js";
+import {
+  Modal,
+  Split,
+  Section,
+  RowList,
+  Lines,
+  ListRow,
+  KeyValue,
+  Callout,
+  Blank,
+  Meter,
+  formatTokens,
+} from "./ui/kit.js";
 
 export interface ModelUsageSpec {
   id: string;
@@ -306,6 +323,8 @@ export interface UsageModalProps {
   height?: number;
   onOpenModelSelector?: () => void;
   onClose: () => void;
+  threads?: Thread[];
+  fileEdits?: FileEditRecord[];
 }
 
 export function UsageModal({
@@ -317,6 +336,8 @@ export function UsageModal({
   height = 24,
   onOpenModelSelector,
   onClose,
+  threads = [],
+  fileEdits = [],
 }: UsageModalProps) {
   const initialIndex = Math.max(
     0,
@@ -349,7 +370,7 @@ export function UsageModal({
       const rootBase = baseURL.endsWith("/v1") ? baseURL.slice(0, -3) : baseURL;
       try {
         const res = await fetch(`${rootBase}/v1/auth/status`, {
-          signal: AbortSignal.timeout(800),
+          signal: AbortSignal.timeout(4000),
         });
         if (res.ok) {
           const data = (await res.json()) as {
@@ -392,337 +413,245 @@ export function UsageModal({
     };
   }, [baseURL]);
 
+  const tokensOf = (m: ModelUsageSpec) => usage?.byModel?.[m.id]?.totalTokens ?? 0;
+
+  const ordered = useMemo(
+    () =>
+      PROVIDERS.flatMap((p) =>
+        MODEL_USAGE_CATALOG.filter((m) => m.category === p.key).sort((a, b) => tokensOf(b) - tokensOf(a))
+      ),
+    [usage]
+  );
+  const stats = useMemo(() => sessionStats(threads, fileEdits), [threads, fileEdits]);
+
+  useEffect(() => {
+    const idx = ordered.findIndex((m) => m.id === currentModel || (m.id === "flash" && currentModel.includes("flash")));
+    if (idx >= 0) setSelectedIndex(idx);
+  }, []);
+
   useInput((input, key) => {
     if (key.escape || input === "q") {
       onClose();
       return;
     }
-
-    if (input === "m") {
+    if (input === "m" || key.return) {
       onOpenModelSelector?.();
       return;
     }
-
-    if (key.return) {
-      onOpenModelSelector?.();
-      return;
-    }
-
-    if (key.upArrow || input === "k") {
-      setSelectedIndex((prev) => (prev > 0 ? prev - 1 : MODEL_USAGE_CATALOG.length - 1));
-      return;
-    }
-
-    if (key.downArrow || input === "j") {
-      setSelectedIndex((prev) => (prev < MODEL_USAGE_CATALOG.length - 1 ? prev + 1 : 0));
-      return;
-    }
+    const move = key.upArrow || input === "k" ? -1 : key.downArrow || input === "j" ? 1 : 0;
+    if (move !== 0) setSelectedIndex((prev) => (prev + move + ordered.length) % ordered.length);
   });
 
-  const totalContentWidth = Math.max(40, width - 6);
-  const leftWidth = Math.min(50, Math.max(36, Math.floor(totalContentWidth * 0.46)));
-  const rightWidth = Math.max(30, totalContentWidth - leftWidth - 3);
-  const bodyHeight = Math.max(10, height - 9);
+  const selectedModel = ordered[selectedIndex] ?? ordered[0];
+  const isActive = (m: ModelUsageSpec) => m.id === currentModel || (m.id === "flash" && currentModel.includes("flash"));
+  const activeSpec = ordered.find(isActive);
 
-  const selectedModel = MODEL_USAGE_CATALOG[selectedIndex] || MODEL_USAGE_CATALOG[0];
-  const isSelectedActive =
-    selectedModel.id === currentModel ||
-    (selectedModel.id === "flash" && currentModel.includes("flash"));
-
-  /* Session Token Calculations */
   const totalTokens = usage?.totalTokens ?? 0;
-  const promptTokens = usage?.promptTokens ?? 0;
-  const completionTokens = usage?.completionTokens ?? 0;
   const peakContext = usage?.peakContextTokens ?? 0;
-  const contextLimit = usage?.contextLimit ?? 128000;
+  const contextLimit = usage?.contextLimit ?? 128_000;
+  const maxModelTokens = Math.max(1, ...ordered.map(tokensOf));
+  const providerTokens = (key: ProviderKey) =>
+    ordered.filter((m) => m.category === key).reduce((n, m) => n + tokensOf(m), 0);
+  const share = (n: number) => (totalTokens > 0 ? `${Math.round((n / totalTokens) * 100)}%` : "0%");
 
-  const pct = Math.min(100, Math.round((peakContext / contextLimit) * 100));
-  const barLen = 16;
-  const filled = Math.min(barLen, Math.round((pct / 100) * barLen));
-  const progressBar = "█".repeat(filled) + "░".repeat(barLen - filled);
-
-  const colWidth = Math.max(16, Math.floor((totalContentWidth - 4) / 3));
-
-  /* Model-specific usage */
-  const modelAccumulated = usage?.byModel?.[selectedModel.id] || (isSelectedActive ? {
-    promptTokens,
-    completionTokens,
-    totalTokens,
-  } : null);
-
-  const maxVisible = Math.max(4, bodyHeight - 2);
-  let startIdx = 0;
-  if (MODEL_USAGE_CATALOG.length > maxVisible) {
-    startIdx = Math.min(
-      Math.max(0, selectedIndex - Math.floor(maxVisible / 2)),
-      MODEL_USAGE_CATALOG.length - maxVisible
-    );
-  }
-  const visibleModels = MODEL_USAGE_CATALOG.slice(startIdx, startIdx + maxVisible);
+  const quotaLines = (category: ModelUsageSpec["category"]): QuotaLine[] => {
+    if (category === "codex") {
+      if (!codexStatus) return [{ label: "quota", text: "checking…" }];
+      return [
+        { label: "5h window", pct: percent(codexStatus.fiveHour), text: codexStatus.resetsAt ? `resets ${codexStatus.resetsAt}` : "" },
+        { label: "weekly", pct: percent(codexStatus.weekly), text: "" },
+        ...(codexStatus.resetCredits ? [{ label: "reset credits", text: String(codexStatus.resetCredits) }] : []),
+      ];
+    }
+    if (category === "claude") {
+      if (!claudeStatus) return [{ label: "quota", text: "checking…" }];
+      const lines: QuotaLine[] = [];
+      if (claudeStatus.fiveHour) lines.push({ label: "5h window", pct: percent(claudeStatus.fiveHour), text: claudeStatus.resetsAt ? `resets ${claudeStatus.resetsAt}` : "" });
+      if (claudeStatus.weekly) lines.push({ label: "weekly", pct: percent(claudeStatus.weekly), text: "" });
+      return lines.length > 0 ? lines : [{ label: "quota", text: `${claudeStatus.subscriptionType ?? "pro"} plan · usage not reported` }];
+    }
+    if (category === "cloud") return [{ label: "openrouter", text: openRouterUsage ?? "free models" }];
+    if (category === "local") return [{ label: "quota", text: "none · runs on this machine" }];
+    return [{ label: "quota", text: "free tier" }];
+  };
 
   return (
-    <Box
-      flexDirection="column"
-      borderStyle="round"
-      borderColor={theme.secondary}
+    <Modal
+      title="usage"
+      context="this session"
       width={width}
       height={height}
-      paddingX={2}
-      paddingY={1}
-      overflow="hidden"
+      hints={[
+        { keys: "↑↓", label: "move" },
+        { keys: "enter", label: "switch model" },
+        { keys: "esc", label: "close" },
+      ]}
     >
-      {/* Top Header in clean lowercase */}
-      <Box height={1} width={totalContentWidth} justifyContent="space-between" marginBottom={1} overflow="hidden">
-        <Box flexDirection="row">
-          <Text bold color={theme.accentBright}>
-            morpheus · usage & quotas
-          </Text>
-          <Text color={theme.muted}> · </Text>
-          <Text color={theme.text}>session: {sessionId.slice(0, 16)}</Text>
-        </Box>
-        <Text color={theme.muted}>
-          [↑/↓ move · m switch model · esc close]
-        </Text>
-      </Box>
-
-      {/* Top Metrics Row with explicit integer column widths */}
-      <Box flexDirection="row" width={totalContentWidth} justifyContent="space-between" marginBottom={1}>
-        <Box flexDirection="column" width={colWidth}>
-          <Text color={theme.muted}>session tokens</Text>
-          <Text bold color={theme.accentBright}>
-            {totalTokens.toLocaleString()} tokens
-          </Text>
-          <Text color={theme.text}>
-            in: {promptTokens.toLocaleString()} · out: {completionTokens.toLocaleString()}
-          </Text>
-        </Box>
-
-        <Box flexDirection="column" width={colWidth}>
-          <Text color={theme.muted}>context usage</Text>
-          <Text bold color={pct > 80 ? theme.error : theme.secondary}>
-            {peakContext.toLocaleString()} / {contextLimit.toLocaleString()} ({pct}%)
-          </Text>
-          <Text color={pct > 80 ? theme.error : theme.accent}>
-            [{progressBar}]
-          </Text>
-        </Box>
-
-        <Box flexDirection="column" width={colWidth}>
-          <Text color={theme.muted}>cost / credits</Text>
-          <Text bold color={theme.accentBright}>
-            {selectedModel.category === "codex" && codexStatus
-              ? `chatgpt ${codexStatus.planType || "plus"}: ${codexStatus.fiveHour || "0%"} (5h)`
-              : selectedModel.category === "claude" && claudeStatus
-              ? `claude ${claudeStatus.subscriptionType || "pro"}: ${claudeStatus.fiveHour || "0%"} (5h)`
-              : "$0.00 usd (free quota)"}
-          </Text>
-          <Text color={theme.text}>
-            {selectedModel.category === "codex" && codexStatus
-              ? `weekly: ${codexStatus.weekly || "0%"} · resets ${codexStatus.resetsAt || "soon"}`
-              : selectedModel.category === "claude" && claudeStatus
-              ? `weekly: ${claudeStatus.weekly || "0%"} · resets ${claudeStatus.resetsAt || "soon"}`
-              : openRouterUsage ? `openrouter: ${openRouterUsage}` : "unlimited local / oauth"}
-          </Text>
-        </Box>
-      </Box>
-
-      {/* Clean Divider Line */}
-      <Box height={1} width={totalContentWidth} marginBottom={1} overflow="hidden">
-        <Text color={theme.border}>{"─".repeat(totalContentWidth)}</Text>
-      </Box>
-
-      {/* Main Two-Column Layout */}
-      <Box flexDirection="row" width={totalContentWidth} height={bodyHeight} overflow="hidden">
-        {/* Left Column: Models List with sliding window */}
-        <Box flexDirection="column" width={leftWidth} height={bodyHeight} overflow="hidden">
-          <Box marginBottom={1} justifyContent="space-between">
-            <Text bold color={theme.secondary}>
-              models & rate limits
-            </Text>
-            <Text color={theme.muted}>
-              {selectedIndex + 1}/{MODEL_USAGE_CATALOG.length}
-            </Text>
-          </Box>
-
-          {visibleModels.map((m) => {
-            const isSelected = m.id === selectedModel.id;
-            const isActive =
-              m.id === currentModel ||
-              (m.id === "flash" && currentModel.includes("flash"));
-
-            return (
-              <Box
-                key={m.id}
-                flexDirection="row"
-                justifyContent="space-between"
-                paddingLeft={1}
-              >
-                <Box flexDirection="row">
-                  <Text color={isSelected ? theme.accentBright : theme.muted}>
-                    {isSelected ? "▶ " : "  "}
+      {({ width: w, height: h }) => {
+        const colGap = 3;
+        const colW = Math.max(16, Math.floor((w - colGap * 2) / 3));
+        const activeQuota = activeSpec ? quotaLines(activeSpec.category) : [];
+        const perTurn = stats.turns > 0 ? Math.round(totalTokens / stats.turns) : 0;
+        return (
+          <>
+            <Box flexDirection="row" height={5} flexShrink={0}>
+              <Box flexDirection="column" width={colW} marginRight={colGap}>
+                <Lines height={5}>
+                  <Section label="tokens" width={colW} />
+                  <Text wrap="truncate-end">
+                    <Text bold color={theme.accentBright}>{formatTokens(totalTokens)}</Text>
+                    <Text color={theme.muted}>{`  ${formatTokens(usage?.promptTokens)} in · ${formatTokens(usage?.completionTokens)} out`}</Text>
                   </Text>
-                  <Text
-                    bold={isSelected}
-                    color={isSelected ? theme.accentBright : theme.text}
-                  >
-                    {m.id}
+                  <KeyValue k="per turn" v={`${formatTokens(perTurn)} avg`} width={colW} keyWidth={11} />
+                  <Meter value={peakContext} max={contextLimit} width={colW} label={`${formatTokens(peakContext)}/${formatTokens(contextLimit)} ctx`} />
+                </Lines>
+              </Box>
+              <Box flexDirection="column" width={colW} marginRight={colGap}>
+                <Lines height={5}>
+                  <Section label="activity" width={colW} />
+                  <KeyValue k="turns" v={`${stats.turns} · ${formatWorkTime(stats.workMs)} working`} width={colW} keyWidth={11} />
+                  <KeyValue
+                    k="tool calls"
+                    v={`${stats.toolCalls}${stats.failedCalls ? ` · ${stats.failedCalls} failed` : ""}`}
+                    color={stats.failedCalls ? theme.warning : undefined}
+                    width={colW}
+                    keyWidth={11}
+                  />
+                  <Text wrap="truncate-end">
+                    <Text color={theme.muted}>{"changes    "}</Text>
+                    <Text color={theme.text}>{`${stats.filesChanged} file${stats.filesChanged === 1 ? "" : "s"}  `}</Text>
+                    <Text color={theme.diffAdd}>{`+${stats.linesAdded} `}</Text>
+                    <Text color={theme.diffRemove}>{`−${stats.linesRemoved}`}</Text>
                   </Text>
-                </Box>
-
-                <Box flexDirection="row">
-                  <Text color={theme.muted}>[{m.badge}]</Text>
-                  {isActive && (
-                    <Text color={theme.accentBright} bold>
-                      {" "}[active]
-                    </Text>
-                  )}
-                </Box>
+                </Lines>
               </Box>
-            );
-          })}
-        </Box>
-
-        {/* Vertical Divider */}
-        <Box width={1} height={bodyHeight} flexDirection="column" overflow="hidden" marginX={1}>
-          {Array.from({ length: bodyHeight }).map((_, i) => (
-            <Box key={`div_${i}`} height={1}>
-              <Text color={theme.border}>│</Text>
-            </Box>
-          ))}
-        </Box>
-
-        {/* Right Column: Quota & Pricing Specification */}
-        <Box flexDirection="column" width={rightWidth} height={bodyHeight} overflow="hidden" paddingLeft={2}>
-          <Box marginBottom={1}>
-            <Text bold color={theme.accentBright}>
-              details & quota
-            </Text>
-          </Box>
-
-          <Box flexDirection="column" marginBottom={1}>
-            <Box flexDirection="row" justifyContent="space-between">
-              <Text color={theme.muted}>model</Text>
-              <Text bold color={theme.secondary}>{selectedModel.name}</Text>
-            </Box>
-            <Box flexDirection="row" justifyContent="space-between">
-              <Text color={theme.muted}>provider</Text>
-              <Text color={theme.text}>{selectedModel.provider}</Text>
-            </Box>
-            <Box flexDirection="row" justifyContent="space-between">
-              <Text color={theme.muted}>context ceiling</Text>
-              <Text bold color={theme.text}>{selectedModel.contextLimit}</Text>
-            </Box>
-            <Box flexDirection="row" justifyContent="space-between">
-              <Text color={theme.muted}>rate limit</Text>
-              <Text color={theme.text}>{selectedModel.rateLimit}</Text>
-            </Box>
-            <Box flexDirection="row" justifyContent="space-between">
-              <Text color={theme.muted}>cost tier</Text>
-              <Text color={theme.accent}>{selectedModel.costTier}</Text>
-            </Box>
-            <Box flexDirection="row" justifyContent="space-between">
-              <Text color={theme.muted}>pricing</Text>
-              <Text color={theme.accentBright}>{selectedModel.pricing}</Text>
-            </Box>
-          </Box>
-
-          {selectedModel.category === "codex" && codexStatus && (
-            <Box flexDirection="column" marginBottom={1}>
-              <Box flexDirection="row" justifyContent="space-between">
-                <Text color={theme.muted}>5h rolling quota</Text>
-                <Text bold color={theme.accentBright}>{codexStatus.fiveHour || "0%"} used</Text>
-              </Box>
-              <Box flexDirection="row" justifyContent="space-between">
-                <Text color={theme.muted}>5h reset window</Text>
-                <Text color={theme.text}>{codexStatus.resetsAt || "rolling"}</Text>
-              </Box>
-              <Box flexDirection="row" justifyContent="space-between">
-                <Text color={theme.muted}>weekly quota</Text>
-                <Text color={theme.text}>{codexStatus.weekly || "0%"} used</Text>
-              </Box>
-              <Box flexDirection="row" justifyContent="space-between">
-                <Text color={theme.muted}>reset credits</Text>
-                <Text color={theme.secondary}>{codexStatus.resetCredits ?? 0} available</Text>
+              <Box flexDirection="column" width={colW}>
+                <Lines height={5}>
+                  <Section label={activeSpec ? `${providerLabel(activeSpec.category)} quota` : "quota"} width={colW} />
+                  {activeQuota.slice(0, 3).map((q) => (
+                    <QuotaRow line={q} width={colW} />
+                  ))}
+                </Lines>
               </Box>
             </Box>
-          )}
-
-          {selectedModel.category === "claude" && claudeStatus && (
-            <Box flexDirection="column" marginBottom={1}>
-              <Box flexDirection="row" justifyContent="space-between">
-                <Text color={theme.muted}>5h rolling quota</Text>
-                <Text bold color={theme.accentBright}>{claudeStatus.fiveHour || "0%"} used</Text>
-              </Box>
-              <Box flexDirection="row" justifyContent="space-between">
-                <Text color={theme.muted}>5h reset window</Text>
-                <Text color={theme.text}>{claudeStatus.resetsAt || "rolling"}</Text>
-              </Box>
-              <Box flexDirection="row" justifyContent="space-between">
-                <Text color={theme.muted}>weekly quota</Text>
-                <Text color={theme.text}>{claudeStatus.weekly || "0%"} used</Text>
-              </Box>
-              <Box flexDirection="row" justifyContent="space-between">
-                <Text color={theme.muted}>subscription</Text>
-                <Text color={theme.secondary}>{claudeStatus.subscriptionType || "pro"} account</Text>
-              </Box>
-            </Box>
-          )}
-
-          <Box marginBottom={1}>
-            <Text bold color={theme.accentBright}>
-              usage
-            </Text>
-          </Box>
-
-          {modelAccumulated && modelAccumulated.totalTokens > 0 ? (
-            <Box flexDirection="column">
-              <Box flexDirection="row" justifyContent="space-between">
-                <Text color={theme.muted}>session</Text>
-                <Text bold color={theme.accentBright}>{modelAccumulated.totalTokens.toLocaleString()} tokens</Text>
-              </Box>
-              <Box flexDirection="row" justifyContent="space-between">
-                <Text color={theme.muted}>prompt</Text>
-                <Text color={theme.text}>{modelAccumulated.promptTokens.toLocaleString()} tokens</Text>
-              </Box>
-              <Box flexDirection="row" justifyContent="space-between">
-                <Text color={theme.muted}>completion</Text>
-                <Text color={theme.text}>{modelAccumulated.completionTokens.toLocaleString()} tokens</Text>
-              </Box>
-              <Box flexDirection="row" justifyContent="space-between">
-                <Text color={theme.muted}>turn cost</Text>
-                <Text color={theme.accentBright}>$0.00 (quota)</Text>
-              </Box>
-            </Box>
-          ) : (
-            <Box flexDirection="column">
-              <Text color={theme.muted}>0 tokens consumed in this session</Text>
-              {!isSelectedActive && (
-                <Box marginTop={1}>
-                  <Text color={theme.secondary}>press [enter] to switch to this model</Text>
-                </Box>
+            <Box height={1} flexShrink={0} />
+            <Split
+              width={w}
+              height={Math.max(3, h - 6)}
+              left={(lw, lh) => (
+                <RowList
+                  height={lh}
+                  rows={ordered.flatMap((m, idx) => {
+                    const tokens = tokensOf(m);
+                    const prev = ordered[idx - 1];
+                    const header =
+                      !prev || prev.category !== m.category
+                        ? [
+                            ...(prev ? [{ key: `gap_${m.category}`, node: <Blank /> }] : []),
+                            {
+                              key: `sec_${m.category}`,
+                              node: (
+                                <Section
+                                  label={providerLabel(m.category)}
+                                  detail={providerTokens(m.category) ? formatTokens(providerTokens(m.category)) : undefined}
+                                  width={lw}
+                                />
+                              ),
+                            },
+                          ]
+                        : [];
+                    return [
+                      ...header,
+                      {
+                        key: m.id,
+                        focus: idx === selectedIndex,
+                        node: (
+                          <ListRow
+                            label={m.id.replace(`${m.category}/`, "")}
+                            value={tokens > 0 ? `${formatTokens(tokens)} ${bar(tokens, maxModelTokens, 6)}` : isActive(m) ? "active" : ""}
+                            valueColor={tokens > 0 || isActive(m) ? theme.accentBright : theme.muted}
+                            icon={isActive(m) ? "●" : " "}
+                            iconColor={theme.accentBright}
+                            dim={tokens === 0 && !isActive(m)}
+                            selected={idx === selectedIndex}
+                            width={lw}
+                          />
+                        ),
+                      },
+                    ];
+                  })}
+                />
               )}
-            </Box>
-          )}
+              right={(rw, rh) => {
+                const modelUsage = usage?.byModel?.[selectedModel.id];
+                const turns = stats.turnsByModel[selectedModel.id] ?? 0;
+                return (
+                  <Lines height={rh}>
+                    <Text bold color={theme.text}>
+                      {truncateCells(selectedModel.id, rw)}
+                    </Text>
+                    <Text color={theme.muted}>{truncateCells(selectedModel.provider, rw)}</Text>
+                    <Blank />
+                    <KeyValue
+                      k="tokens"
+                      v={modelUsage ? `${formatTokens(modelUsage.totalTokens)} · ${share(modelUsage.totalTokens)} of session` : "not used this session"}
+                      color={modelUsage ? theme.accentBright : theme.muted}
+                      width={rw}
+                    />
+                    {modelUsage ? (
+                      <KeyValue k="in / out" v={`${formatTokens(modelUsage.promptTokens)} / ${formatTokens(modelUsage.completionTokens)}`} width={rw} />
+                    ) : null}
+                    {turns > 0 ? <KeyValue k="turns" v={String(turns)} width={rw} /> : null}
+                    <KeyValue k="context" v={selectedModel.contextLimit} width={rw} />
+                    <KeyValue k="pricing" v={selectedModel.pricing} width={rw} />
+                    <Blank />
+                    {quotaLines(selectedModel.category).map((q) => (
+                      <QuotaRow line={q} width={rw} />
+                    ))}
+                    <Blank />
+                    <Callout
+                      text={isActive(selectedModel) ? "this is the current model" : "enter opens the model picker"}
+                      tone={isActive(selectedModel) ? "muted" : "accent"}
+                      width={rw}
+                    />
+                  </Lines>
+                );
+              }}
+            />
+          </>
+        );
+      }}
+    </Modal>
+  );
+}
 
-          {isSelectedActive && (
-            <Box marginTop={1} paddingX={1} borderStyle="single" borderColor={theme.accent}>
-              <Text color={theme.accentBright} bold>
-                active model driving morpheus
-              </Text>
-            </Box>
-          )}
-        </Box>
-      </Box>
+interface QuotaLine {
+  label: string;
+  pct?: number;
+  text: string;
+}
 
-      {/* Bottom Key Hints in lowercase */}
-      <Box height={1} width={totalContentWidth} justifyContent="space-between" marginTop={1} overflow="hidden">
-        <Text color={theme.muted}>
-          [enter switch model · esc close]
-        </Text>
-        <Text color={theme.secondary}>
-          morpheus
-        </Text>
-      </Box>
-    </Box>
+function percent(value: string | undefined): number | undefined {
+  if (!value) return undefined;
+  const n = parseFloat(value);
+  return Number.isFinite(n) ? n : undefined;
+}
+
+function bar(value: number, max: number, width: number): string {
+  const filled = Math.max(1, Math.round((value / max) * width));
+  return "━".repeat(filled) + " ".repeat(width - filled);
+}
+
+function QuotaRow({ line, width }: { line: QuotaLine; width: number }) {
+  const key = line.label.padEnd(12).slice(0, 12);
+  if (line.pct === undefined) {
+    return <KeyValue k={line.label} v={line.text} width={width} keyWidth={12} />;
+  }
+  const suffix = `${Math.round(line.pct)}%${line.text ? `  ${line.text}` : ""}`;
+  return (
+    <Text wrap="truncate-end">
+      <Text color={theme.muted}>{key}</Text>
+      <Meter value={line.pct} max={100} width={Math.max(8, width - 12)} barWidth={Math.max(6, Math.min(20, width - 12 - 24))} label={suffix} />
+    </Text>
   );
 }
