@@ -20,12 +20,10 @@ export interface BuildFeedOptions {
   collapsedThinkingIds?: Set<string>;
   matrixQuote?: string;
   elapsedSeconds?: number;
-  /* Live reveal of one thread's response; other threads render their full text. */
   streamReveal?: {
     threadId: string;
     text: string;
     glow: number;
-    /* Source of randomness for the glyph flicker; injectable for deterministic tests. */
     random?: () => number;
   };
 }
@@ -147,8 +145,6 @@ export function getCoolActionLabel(step?: ThreadStep, cwd: string = process.cwd(
   }
 }
 
-/* Renders one narration note: a marker on the first line, wrapped text indented
- * under it, and a blank line before it so consecutive notes read as paragraphs. */
 function pushNoteLines(
   lines: FeedLine[],
   threadId: string,
@@ -252,7 +248,6 @@ export function buildThreadFeedLines({
       });
     });
 
-    /* Thoughts and narration notes, in the order they happened; tools live in the right panel. */
     const timelineSteps = thread.steps.filter((s) => s.type === "thinking" || s.type === "note");
     const activeToolStep = thread.steps.find((s) => s.type === "tool" && s.isRunning);
     const hasFollowingContent =
@@ -446,8 +441,6 @@ export function buildThreadFeedLines({
       formattedLines.push(...formatter.flush());
 
       const wrappedLines = formattedLines.flatMap((mLine) => wrapLine(mLine, maxLineWidth));
-      /* The trail goes on after wrapping: it swaps colors (and at most one
-       * single-cell glyph), so visible widths and padding stay exact. */
       if (reveal && reveal.glow > 0) {
         let tail = wrappedLines.length - 1;
         while (tail > 0 && visibleLength(wrappedLines[tail]) === 0) tail--;

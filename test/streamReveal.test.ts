@@ -75,7 +75,6 @@ test("applyTrail only scrambles the newest printable character, with single-cell
   assert.equal(spaced, "abc ", "whitespace never flickers");
 });
 
-/* Collects the raw strings (ANSI included) from a feed line's React node. */
 function textOf(node: unknown): string {
   if (node == null || typeof node === "boolean") return "";
   if (typeof node === "string" || typeof node === "number") return String(node);

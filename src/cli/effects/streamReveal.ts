@@ -1,28 +1,14 @@
-/*
- * streamReveal: pure math and ANSI rendering for the streaming "decode" effect.
- * Text eases in instead of arriving in provider-sized bursts, and its newest
- * characters carry a short green glow trail that settles into normal text.
- */
-
-/* Backlog shrinks exponentially with this time constant, so bursts glide in
- * but reveal never trails the model by more than a few frames. */
 const REVEAL_TAU_MS = 90;
-/* Floor on reveal speed so a slow trickle still moves visibly. */
 const MIN_CHARS_PER_SECOND = 60;
-/* Glow brightens fast when text arrives and fades slower once it stops. */
 const GLOW_RISE_TAU_MS = 60;
 const GLOW_FALL_TAU_MS = 260;
-/* Below this the glow is invisible, so the effect can switch itself off. */
 export const GLOW_EPSILON = 0.02;
 
 export const TRAIL_LENGTH = 8;
 
-/* Half-width katakana and digits: single-cell glyphs, so flicker never shifts layout. */
 const MATRIX_GLYPHS = Array.from("ｦｱｳｴｵｶｷｹｺｻｼｽｾｿﾀﾂﾃﾅﾆﾇﾈﾊﾋﾎﾏﾐﾑﾒﾓﾔﾕﾗﾘﾜ0123456789");
-/* Only plain printable ASCII gets scrambled; wide or combining characters are left alone. */
 const SCRAMBLE_ELIGIBLE = /^[\x21-\x7e]$/;
 
-/* Matches CSI sequences (colors, styles) and OSC sequences (hyperlinks). */
 const ANSI_PATTERN = /\x1b\[[0-9;?]*[ -/]*[@-~]|\x1b\][^\x07\x1b]*(?:\x07|\x1b\\)/y;
 
 export interface RevealState {
@@ -31,11 +17,8 @@ export interface RevealState {
 }
 
 export interface TrailPalette {
-  /* Color of the freshest character, just resolving out of the dark. */
   deep: string;
-  /* Peak of the glow, a few characters behind the head. */
   bright: string;
-  /* Color the trail settles into. */
   settled: string;
 }
 
@@ -73,8 +56,6 @@ function mix(a: Rgb, b: Rgb, t: number): Rgb {
   return [0, 1, 2].map((i) => Math.round(a[i] + (b[i] - a[i]) * t)) as Rgb;
 }
 
-/* Trail color for a character `age` positions behind the head (0 = newest):
- * deep -> bright over the first third, then bright -> settled. */
 export function trailColor(age: number, trailLength: number, glow: number, palette: TrailPalette): Rgb {
   const deep = hexToRgb(palette.deep);
   const bright = hexToRgb(palette.bright);
@@ -106,11 +87,6 @@ function tokenize(line: string): Token[] {
   return tokens;
 }
 
-/**
- * Recolors the last `trailLength` visible characters of an ANSI-formatted line.
- * Only foreground color is touched, so backgrounds (code blocks) and styles
- * survive, and escape codes after the trail are kept so the line closes as before.
- */
 export function applyTrail(
   line: string,
   glow: number,
@@ -136,7 +112,6 @@ export function applyTrail(
     const age = visible - 1 - charIndex;
     const [r, g, b] = trailColor(age, trailLength, glow, palette);
     let char = token.value;
-    /* Only the newest character flickers, and only while text is actively arriving. */
     if (random && age === 0 && glow > 0.6 && SCRAMBLE_ELIGIBLE.test(char) && random() < 0.35) {
       char = MATRIX_GLYPHS[Math.floor(random() * MATRIX_GLYPHS.length)] ?? char;
     }

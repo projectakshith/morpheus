@@ -1,12 +1,5 @@
-/*
- * Terminal cell math: display width, ANSI-safe truncation, and cleanup of raw
- * tool output so it can be laid out in fixed-width columns without drifting.
- */
-
 const ANSI_TOKEN = /\x1b\[[0-9;?]*[ -/]*[@-~]|\x1b\][^\x07\x1b]*(?:\x07|\x1b\\)/y;
 
-/* East Asian wide and emoji ranges occupy two cells. Combining marks and
- * zero-width joiners occupy none. Everything else is one cell. */
 export function charWidth(codePoint: number): number {
   if (
     codePoint === 0x200b ||
@@ -53,21 +46,15 @@ function tokenize(text: string): Token[] {
   return tokens;
 }
 
-/* Number of terminal cells the text occupies, ignoring ANSI codes. */
 export function cellWidth(text: string): number {
   let width = 0;
   for (const token of tokenize(text)) if ("char" in token) width += token.width;
   return width;
 }
 
-/* Styles that may be open inside highlighted text; closed without touching the
- * background, which Ink applies around the whole row. */
+/* Closes styles without resetting the background, which Ink applies to the whole row. */
 const CLOSE_STYLES = "\x1b[39;22;23;24m";
 
-/**
- * Truncates to at most `width` cells, ending with `ellipsis` when cut. ANSI
- * codes are preserved, and any styles are closed so they can't bleed onward.
- */
 export function truncateCells(text: string, width: number, ellipsis = "…"): string {
   if (width <= 0) return "";
   if (cellWidth(text) <= width) return text;
@@ -86,7 +73,6 @@ export function truncateCells(text: string, width: number, ellipsis = "…"): st
   return `${out}${CLOSE_STYLES}${room >= 0 ? ellipsis : ""}`;
 }
 
-/* Truncates from the left, keeping the end (e.g. the file name of a long path). */
 export function truncateCellsStart(text: string, width: number, ellipsis = "…"): string {
   if (width <= 0) return "";
   const chars = Array.from(text);
@@ -103,27 +89,17 @@ export function truncateCellsStart(text: string, width: number, ellipsis = "…"
   return ellipsis + chars.slice(start).join("");
 }
 
-/* Pads with spaces to exactly `width` cells, truncating if longer. */
 export function fitCells(text: string, width: number): string {
   const fitted = truncateCells(text, width);
   return fitted + " ".repeat(Math.max(0, width - cellWidth(fitted)));
 }
 
-/**
- * Makes raw tool output safe for fixed-width rendering: drops ANSI codes (they
- * could reset the row background), resolves carriage-return progress redraws
- * to their final state, expands tabs, and removes other control characters.
- */
 export function sanitizeOutputLine(line: string): string {
   const withoutAnsi = line.replace(/\x1b\[[0-9;?]*[ -/]*[@-~]|\x1b\][^\x07\x1b]*(?:\x07|\x1b\\)/g, "");
   const lastRedraw = withoutAnsi.split("\r").filter((part) => part.length > 0).pop() ?? "";
   return lastRedraw.replace(/\t/g, "  ").replace(/[\x00-\x08\x0b-\x1f\x7f]/g, "");
 }
 
-/**
- * Wraps plain text to `width` cells, preferring to break after a space in the
- * back half of the line and hard-breaking otherwise (long paths, minified code).
- */
 export function wrapCells(text: string, width: number): string[] {
   if (width <= 0) return [text];
   const out: string[] = [];

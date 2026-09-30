@@ -15,8 +15,6 @@ function textStream(text: string): Response {
   return new Response(body, { status: 200 });
 }
 
-/* Each entry builds a fresh Response, since a body can only be consumed once.
- * The last entry repeats for any further calls. */
 function mockFetch(responses: Array<() => Response | Error>): { calls: () => number } {
   let calls = 0;
   globalThis.fetch = (async () => {

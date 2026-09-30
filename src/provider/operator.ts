@@ -12,9 +12,7 @@ export interface OperatorConfig {
   defaultHeaders?: Record<string, string>;
   isLocal?: boolean;
   numCtx?: number;
-  /* Retries for transient failures before any output streams. Default 3. */
   maxRetries?: number;
-  /* First backoff delay; doubles per attempt. Default 1000ms. */
   retryBaseDelayMs?: number;
 }
 
@@ -32,7 +30,6 @@ export interface ChatStreamOptions {
   tools?: Record<string, ToolDefinition> | ToolDefinition[];
   system?: string;
   abortSignal?: AbortSignal;
-  /* Caps output for small side requests; defaults to the completion limit. */
   maxTokens?: number;
 }
 
@@ -52,11 +49,8 @@ function resolveContextSize(configured: number | undefined, fallback: number): n
     : fallback;
 }
 
-/* Rate limits, overload (529 is Anthropic's), and gateway failures are worth retrying;
- * other 4xx mean the request itself is wrong and would fail identically. */
 const RETRYABLE_STATUSES = new Set([408, 429, 500, 502, 503, 504, 529]);
-/* Dropped or stalled connections are transient. ECONNREFUSED is deliberately absent:
- * a proxy that isn't running should fail fast, not after a backoff cycle. */
+/* ECONNREFUSED is left out so a stopped proxy fails fast instead of backing off. */
 const RETRYABLE_NETWORK_CODES = new Set([
   "ECONNRESET",
   "ETIMEDOUT",
@@ -65,7 +59,6 @@ const RETRYABLE_NETWORK_CODES = new Set([
   "UND_ERR_SOCKET",
   "UND_ERR_CONNECT_TIMEOUT",
 ]);
-/* A server asking for a longer wait than this is better surfaced than slept on. */
 const MAX_RETRY_DELAY_MS = 30_000;
 
 function isRetryableNetworkError(err: unknown): boolean {
@@ -74,7 +67,6 @@ function isRetryableNetworkError(err: unknown): boolean {
   return typeof code === "string" && RETRYABLE_NETWORK_CODES.has(code);
 }
 
-/* Parses Retry-After as delta-seconds or an HTTP date. */
 export function parseRetryAfterMs(header: string | null, now: number = Date.now()): number | undefined {
   if (!header) return undefined;
   const seconds = Number(header);
@@ -285,8 +277,7 @@ export class Operator {
     return Math.max(1, Math.min(8192, Math.floor(this.numCtx * 0.15)));
   }
 
-  /* Retries only the request phase. Once streaming starts, events have already been
-   * yielded to the caller, so a retry would duplicate text and tool calls. */
+    /* Only the request is retried; once streaming starts, events have already reached the caller. */
   private async fetchWithRetry(url: string, init: RequestInit): Promise<Response> {
     const signal = init.signal ?? undefined;
     for (let attempt = 0; ; attempt++) {
@@ -311,7 +302,6 @@ export class Operator {
     }
   }
 
-  /* Exponential backoff with jitter so parallel clients don't retry in lockstep. */
   private backoffDelay(attempt: number): number {
     const base = this.retryBaseDelayMs * 2 ** attempt;
     return Math.min(MAX_RETRY_DELAY_MS, base * (0.75 + Math.random() * 0.5));

@@ -41,7 +41,6 @@ function text(content: string): Response {
   ]);
 }
 
-/* Replays scripted model turns and records every request body the agent sends. */
 function scriptModel(turns: Response[]): { requests: Array<{ messages: any[]; tools?: unknown[] }> } {
   const requests: Array<{ messages: any[]; tools?: unknown[] }> = [];
   globalThis.fetch = (async (_url: unknown, init?: RequestInit) => {

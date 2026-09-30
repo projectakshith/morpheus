@@ -5,7 +5,6 @@ import type { RightLine, DiffColumnProps, FileEditRecord, ToolStepRecord } from 
 
 export type { RightLine, DiffColumnProps, FileEditRecord, ToolStepRecord };
 
-/* Divider + one status line. */
 export const RIGHT_FOOTER_HEIGHT = 2;
 
 function formatTokens(n?: number): string {
@@ -34,7 +33,6 @@ export function DiffColumn({ width, height, lines, statusInfo }: DiffColumnProps
   const left = ` ${dot} ${stateWord} · step ${statusInfo?.stepCount ?? 0}/${statusInfo?.maxSteps ?? 25} · ${timeStr}${queue}`;
   const ctx = `ctx ${formatTokens(statusInfo?.usage?.peakContextTokens)}/${formatTokens(statusInfo?.usage?.contextLimit ?? 128_000)}`;
   const hint = isRunning ? "esc stop" : "ctrl+c exit";
-  /* On narrow panels drop detail from the right rather than cutting words off. */
   const right = [`${ctx} · ${hint} `, `${hint} `, ""].find((r) => left.length + 1 + r.length <= innerWidth) ?? "";
   const gap = Math.max(1, innerWidth - left.length - right.length);
 
@@ -86,4 +84,3 @@ export function DiffColumn({ width, height, lines, statusInfo }: DiffColumnProps
     </Box>
   );
 }
-

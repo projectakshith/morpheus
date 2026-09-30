@@ -27,7 +27,6 @@ import type {
 export { isConversationalStall };
 
 const DOOM_LOOP_THRESHOLD = 3;
-/* Consecutive steps made only of repeated calls before the run is stopped. */
 const REPEAT_ONLY_STEP_THRESHOLD = 3;
 const MAX_FINDINGS = 12;
 const MAX_FINDING_TAKEAWAY_CHARS = 320;
@@ -229,7 +228,6 @@ export async function runAgent(
       }
     }
 
-    /* Text in a step that goes on to call tools is narration, not the answer. */
     if (toolCalls.length > 0) {
       options.onNarration?.(accumulatedResponse + assistantContent);
       accumulatedResponse = "";
@@ -347,7 +345,6 @@ export async function runAgent(
       } else if (!targetTool) {
         outputStr = `Error: Tool '${toolName}' not found. Available tools: ${Object.keys(tools).join(", ")}`;
         isError = true;
-        /* Not a repeat; persistent bad calls are the error guard's job. */
         stepMadeProgress = true;
       } else {
         const verdict = callGuard.check(toolName, parsedArgs, stepCount, compactedMessages);

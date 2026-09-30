@@ -1,8 +1,6 @@
 import path from "node:path";
 import type { ChatMessage } from "./types";
 
-/* Tools that never change the workspace. Any tool not listed here is treated as
- * potentially mutating and invalidates cached results, so new tools fail safe. */
 const READ_ONLY_TOOLS = new Set([
   "read_file",
   "list_dir",
@@ -12,10 +10,8 @@ const READ_ONLY_TOOLS = new Set([
   "load_skill",
 ]);
 
-/* Tools whose side effects are confined to the file named by their filePath arg. */
 const SINGLE_FILE_WRITERS = new Set(["edit_file", "write_file"]);
 
-/* Mirrors read_file's own defaults and clamping so equivalent calls share a key. */
 const READ_DEFAULT_LIMIT = 1000;
 const READ_MAX_LIMIT = 2000;
 
@@ -29,8 +25,6 @@ interface CachedRead extends CachedCall {
   resolvedPath: string;
 }
 
-/* `repeat` means an identical call already ran since the workspace last changed,
- * whether or not it is skipped; the agent uses it to detect loops. */
 export type GuardVerdict =
   | { skip: false; repeat: boolean }
   | { skip: true; repeat: true; notice: string };
@@ -40,15 +34,7 @@ function toInt(value: unknown, fallback: number): number {
   return Number.isFinite(n) ? Math.floor(n) : fallback;
 }
 
-/**
- * Suppresses redundant tool calls without ever hiding information from the model.
- *
- * A call is skipped only when both hold:
- * 1. Nothing that could have changed its result has run since (any non-read-only
- *    tool invalidates, bash included, since it can touch any file).
- * 2. The earlier result is still visible to the model in full, verified against the
- *    exact messages it was sent, so compaction can never turn a skip into amnesia.
- */
+/* Skips a call only if nothing that could change its result ran since, and the earlier result is still visible in the context the model was sent. */
 export class ToolCallGuard {
   private reads = new Map<string, CachedRead>();
   private lastBash: { command: string; call: CachedCall } | null = null;
@@ -103,8 +89,6 @@ export class ToolCallGuard {
       return;
     }
 
-    /* Mutating (or unknown) tool: results cached before it may now be stale.
-     * Failed calls invalidate too, since they may have partially applied. */
     this.lastBash = null;
     this.seenSinceChange.clear();
     const target = typeof args.filePath === "string" ? this.resolve(args.filePath) : null;
@@ -139,8 +123,6 @@ export class ToolCallGuard {
     return path.resolve(this.cwd, filePath);
   }
 
-  /* Same-step duplicates come from one parallel batch; the first result lands in
-   * the next request uncompacted, so the model will see it. */
   private isVisible(call: CachedCall, step: number, visibleMessages: ChatMessage[]): boolean {
     if (call.step === step) return true;
     return visibleMessages.some(

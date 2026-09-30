@@ -15,7 +15,6 @@ export const SESSIONS_DIR = path.join(os.homedir(), ".morpheus", "sessions");
 export interface SessionData {
   id: string;
   title: string;
-  /* Absent in sessions saved before titles were tracked. */
   titleSource?: TitleSource;
   cwd: string;
   createdAt: number;

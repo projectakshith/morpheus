@@ -78,8 +78,6 @@ export function useMouseEvents({
         }
 
         if (isSplitLayout && col > leftWidth) {
-          /* Scroll from what's on screen (it may be following the bottom), and
-           * resume following once the user scrolls back down to the end. */
           if (button === 64) {
             isRightUserScrolledRef.current = true;
             setRightScrollTop(Math.max(0, currentRightScrollRef.current - 2));

@@ -1,6 +1,3 @@
-/* A stall is a brief narration of the next step ("Let's look at X") sent instead
- * of a tool call. Anything longer, or carrying code, is a real answer even if it
- * mentions follow-ups, and nudging it would discard work and loop the agent. */
 const MAX_STALL_CHARS = 400;
 
 /* Evaluates whether assistant content is an advisory deflection, future narrative,
