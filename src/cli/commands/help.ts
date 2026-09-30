@@ -11,22 +11,24 @@ export class HelpCommand implements CommandHandler {
   }
 
   public async execute(_trimmed: string, ctx: CommandContext): Promise<boolean> {
-    const helpText = `### Available Slash Commands
+    const helpText = `available slash commands:
 
-• \`/model [model-id]\` - Open interactive model selector or switch models
-• \`/login [provider] [args]\` - Authenticate with Antigravity, OpenRouter, or Local
-• \`/auth\` or \`/whoami\` - View active provider credentials & connection health
-• \`/diff\` - View current git working tree modifications against HEAD
-• \`/session\` - View active session details and token metrics
-• \`/sessions\` - List recent persistent sessions in this repository
-• \`/queue\` or \`/clear-queue\` - View or clear background queued tasks
-• \`/stop\` or \`/abort\` - Halt active execution and clear pending queue
-• \`/morpheus\` or \`/avatar\` - Display operative Morpheus TrueColor avatar
-• \`/resume [id]\` - Restore past session and conversation history
-• \`/new\` - Start a fresh conversation session
-• \`/help\` - Show this overview
+• \`/model [model-id]\` - open interactive model selector or switch models
+• \`/login [provider] [token]\` - authenticate claude, codex, antigravity, openrouter, or local
+• \`/auth\` or \`/whoami\` - view active provider credentials & connection health
+• \`/neo\` or \`/status\` - open neo proxy router inspector and status window
+• \`/usage\` or \`/tokens\` - open dedicated token usage, quotas, and pricing dashboard
+• \`/diff\` - view current git working tree modifications against head
+• \`/session\` - view active session details and token metrics
+• \`/sessions\` - list recent persistent sessions in this repository
+• \`/queue\` or \`/clear-queue\` - view or clear background queued tasks
+• \`/stop\` or \`/abort\` - halt active execution and clear pending queue
+• \`/morpheus\` or \`/avatar\` - display operative morpheus truecolor avatar
+• \`/resume [id]\` - restore past session and conversation history
+• \`/new\` - start a fresh conversation session
+• \`/help\` - show this overview
 
-*Or simply type any instruction or question to run an agentic task.*`;
+type any instruction or question to run an agentic task.`;
 
     const helpThread: Thread = {
       id: `thread_${Date.now()}`,

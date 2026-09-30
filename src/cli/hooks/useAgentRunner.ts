@@ -31,7 +31,7 @@ export interface AgentRunnerOptions {
   isRightUserScrolledRef: MutableRefObject<boolean>;
   setRightScrollTop: React.Dispatch<React.SetStateAction<number>>;
   setPromptHistory: React.Dispatch<React.SetStateAction<string[]>>;
-  openModal?: (modal: "model" | "session" | "settings" | "diff") => void;
+  openModal?: (modal: "model" | "session" | "settings" | "diff" | "neo" | "usage") => void;
   closeModal?: () => void;
 }
 
@@ -638,8 +638,27 @@ export function useAgentRunner({
         findingsRef.current = result.findings;
         setFindings(result.findings);
       }
-      usageRef.current = result.usage;
-      setUsage(result.usage);
+      if (result.usage) {
+        const turnUsage = result.usage;
+        setUsage((prev) => {
+          const byModel = { ...(prev?.byModel || {}) };
+          const cur = byModel[currentModel] || { promptTokens: 0, completionTokens: 0, totalTokens: 0 };
+          byModel[currentModel] = {
+            promptTokens: cur.promptTokens + turnUsage.promptTokens,
+            completionTokens: cur.completionTokens + turnUsage.completionTokens,
+            totalTokens: cur.totalTokens + turnUsage.totalTokens,
+          };
+          const next = {
+            ...turnUsage,
+            byModel,
+          };
+          usageRef.current = next;
+          return next;
+        });
+      } else {
+        usageRef.current = result.usage;
+        setUsage(result.usage);
+      }
       setStatus(result.aborted ? "aborted" : "idle");
 
       /* Auto-save session asynchronously after successful turn */

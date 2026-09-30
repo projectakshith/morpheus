@@ -44,6 +44,7 @@ export interface TokenUsage {
   totalTokens: number;
   peakContextTokens?: number;
   contextLimit?: number;
+  byModel?: Record<string, { promptTokens: number; completionTokens: number; totalTokens: number }>;
 }
 
 export interface Finding {

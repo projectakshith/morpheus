@@ -4,7 +4,7 @@ import type { Thread } from "../types.js";
 export class AuthCommand implements CommandHandler {
   public readonly name = "auth";
   public readonly description = "Display real-time authentication status across all providers";
-  public readonly aliases = ["/auth", "/whoami", "/status"];
+  public readonly aliases = ["/auth", "/whoami"];
 
   public matches(trimmed: string): boolean {
     return this.aliases.includes(trimmed);
@@ -45,40 +45,45 @@ export class AuthCommand implements CommandHandler {
 
         if (info.providers && Array.isArray(info.providers)) {
           const sections = info.providers.map((p) => {
+            const providerName = p.name.toLowerCase();
             if (p.authenticated) {
               let detailLines = "";
               if (p.identity) {
-                detailLines += `\n• **Identity:** \`${p.identity}\``;
+                detailLines += `\n  identity: \`${p.identity}\``;
               }
               if (p.expiry) {
-                detailLines += `\n• **Token Expiry:** \`${p.expiry}\``;
+                detailLines += `\n  token expiry: \`${p.expiry}\``;
               }
               if (p.details?.count !== undefined) {
-                detailLines += `\n• **Discovered Models:** \`${p.details.count}\``;
+                detailLines += `\n  discovered models: \`${p.details.count}\``;
               }
-              return `- **${p.name}**: Active${detailLines}`;
+              return `- **${providerName}**: active${detailLines}`;
             } else {
               let hint = "";
-              if (p.provider === "antigravity") {
-                hint = "Type `/login antigravity` to authenticate via Google OAuth.";
+              if (p.provider === "claude") {
+                hint = "run `claude auth login` or `/login claude <token>`";
+              } else if (p.provider === "codex") {
+                hint = "run `codex login` or `/login codex <token>`";
+              } else if (p.provider === "antigravity") {
+                hint = "run `/login antigravity`";
               } else if (p.provider === "openrouter") {
-                hint = "Type `/login openrouter <api-key>` to configure.";
+                hint = "run `/login openrouter <api-key>`";
               } else if (p.provider === "local") {
-                hint = "Start Ollama (`ollama serve`) or run `/login local [url]`.";
+                hint = "start ollama (`ollama serve`) or `/login local [url]`";
               }
-              return `- **${p.name}**: Inactive\n  - *${p.error || "Unauthenticated"}*\n  - ${hint}`;
+              return `- **${providerName}**: inactive\n  ${p.error?.toLowerCase() || "unauthenticated"}\n  hint: ${hint}`;
             }
           });
 
-          authStatusText = `### Provider Authentication Status\n\n${sections.join("\n\n")}\n\n*Configure any provider with \`/login <provider>\`.*`;
+          authStatusText = `modular provider status:\n\n${sections.join("\n\n")}\n\nconfigure any provider with \`/login <provider>\``;
         } else if (info.authenticated) {
-          authStatusText = `## Authentication Active (macOS Keychain)\n- **Account:** \`${info.email || "Active"}\`\n- **Keychain Target:** \`${info.service || "gemini"} / ${info.account || "antigravity"}\`\n- **Token Expiry:** \`${info.expiry || "Auto-refreshing"}\`\n\n*All Antigravity models route through this identity.*`;
+          authStatusText = `authentication active:\n- account: \`${info.email || "active"}\`\n- keychain target: \`${info.service || "gemini"} / ${info.account || "antigravity"}\`\n- token expiry: \`${info.expiry || "auto-refreshing"}\``;
         } else {
-          authStatusText = `## Authentication Missing\nNo credentials found in macOS Keychain. Type \`/login\` to authenticate.`;
+          authStatusText = `authentication missing\nno credentials found in macos keychain. type \`/login\` to authenticate.`;
         }
       }
     } catch {
-      authStatusText = `## Neo Router Offline\nCould not connect to Neo on port 8787. Ensure Neo is active.`;
+      authStatusText = `neo router offline\ncould not connect to neo on port 8787. ensure neo daemon is running.`;
     }
 
     const authThread: Thread = {

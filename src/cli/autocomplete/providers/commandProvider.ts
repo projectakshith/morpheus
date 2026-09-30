@@ -24,6 +24,9 @@ const BUILTIN_COMMANDS: CommandDef[] = [
   { name: "/sessions", description: "Browse and resume past sessions" },
   { name: "/login", description: "Authenticate provider (antigravity, openrouter)", hasArgs: true },
   { name: "/auth", description: "Check authentication status of providers" },
+  { name: "/neo", description: "Open Neo proxy router inspector and status window", aliases: ["/neo-status", "/status"] },
+  { name: "/usage", description: "Open token usage, quotas, and model pricing dashboard", aliases: ["/tokens", "/cost", "/quota"] },
+  { name: "/morpheus", description: "Display operative Morpheus TrueColor avatar", aliases: ["/avatar"] },
   { name: "/skills", description: "List all available agent skills and playbooks", aliases: ["/skill"] },
   { name: "/exit", description: "Exit Morpheus CLI", aliases: ["/quit"] },
 ];

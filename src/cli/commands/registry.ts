@@ -11,6 +11,8 @@ import { queueCommand } from "./queue.js";
 import { skillsCommand } from "./skills.js";
 import { helpCommand } from "./help.js";
 import { morpheusCommand } from "./morpheus.js";
+import { neoCommand } from "./neo.js";
+import { usageCommand } from "./usage.js";
 
 export class CommandRegistry {
   private handlers: CommandHandler[] = [];
@@ -28,6 +30,8 @@ export class CommandRegistry {
     this.register(skillsCommand);
     this.register(helpCommand);
     this.register(morpheusCommand);
+    this.register(neoCommand);
+    this.register(usageCommand);
   }
 
   public register(handler: CommandHandler): void {

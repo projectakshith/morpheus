@@ -241,5 +241,99 @@ describe("CommandRegistry", () => {
     assert.ok(threadCreated);
     assert.ok((threadCreated as Thread).response.includes("Unknown command"));
   });
+
+  it("dispatches /neo command and reports proxy router health", async () => {
+    let threadCreated: Thread | null = null;
+    const ctx: CommandContext = {
+      taskText: "/neo",
+      baseURL: "http://127.0.0.1:8787/v1",
+      currentModel: "flash",
+      setCurrentModel: () => {},
+      setIsModelSelectorOpen: () => {},
+      setThreads: (updater) => {
+        const next = typeof updater === "function" ? updater([]) : updater;
+        threadCreated = next[0] || null;
+      },
+      setPromptHistory: () => {},
+      threadsCount: 0,
+    };
+
+    const handled = await commandRegistry.dispatch("/neo", ctx);
+    assert.equal(handled, true);
+    assert.ok(threadCreated);
+    assert.ok((threadCreated as Thread).response.includes("Neo Router"));
+  });
+
+  it("dispatches /neo command and opens neo modal when openModal is provided", async () => {
+    let openedModal: string | null = null;
+    const ctx: CommandContext = {
+      taskText: "/neo",
+      baseURL: "http://127.0.0.1:8787/v1",
+      currentModel: "flash",
+      setCurrentModel: () => {},
+      setIsModelSelectorOpen: () => {},
+      setThreads: () => {},
+      setPromptHistory: () => {},
+      threadsCount: 0,
+      openModal: (modal) => {
+        openedModal = modal;
+      },
+    };
+
+    const handled = await commandRegistry.dispatch("/neo", ctx);
+    assert.equal(handled, true);
+    assert.equal(openedModal, "neo");
+  });
+
+  it("dispatches /usage command and reports token metrics", async () => {
+    let threadCreated: Thread | null = null;
+    const ctx: CommandContext = {
+      taskText: "/usage",
+      baseURL: "http://127.0.0.1:8787/v1",
+      currentModel: "flash",
+      setCurrentModel: () => {},
+      setIsModelSelectorOpen: () => {},
+      setThreads: (updater) => {
+        const next = typeof updater === "function" ? updater([]) : updater;
+        threadCreated = next[0] || null;
+      },
+      setPromptHistory: () => {},
+      threadsCount: 0,
+      usage: {
+        promptTokens: 1200,
+        completionTokens: 300,
+        totalTokens: 1500,
+        peakContextTokens: 1500,
+        contextLimit: 128000,
+      },
+    };
+
+    const handled = await commandRegistry.dispatch("/usage", ctx);
+    assert.equal(handled, true);
+    assert.ok(threadCreated);
+    assert.ok((threadCreated as Thread).response.includes("Token Usage"));
+  });
+
+  it("dispatches /usage command and opens usage modal when openModal is provided", async () => {
+    let openedModal: string | null = null;
+    const ctx: CommandContext = {
+      taskText: "/usage",
+      baseURL: "http://127.0.0.1:8787/v1",
+      currentModel: "flash",
+      setCurrentModel: () => {},
+      setIsModelSelectorOpen: () => {},
+      setThreads: () => {},
+      setPromptHistory: () => {},
+      threadsCount: 0,
+      openModal: (modal) => {
+        openedModal = modal;
+      },
+    };
+
+    const handled = await commandRegistry.dispatch("/usage", ctx);
+    assert.equal(handled, true);
+    assert.equal(openedModal, "usage");
+  });
 });
+
 
