@@ -14,6 +14,9 @@ test("isConversationalStall catches various future narrative patterns", () => {
   assert.equal(isConversationalStall("We need to check package.json", 1, 8, 0), true);
   assert.equal(isConversationalStall("Let's see whether there are other routes", 1, 8, 0), true);
   assert.equal(isConversationalStall("I'll proceed to examine the config", 1, 8, 0), true);
+  assert.equal(isConversationalStall("Now the useFormState rename note — let me confirm from the React 19 release post.", 1, 8, 0), true);
+  assert.equal(isConversationalStall("Let me check the official documentation first.", 1, 8, 0), true);
+  assert.equal(isConversationalStall("I need to verify the hook signature in the docs.", 1, 8, 0), true);
 });
 
 test("isConversationalStall catches advisory deflections to the user", () => {

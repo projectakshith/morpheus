@@ -18,7 +18,7 @@ export function isConversationalStall(
   }
 
   const matchesFutureAction =
-    /(\b(let's|let us|i'll|i will|we will|we can|we should|we need to)\s+(?:try\s+(?:to\s+)?|first\s+|now\s+|also\s+|proceed\s+to\s+|go\s+ahead\s+and\s+)?(?:take\s+(?:a\s+)?(?:look|peek)|check(?:\s+out)?|dig\s+into|dive\s+into|turn\s+(?:our\s+)?attention\s+to|look(?:\s+at|\s+into)?|explore|investigate|search|inspect|scan|list|read|outline|see\s+(?:if|whether)|find\s+out|examine|start\s+(?:by|with)?|locate|head\s+over\s+to)\b|\bshall i\b|\bshould we\b|\bwould you like\b)/i.test(
+    /(\b(let's|let us|let me|i'll|i will|i should|i'm going to|i need to|we will|we can|we should|we need to)\s+(?:try\s+(?:to\s+)?|first\s+|now\s+|also\s+|proceed\s+to\s+|go\s+ahead\s+and\s+|just\s+|quickly\s+)?(?:take\s+(?:a\s+)?(?:look|peek)|check(?:\s+out)?|confirm|verify|dig\s+into|dive\s+into|turn\s+(?:our\s+)?attention\s+to|look(?:\s+at|\s+into)?|explore|investigate|search|inspect|scan|list|read|outline|see\s+(?:if|whether)?|find\s+out|examine|start\s+(?:by|with)?|locate|head\s+over\s+to|browse|fetch|pull\s+up|query)\b|\bshall i\b|\bshould we\b|\bwould you like\b)/i.test(
       content
     );
 

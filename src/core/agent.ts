@@ -394,7 +394,7 @@ export async function runAgent(
         workingMessages.push({
           role: "user",
           content:
-            "[System Notice: You are an autonomous coding assistant, NOT an advisory chatbot. Do not ask for user permission, narrate future plans, or tell the user to check/read files. Directly invoke the appropriate tool (list_dir, grep_code, outline_code, read_file) right now to inspect the code and answer the question completely.]",
+            "[System Notice: You are an autonomous coding assistant, NOT an advisory chatbot. Do not ask for user permission, narrate future plans, or tell the user to check/read files. Directly invoke the appropriate tool (e.g. uplink_search, uplink_browse, list_dir, grep_code, read_file) right now or provide your complete, direct answer.]",
         });
         continue;
       }
