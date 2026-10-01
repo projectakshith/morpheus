@@ -145,6 +145,53 @@ test("Uplink Parser: Semantic Markdown and Interactive Element Indexing", () => 
   assert.equal(el3?.placeholder, "Search docs...");
 });
 
+test("Uplink Parser: Preserves TypeScript generics, JSX, and types in code blocks", () => {
+  const html = `
+    <html>
+      <head><title>Generics Test</title></head>
+      <body>
+        <main>
+          <h1>API Reference</h1>
+          <p>Here is an async component:</p>
+          <pre><code>async function Page({ params }: { params: Promise<{ slug: string }> }) {\n  return <div className="card">{params.slug}</div>;\n}</code></pre>
+          <p>Inline type: <code>Record<string, Promise<T>></code></p>
+        </main>
+      </body>
+    </html>
+  `;
+
+  const page = parseHtmlToAgentMarkdown(html, "https://example.com/types");
+  assert.ok(page.content.includes("Promise<{ slug: string }>"));
+  assert.ok(page.content.includes('<div className="card">{params.slug}</div>'));
+  assert.ok(page.content.includes("`Record<string, Promise<T>>`"));
+});
+
+test("Uplink Parser: Native markdown and frontmatter support", () => {
+  const markdownDoc = `---
+title: How to upgrade to Next.js 15
+description: Guide for version 15
+---
+
+# Upgrading to Next.js 15
+
+## Async Request APIs
+Previously synchronous APIs are now async:
+* cookies()
+* headers()
+
+### Code Example
+\`\`\`ts
+const cookieStore = await cookies();
+\`\`\`
+`;
+
+  const page = parseHtmlToAgentMarkdown(markdownDoc, "https://nextjs.org/docs/v15");
+  assert.equal(page.title, "How to upgrade to Next.js 15");
+  assert.ok(page.outline && page.outline.length >= 2);
+  assert.ok(page.content.includes("### Document Outline"));
+  assert.ok(page.content.includes("const cookieStore = await cookies();"));
+});
+
 test("Uplink Session: Navigation, Element Clicking, and History", async () => {
   const mockDriver = new MockUplinkDriver({
     "https://docs.local/index": `

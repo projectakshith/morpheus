@@ -117,6 +117,46 @@ export function parseHtmlToAgentMarkdown(
   const elements = new Map<number, UplinkElement>();
   let refIdCounter = 0;
 
+  // Check if input is already raw Markdown (e.g. from servers supporting Accept: text/markdown)
+  const isAlreadyMarkdown =
+    (html.startsWith("---") && html.includes("\n---")) ||
+    (!/<(?:html|body|div|p)\b/i.test(html) && /^#+\s+/m.test(html));
+
+  if (isAlreadyMarkdown) {
+    let title = "Document";
+    const fmTitle = html.match(/^title:\s*["']?([^"'\n]+)/m);
+    const h1Title = html.match(/^#\s+(.+)$/m);
+    if (fmTitle) title = fmTitle[1].trim();
+    else if (h1Title) title = h1Title[1].trim();
+
+    const body = html.replace(/^---[\s\S]*?---\s*\n?/, "").trim();
+    const rawLines = body.split("\n");
+    const outline: string[] = [];
+    for (const line of rawLines) {
+      const trimmed = line.trim();
+      if (/^#{1,3}\s+/.test(trimmed)) {
+        outline.push(trimmed);
+      }
+    }
+
+    const outlineSection =
+      outline.length > 0
+        ? `### Document Outline\n${outline.slice(0, 15).map((h) => `- ${h}`).join("\n")}${
+            outline.length > 15 ? `\n... (${outline.length - 15} more sections)` : ""
+          }\n────────────────────────────────────────────────────────────────\n`
+        : "";
+
+    return {
+      url: baseUrl,
+      title,
+      content: outlineSection + body,
+      elements,
+      outline,
+      status: statusCode,
+      timestamp: Date.now(),
+    };
+  }
+
   // 1. Extract <title>
   const titleMatch = html.match(/<title[^>]*>([\s\S]*?)<\/title>/i);
   const title = titleMatch ? decodeHtmlEntities(titleMatch[1].trim()) : "Untitled Page";
@@ -204,18 +244,41 @@ export function parseHtmlToAgentMarkdown(
   });
 
   // 4. Convert structural block elements
-  // Code blocks: <pre><code>...</code></pre>
+  // Protect code blocks and inline code from subsequent tag stripping (<[^>]+>)
+  const codeBlocks: string[] = [];
+  const inlineCodes: string[] = [];
+
   contentHtml = contentHtml.replace(
     /<pre[^>]*><code[^>]*>([\s\S]*?)<\/code><\/pre>/gi,
-    (_match, code) => `\n\`\`\`\n${decodeHtmlEntities(code.trim())}\n\`\`\`\n`
+    (_match, code) => {
+      const withoutHighlightSpans = code.replace(/<\/?span\b[^>]*>/gi, "");
+      const cleanedCode = decodeHtmlEntities(withoutHighlightSpans.trim());
+      const idx = codeBlocks.length;
+      codeBlocks.push(`\n\`\`\`\n${cleanedCode}\n\`\`\`\n`);
+      return `\n\n%%UPLINK_CODE_BLOCK_${idx}%%\n\n`;
+    }
   );
+
   contentHtml = contentHtml.replace(
     /<pre[^>]*>([\s\S]*?)<\/pre>/gi,
-    (_match, code) => `\n\`\`\`\n${decodeHtmlEntities(code.trim())}\n\`\`\`\n`
+    (_match, code) => {
+      const withoutHighlightSpans = code.replace(/<\/?span\b[^>]*>/gi, "");
+      const cleanedCode = decodeHtmlEntities(withoutHighlightSpans.trim());
+      const idx = codeBlocks.length;
+      codeBlocks.push(`\n\`\`\`\n${cleanedCode}\n\`\`\`\n`);
+      return `\n\n%%UPLINK_CODE_BLOCK_${idx}%%\n\n`;
+    }
   );
+
   contentHtml = contentHtml.replace(
     /<code[^>]*>([\s\S]*?)<\/code>/gi,
-    (_match, code) => ` \`${decodeHtmlEntities(code.trim())}\` `
+    (_match, code) => {
+      const withoutHighlightSpans = code.replace(/<\/?span\b[^>]*>/gi, "");
+      const cleanedCode = decodeHtmlEntities(withoutHighlightSpans.trim());
+      const idx = inlineCodes.length;
+      inlineCodes.push(` \`${cleanedCode}\` `);
+      return `%%UPLINK_INLINE_CODE_${idx}%%`;
+    }
   );
 
   // Headings
@@ -246,7 +309,17 @@ export function parseHtmlToAgentMarkdown(
   // 5. Strip all remaining HTML tags
   contentHtml = contentHtml.replace(/<[^>]+>/g, "");
 
-  // 6. Decode entities and format whitespace
+  // 6. Restore code blocks and inline code
+  contentHtml = contentHtml.replace(
+    /%%UPLINK_CODE_BLOCK_(\d+)%%/g,
+    (_match, id) => codeBlocks[Number(id)] ?? ""
+  );
+  contentHtml = contentHtml.replace(
+    /%%UPLINK_INLINE_CODE_(\d+)%%/g,
+    (_match, id) => inlineCodes[Number(id)] ?? ""
+  );
+
+  // 7. Decode entities and format whitespace
   contentHtml = decodeHtmlEntities(contentHtml);
 
   // Clean lines: collapse whitespace per line and limit blank lines
