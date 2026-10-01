@@ -343,6 +343,36 @@ export function describeStep(step: ThreadStep, cwd: string, now: number = Date.n
       };
     }
 
+    case "uplink_search": {
+      return {
+        kind: "card",
+        card: {
+          ...base,
+          verb: "search",
+          target: str(args.query),
+          targetIsPath: false,
+          status: running ? runningStatus : failed ? "failed" : "ok",
+          body: running ? { type: "none" } : { type: "text", lines: plainLines(step.output, failed), keep: "head" },
+        },
+      };
+    }
+
+    case "uplink_browse": {
+      const action = str(args.action) || "browse";
+      const target = str(args.url) || (args.ref ? `[${args.ref}]` : "");
+      return {
+        kind: "card",
+        card: {
+          ...base,
+          verb: action,
+          target,
+          targetIsPath: false,
+          status: running ? runningStatus : failed ? "failed" : "ok",
+          body: running ? { type: "none" } : { type: "text", lines: plainLines(step.output, failed), keep: "head" },
+        },
+      };
+    }
+
     default: {
       const primary = str(args.filePath) || str(args.command) || str(args.url) || str(args.path);
       return {

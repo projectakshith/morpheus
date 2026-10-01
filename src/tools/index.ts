@@ -11,6 +11,11 @@ import { createOutlineTool } from "./outline";
 import { createHttpTool } from "./http";
 import { createFindingTool } from "./finding";
 import { createSkillTool } from "./skill";
+import {
+  createUplinkSearchTool,
+  createUplinkBrowseTool,
+  createUplinkTools,
+} from "./uplink";
 
 export {
   createReadTool,
@@ -23,6 +28,9 @@ export {
   createHttpTool,
   createFindingTool,
   createSkillTool,
+  createUplinkSearchTool,
+  createUplinkBrowseTool,
+  createUplinkTools,
 };
 
 export function createTools(
@@ -32,6 +40,7 @@ export function createTools(
   onActivateSkill?: (skill: Skill) => void,
   options: { delegateTool?: ToolDefinition; access?: "readOnly" | "scopedWrite"; allowedWritePaths?: string[] } = {}
 ): Record<string, ToolDefinition> {
+  const uplink = createUplinkTools();
   const tools: Record<string, ToolDefinition> = {
     read_file: createReadTool(cwd),
     write_file: createWriteTool(cwd, options.access !== "scopedWrite"),
@@ -42,6 +51,8 @@ export function createTools(
     outline_code: createOutlineTool(cwd),
     record_finding: createFindingTool(onRecordFinding),
     http_request: createHttpTool(),
+    uplink_search: uplink.uplink_search,
+    uplink_browse: uplink.uplink_browse,
   };
 
   if (skills && skills.length > 0) {
@@ -56,6 +67,7 @@ export function createTools(
   } else if (options.access === "scopedWrite") {
     delete tools.bash;
     delete tools.http_request;
+    delete tools.uplink_browse;
     const allowed = new Set((options.allowedWritePaths ?? []).map((file) => path.resolve(cwd, file)));
     for (const name of ["write_file", "edit_file"]) {
       const tool = tools[name];

@@ -124,6 +124,23 @@ export function getCoolActionLabel(step?: ThreadStep, cwd: string = process.cwd(
         : `pinging link${timeSuffix}`;
     }
 
+    case "uplink_search": {
+      const query = typeof args.query === "string" ? args.query : "";
+      const cleanQuery = query.length > 24 ? `${query.slice(0, 22)}…` : query;
+      return cleanQuery
+        ? `uplink search: ${cleanQuery}${timeSuffix}`
+        : `searching web${timeSuffix}`;
+    }
+
+    case "uplink_browse": {
+      const action = typeof args.action === "string" ? args.action : "browse";
+      const target = typeof args.url === "string" ? args.url : args.ref ? `[${args.ref}]` : "";
+      const cleanTarget = target.length > 20 ? `${target.slice(0, 18)}…` : target;
+      return cleanTarget
+        ? `uplink ${action}: ${cleanTarget}${timeSuffix}`
+        : `browsing web${timeSuffix}`;
+    }
+
     case "load_skill": {
       const skillName = typeof args.name === "string" ? args.name : "";
       return skillName

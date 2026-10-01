@@ -29,6 +29,10 @@ function getToolIcon(toolName: string): string {
       return glyphs.outline;
     case "http_request":
       return glyphs.network;
+    case "uplink_search":
+      return glyphs.search;
+    case "uplink_browse":
+      return glyphs.network;
     case "record_finding":
       return glyphs.brain;
     case "load_skill":
@@ -47,7 +51,14 @@ export function ToolCard({
   outputPreview = [],
 }: ToolCardProps) {
   const primaryArg =
-    args.filePath ?? args.command ?? args.url ?? args.dirPath ?? args.query ?? "";
+    args.filePath ??
+    args.command ??
+    args.url ??
+    args.dirPath ??
+    args.query ??
+    (args.action
+      ? `${args.action}${args.url ? ` ${args.url}` : args.ref ? ` [${args.ref}]` : ""}`
+      : "");
   const primaryArgStr = typeof primaryArg === "string" ? primaryArg : JSON.stringify(primaryArg);
   const icon = getToolIcon(name);
 
