@@ -35,6 +35,23 @@ By default, a run allows up to 3 concurrent workers, 6 total worker tasks, 20,00
 
 Set role-specific models in `/settings` under runtime. Choices are saved in `~/.morpheus/config.json`; choose “inherit main” to follow the active model. Workers also fall back to the main model until you assign one.
 
+### MCP servers
+
+Morpheus can connect to local MCP servers over stdio. Add server definitions to `~/.morpheus/config.json`; each server process runs with your user permissions, so only configure commands you trust.
+
+```json
+{
+  "mcpServers": {
+    "cua": {
+      "command": "cua-driver",
+      "args": ["mcp"]
+    }
+  }
+}
+```
+
+MCP tools are available to the main agent as `mcp_<server>_<tool>` (for example, `mcp_cua_list_apps`). Tool names are normalized to lowercase letters, numbers, and underscores. Set `"disabled": true` on a server entry to skip it. Morpheus starts configured servers for each run and closes them when the run finishes. MCP servers are not exposed to worker agents.
+
 ### controls
 
 - `tab` — toggle panel focus (chat / tool calls & telemetry)

@@ -1,6 +1,7 @@
 import { createHash, randomUUID } from "node:crypto";
 import path from "node:path";
 import { createTools } from "../tools/index";
+import { createMcpTools } from "../tools/mcp";
 import { Operator } from "../provider/operator";
 import { gatherContext, buildSystemPrompt } from "./context";
 import { compactHistory } from "./compaction";
@@ -174,6 +175,8 @@ export async function runAgent(
       allowedWritePaths: options.allowedWritePaths,
     }
   );
+  const mcp = options.toolAccess ? { tools: {}, close: async () => undefined } : await createMcpTools();
+  Object.assign(tools, mcp.tools);
   const buildRunSystemPrompt = () => {
     const systemPrompt = buildSystemPrompt({
       ...baseContext,
@@ -654,6 +657,7 @@ export async function runAgent(
   };
 
   options.onUsage?.(usage);
+  await mcp.close();
   await logger.logAssistantResponse(fullResponse);
   await logger.logStopReason(stopReason);
   await logger.logFinish(usage, wasAborted);

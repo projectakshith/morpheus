@@ -26,6 +26,7 @@
   "license": "MIT",
   "dependencies": {
     "@clack/prompts": "^0.9.1",
+    "@modelcontextprotocol/client": "^2.2.0",
     "@types/react": "^19.3.0",
     "diff": "^7.0.0",
     "dotenv": "^16.4.7",
