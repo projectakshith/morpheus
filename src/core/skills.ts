@@ -82,6 +82,7 @@ export function loadSkills(cwd: string = process.cwd()): Skill[] {
 
   const builtinCandidates = [
     path.resolve(__dirname, "../../skills"),
+    path.resolve(__dirname, "../../../skills"),
     path.resolve(process.cwd(), "skills"),
   ];
   const builtinDir = builtinCandidates.find((d) => fs.existsSync(d));
@@ -141,6 +142,7 @@ export function loadRules(cwd: string = process.cwd()): Rule[] {
 
   const builtinCandidates = [
     path.resolve(__dirname, "../../rules"),
+    path.resolve(__dirname, "../../../rules"),
     path.resolve(process.cwd(), "rules"),
   ];
   const builtinDir = builtinCandidates.find((d) => fs.existsSync(d));

@@ -491,6 +491,7 @@ export function useAgentRunner({
         verbose: isVerbose,
         maxSteps,
         subagents: { models: subagentModels },
+        persistentMcp: true,
         findings: findingsRef.current,
         onStepStart: (step) => {
           setStepCount(step);

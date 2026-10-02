@@ -27,6 +27,7 @@ export class HelpCommand implements CommandHandler {
 • \`/resume [id]\` - restore past session and conversation history
 • \`/new\` - start a fresh conversation session
 • \`/help\` - show this overview
+• \`/cua setup|status|enable|disable\` - configure and check Cua Driver computer use
 
 type any instruction or question to run an agentic task.`;
 

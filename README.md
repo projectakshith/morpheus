@@ -50,7 +50,10 @@ Morpheus can connect to local MCP servers over stdio. Add server definitions to 
 }
 ```
 
-MCP tools are available to the main agent as `mcp_<server>_<tool>` (for example, `mcp_cua_list_apps`). Tool names are normalized to lowercase letters, numbers, and underscores. Set `"disabled": true` on a server entry to skip it. Morpheus starts configured servers for each run and closes them when the run finishes. MCP servers are not exposed to worker agents.
+MCP tools are available to the main agent as `mcp_<server>_<tool>` (for example, `mcp_cua_list_apps`). Tool names are normalized to lowercase letters, numbers, and underscores. Set `"disabled": true` on a server entry to skip it. Morpheus starts configured servers for each run and closes them when the run finishes. MCP servers are not exposed to worker agents. Image results from MCP tools are passed to the selected model, so visual computer use requires a model endpoint that accepts images.
+
+For desktop tasks, install Cua Driver and grant its required OS permissions. The `computer_use` skill guides Morpheus through app discovery, fresh UI snapshots, actions, and verification.
+Use `/cua setup` to register Cua Driver in Morpheus, `/cua status` to check installation and permissions, and `/cua enable` or `/cua disable` to control whether Morpheus starts its MCP server.
 
 ### controls
 

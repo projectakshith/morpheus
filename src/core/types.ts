@@ -18,6 +18,8 @@ export interface ChatMessage {
   tool_call_id?: string;
   tool_calls?: ToolCall[];
   isError?: boolean;
+  /** Screenshots attached on behalf of a tool result rather than typed by the user. */
+  toolVisual?: boolean;
 }
 
 export type CoreMessage = ChatMessage;
@@ -130,8 +132,10 @@ export interface AgentOptions {
   /** Internal worker tool restrictions. */
   toolAccess?: "readOnly" | "scopedWrite";
   allowedWritePaths?: string[];
-  /** Cumulative input + output token budget for one run. Defaults to 300,000. */
+  /** Cumulative input + output token budget for one run; cached input counts at 10%. Defaults to 300,000. */
   maxTotalTokens?: number;
+  /** Reuse MCP server processes across runs; the host must call closeMcpConnections() before exiting. */
+  persistentMcp?: boolean;
   /** Stable only for the lifetime of this run; used for provider-side prompt-cache affinity. */
   promptCacheKey?: string;
   abortSignal?: AbortSignal;

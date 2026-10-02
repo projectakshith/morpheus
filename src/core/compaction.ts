@@ -26,6 +26,42 @@ export interface CompactionOptions {
    * Default: 4 lines
    */
   errorLinesToPreserve?: number;
+
+  /**
+   * Number of most recent tool screenshot messages whose images stay attached.
+   * Default: 1
+   */
+  recentVisualsToKeep?: number;
+}
+
+const VISUAL_PREFIX = "Visual result from ";
+
+export function isToolVisualMessage(msg: ChatMessage | CoreMessage): boolean {
+  if (msg.role !== "user") return false;
+  if ((msg as ChatMessage).toolVisual) return true;
+  if (typeof msg.content === "string") return msg.content.startsWith(`[${VISUAL_PREFIX}`);
+  return Array.isArray(msg.content) && msg.content.some(
+    (part: any) => part?.type === "text" && typeof part.text === "string" && part.text.startsWith(VISUAL_PREFIX)
+  );
+}
+
+/* Replaces screenshots older than the newest `keep` with a text stub; images dominate context cost. */
+export function dropOldToolVisuals<T extends ChatMessage | CoreMessage>(history: T[], keep = 1): T[] {
+  let kept = 0;
+  const result = [...history];
+  for (let i = result.length - 1; i >= 0; i--) {
+    const msg = result[i];
+    if (!isToolVisualMessage(msg) || typeof msg.content === "string") continue;
+    if (kept < keep) {
+      kept++;
+      continue;
+    }
+    const label = Array.isArray(msg.content)
+      ? msg.content.find((part: any) => part?.type === "text")?.text?.split(".")[0] ?? "screenshot"
+      : "screenshot";
+    result[i] = { ...msg, content: `[${label}. Image removed; request a fresh state if needed.]` };
+  }
+  return result;
 }
 
 /**
@@ -172,6 +208,7 @@ export function compactHistory(
   const recentStepsToProtect = options.recentStepsToProtect ?? 2;
   const compactThresholdChars = options.compactThresholdChars ?? 400;
   const errorLinesToPreserve = options.errorLinesToPreserve ?? 4;
+  history = dropOldToolVisuals(history, options.recentVisualsToKeep ?? 1);
 
   if (history.length <= 2) {
     return history as ChatMessage[];
@@ -182,7 +219,7 @@ export function compactHistory(
 
   for (let i = 0; i < history.length; i++) {
     const msg = history[i];
-    if (msg.role === "user") {
+    if (msg.role === "user" && !isToolVisualMessage(msg)) {
       userIndices.push(i);
     } else if (msg.role === "assistant") {
       const chatMsg = msg as ChatMessage;

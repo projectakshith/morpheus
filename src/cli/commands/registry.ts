@@ -13,6 +13,7 @@ import { helpCommand } from "./help.js";
 import { morpheusCommand } from "./morpheus.js";
 import { neoCommand } from "./neo.js";
 import { usageCommand } from "./usage.js";
+import { cuaCommand } from "./cua.js";
 
 export class CommandRegistry {
   private handlers: CommandHandler[] = [];
@@ -32,6 +33,7 @@ export class CommandRegistry {
     this.register(morpheusCommand);
     this.register(neoCommand);
     this.register(usageCommand);
+    this.register(cuaCommand);
   }
 
   public register(handler: CommandHandler): void {

@@ -7,6 +7,7 @@ import fs from "node:fs";
 import { spawn } from "node:child_process";
 import { App } from "./components/App";
 import { parseCLIArgs } from "./args";
+import { closeMcpConnections } from "../tools/mcp";
 
 import { fileURLToPath } from "node:url";
 
@@ -112,4 +113,5 @@ export async function runCLI(args: string[] = process.argv.slice(2)): Promise<vo
   );
 
   await waitUntilExit();
+  await closeMcpConnections();
 }
