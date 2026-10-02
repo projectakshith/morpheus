@@ -27,6 +27,17 @@ morpheus
 - `morpheus --local` — run locally via ollama (`qwen2.5-coder:7b`)
 - `morpheus -v` — stream raw reasoning and tool deltas
 
+### daemon
+
+`morpheus serve` runs Morpheus headless: no UI, just a WebSocket API that interfaces like Trinity connect to. Sessions keep running when clients disconnect, and several clients can watch the same session.
+
+```bash
+morpheus serve                 # ws://127.0.0.1:7878, token in ~/.morpheus/daemon.json
+morpheus serve --host 0.0.0.0  # reachable from other devices (phone over LAN/tailscale)
+```
+
+The protocol is documented in [docs/daemon-protocol.md](docs/daemon-protocol.md).
+
 ### worker agents
 
 Morpheus can delegate independent research, review, or scoped implementation tasks. Workers receive a separate task and context, run concurrently within limits, and return results to the coordinating agent. Research and review are read-only. Implementation workers must be given exact workspace-relative files; shell commands and commits are disabled, and edits outside that file list are rejected.

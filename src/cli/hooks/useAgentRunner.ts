@@ -6,6 +6,8 @@ import React, { useState, useRef, useEffect, type MutableRefObject } from "react
 import { runAgent } from "../../core/agent.js";
 import type { ChatMessage, Finding, SubagentRole, TokenUsage, ToolResult } from "../../core/types.js";
 import { isToolError } from "../../utils/errors.js";
+import { formatAgentError } from "../../utils/agentErrors.js";
+import { checkProviderAuth } from "../../core/providerAuth.js";
 import type { Thread, ThreadStep, FileEditRecord, AppStatus } from "../types.js";
 import { extractDiffRecord } from "../utils/diffRecord.js";
 import { accumulateUsage } from "../stats.js";
@@ -52,29 +54,6 @@ export interface AgentRunnerOptions {
   setPromptHistory: React.Dispatch<React.SetStateAction<string[]>>;
   openModal?: (modal: "model" | "session" | "settings" | "diff" | "neo" | "usage") => void;
   closeModal?: () => void;
-}
-
-function formatAgentError(errMsg: string, baseURL?: string): string {
-  const lowErr = errMsg.toLowerCase();
-  let response = `error: ${lowErr}`;
-  if (lowErr.includes("claude") && /401|403|token|oauth|keychain/.test(lowErr)) {
-    response += `\n\nclaude pro is not authenticated. run \`claude auth login\` in terminal or type \`/login claude <token>\`.`;
-  } else if (lowErr.includes("codex") && /401|403|token|auth\.json/.test(lowErr)) {
-    response += `\n\ncodex session is not authenticated. run \`codex login\` in terminal or type \`/login codex <token>\`.`;
-  } else if (
-    lowErr.includes("openrouter") &&
-    /api key|unauthorized|401|not configured/.test(lowErr)
-  ) {
-    response += `\n\nopenrouter is not configured. type \`/login openrouter <api-key>\`.`;
-  } else if (
-    lowErr.includes("antigravity") &&
-    /credentials|keychain|401|403|unauthenticated/.test(lowErr)
-  ) {
-    response += `\n\ngoogle cloud code is not authenticated. type \`/login antigravity\`.`;
-  } else if (/fetch failed|econnrefused/.test(lowErr)) {
-    response += `\n\nunable to connect to neo proxy (${baseURL || "http://127.0.0.1:8787"}). ensure neo daemon is running.`;
-  }
-  return response;
 }
 
 export function useAgentRunner({
@@ -415,67 +394,30 @@ export function useAgentRunner({
     }
 
     /* Pre-flight check: verify required provider is authenticated */
-    try {
-      const neoBase = baseURL || "http://127.0.0.1:8787/v1";
-      let providerId = "antigravity";
-      if (
-        currentModel.startsWith("cloud/") ||
-        currentModel.startsWith("openrouter/") ||
-        currentModel.includes("space-bunny") ||
-        currentModel.includes("deepseek")
-      ) {
-        providerId = "openrouter";
-      } else if (
-        currentModel.startsWith("local/") ||
-        currentModel.includes("llama") ||
-        currentModel.includes("qwen")
-      ) {
-        providerId = "local";
+    const authProblem = await checkProviderAuth(currentModel, baseURL);
+    if (authProblem) {
+      const unauthThread: Thread = {
+        id: threadId,
+        index: threadsRef.current.length + (existingThreadId ? 0 : 1),
+        prompt: taskText,
+        response: authProblem,
+        isStreaming: false,
+        steps: [],
+        isExpanded: false,
+        status: "error",
+        stepCount: 0,
+        startTime,
+        durationMs: 0,
+      };
+      if (existingThreadId) {
+        setThreads((prev) => prev.map((t) => (t.id === threadId ? unauthThread : t)));
+      } else {
+        setThreads((prev) => [...prev, unauthThread]);
       }
-
-      const statusUrl = neoBase.endsWith("/v1")
-        ? `${neoBase}/auth/status?provider=${providerId}`
-        : `${neoBase}/v1/auth/status?provider=${providerId}`;
-
-      const checkRes = await fetch(statusUrl, { signal: AbortSignal.timeout(800) });
-      if (checkRes.ok) {
-        const authData = (await checkRes.json()) as { authenticated?: boolean; error?: string; name?: string };
-        if (authData.authenticated === false) {
-          let fixHint = "";
-          if (providerId === "openrouter") {
-            fixHint = "Run `/login openrouter <api-key>` to configure your OpenRouter key.";
-          } else if (providerId === "antigravity") {
-            fixHint = "Run `/login antigravity` to authenticate via Google OAuth.";
-          } else if (providerId === "local") {
-            fixHint = "Ensure Ollama is running (`ollama serve`) or run `/login local`.";
-          }
-
-          const unauthThread: Thread = {
-            id: threadId,
-            index: threadsRef.current.length + (existingThreadId ? 0 : 1),
-            prompt: taskText,
-            response: `## Authentication Required for ${authData.name || providerId}\n\n${authData.error || "Provider is not authenticated."}\n\n*${fixHint}*`,
-            isStreaming: false,
-            steps: [],
-            isExpanded: false,
-            status: "error",
-            stepCount: 0,
-            startTime,
-            durationMs: 0,
-          };
-          if (existingThreadId) {
-            setThreads((prev) => prev.map((t) => (t.id === threadId ? unauthThread : t)));
-          } else {
-            setThreads((prev) => [...prev, unauthThread]);
-          }
-          setStatus("idle");
-          isExecutingRef.current = false;
-          drainNextQueuedTask();
-          return;
-        }
-      }
-    } catch {
-      /* Fallback gracefully if Neo auth check times out or fails */
+      setStatus("idle");
+      isExecutingRef.current = false;
+      drainNextQueuedTask();
+      return;
     }
 
     let activeThinkingId: string | null = null;

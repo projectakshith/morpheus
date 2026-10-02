@@ -7,7 +7,7 @@ import fsSync from "node:fs";
 import path from "node:path";
 import os from "node:os";
 import type { ChatMessage, Finding, TokenUsage } from "./types.js";
-import type { Thread, FileEditRecord } from "../cli/types.js";
+import type { Thread, FileEditRecord } from "./thread.js";
 import type { TitleSource } from "./sessionTitle.js";
 
 export const SESSIONS_DIR = path.join(os.homedir(), ".morpheus", "sessions");

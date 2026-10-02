@@ -34,11 +34,13 @@
     "ink-spinner": "^5.0.0",
     "ink-text-input": "^6.0.0",
     "picocolors": "^1.1.1",
-    "react": "^19.3.0"
+    "react": "^19.3.0",
+    "ws": "^8.22.0"
   },
   "devDependencies": {
     "@types/diff": "^7.0.0",
     "@types/node": "^22.13.9",
+    "@types/ws": "^8.18.2",
     "tsx": "^4.19.3",
     "typescript": "^5.7.3"
   }

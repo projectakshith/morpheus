@@ -12,7 +12,7 @@ import {
   formatRules,
 } from "./skills";
 
-export function gatherContext(cwd: string = process.cwd()): AgentContext {
+export function getGitInfo(cwd: string = process.cwd()): { isGit: boolean; branch?: string; gitStatus?: string } {
   let isGit = false;
   let branch: string | undefined;
   let gitStatus: string | undefined;
@@ -45,6 +45,12 @@ export function gatherContext(cwd: string = process.cwd()): AgentContext {
     }
   } catch {
   }
+
+  return { isGit, branch, gitStatus };
+}
+
+export function gatherContext(cwd: string = process.cwd()): AgentContext {
+  const { isGit, branch, gitStatus } = getGitInfo(cwd);
 
   const repoMap = generateRepoMap(cwd);
   const skills = loadSkills(cwd);
