@@ -8,6 +8,13 @@
   },
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    },
+    "./client": "./src/client/index.ts"
+  },
   "scripts": {
     "dev": "tsx bin/morpheus.ts",
     "test": "tsx --test \"test/**/*.test.ts\"",

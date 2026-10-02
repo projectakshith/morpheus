@@ -63,7 +63,6 @@ class Client {
     return new Promise((resolve, reject) => {
       const ws = new WebSocket(`${url}?token=${token}`);
       ws.once("open", () => resolve(new Client(ws)));
-      ws.once("unexpected-response", (_req, res) => reject(new Error(`HTTP ${res.statusCode}`)));
       ws.once("error", reject);
     });
   }
@@ -119,7 +118,9 @@ describe("Morpheus daemon", () => {
   });
 
   it("rejects connections without the token", async () => {
-    await assert.rejects(Client.connect(daemon.url, "wrong"), /HTTP 401/);
+    const ws = new WebSocket(`${daemon.url}?token=wrong`);
+    const code = await new Promise<number>((resolve) => ws.once("close", resolve));
+    assert.equal(code, 4401);
   });
 
   it("answers initialize and reports unknown methods", async () => {

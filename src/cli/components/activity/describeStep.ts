@@ -1,4 +1,4 @@
-import path from "node:path";
+import * as path from "../../../utils/posixPath.js";
 import type { ThreadStep } from "../../types.js";
 import { sanitizeOutputLine } from "../../utils/cells.js";
 

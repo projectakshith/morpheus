@@ -26,6 +26,7 @@ import {
 } from "../protocol/types.js";
 
 const HEARTBEAT_MS = 30_000;
+export const UNAUTHORIZED_CLOSE = 4401;
 const execFileAsync = promisify(execFile);
 /* Only Neo's read/auth surface is relayed; model traffic goes through turns. */
 const NEO_PATHS = /^\/(health|v1\/models|v1\/auth\/[a-z0-9_\/-]+)(\?[^#]*)?$/;
@@ -341,9 +342,9 @@ export async function startDaemon(opts: DaemonOptions): Promise<Daemon> {
   const wss = new WebSocketServer({ noServer: true });
 
   server.on("upgrade", (req, socket, head) => {
+    /* Browsers can't read an HTTP 401 on a WebSocket, so reject with a close code clients can see. */
     if (!tokenMatches(requestToken(req), opts.token)) {
-      socket.write("HTTP/1.1 401 Unauthorized\r\nConnection: close\r\n\r\n");
-      socket.destroy();
+      wss.handleUpgrade(req, socket, head, (ws) => ws.close(UNAUTHORIZED_CLOSE, "unauthorized"));
       return;
     }
     wss.handleUpgrade(req, socket, head, (ws) => wss.emit("connection", ws, req));
