@@ -17,3 +17,4 @@ export {
   type QuietItem,
   type DiffRow,
 } from "../display/describeStep";
+export { GLYPH_SETS, type GlyphSet, type GlyphMode } from "../display/glyphSets";
