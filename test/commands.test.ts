@@ -4,9 +4,9 @@
 
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
-import { commandRegistry } from "../src/cli/commands/registry.js";
-import type { CommandContext } from "../src/cli/commands/types.js";
-import type { Thread } from "../src/cli/types.js";
+import { commandRegistry } from "../src/commands/registry";
+import type { CommandContext } from "../src/commands/types";
+import type { Thread } from "../src/cli/types";
 
 describe("CommandRegistry", () => {
   it("dispatches /help command and populates response", async () => {

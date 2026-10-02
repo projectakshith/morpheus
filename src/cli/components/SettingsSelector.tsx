@@ -1,8 +1,8 @@
 import React, { useState, useEffect } from "react";
 import { Text, useInput } from "ink";
-import { theme } from "../theme.js";
-import type { SubagentRole, TokenUsage } from "../../core/types.js";
-import type { SubagentModelMap } from "../userSettings.js";
+import { theme } from "../theme";
+import type { SubagentRole, TokenUsage } from "../../core/types";
+import type { SubagentModelMap } from "../../core/userSettings";
 import {
   Modal,
   Split,
@@ -18,7 +18,7 @@ import {
   formatTokens,
   statusStyle,
   type Status,
-} from "./ui/kit.js";
+} from "./ui/kit";
 
 export interface SettingsSelectorProps {
   currentModel: string;

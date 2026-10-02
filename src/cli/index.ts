@@ -3,7 +3,7 @@ import { render } from "ink";
 import { App } from "./components/App";
 import { parseCLIArgs } from "./args";
 import { closeMcpConnections } from "../tools/mcp";
-import { loadEnv, resolveEndpoint, ensureNeoDaemon } from "../runtime.js";
+import { loadEnv, resolveEndpoint, ensureNeoDaemon } from "../runtime";
 
 loadEnv();
 

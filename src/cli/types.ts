@@ -2,7 +2,7 @@ import type { ReactNode } from "react";
 
 export type AppStatus = "idle" | "running" | "error" | "aborted";
 
-export type { ThreadStep, Thread, FileEditRecord } from "../core/thread.js";
+export type { ThreadStep, Thread, FileEditRecord } from "../core/thread";
 
 export interface AppProps {
   model: string;
@@ -42,7 +42,7 @@ export interface RightLine {
   node: ReactNode;
 }
 
-import type { TokenUsage } from "../core/types.js";
+import type { TokenUsage } from "../core/types";
 
 export interface ColumnStatusInfo {
   status: "idle" | "running" | "aborted" | "error";

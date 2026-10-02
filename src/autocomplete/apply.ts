@@ -1,7 +1,3 @@
-/*
- * Applies a chosen suggestion to the input. Pure, so remote clients (Trinity) can reuse it.
- */
-
 import type { SuggestionItem } from "./types";
 
 export function applySuggestion(
@@ -17,7 +13,6 @@ export function applySuggestion(
     return { newValue, newCursorPos };
   }
 
-  /* Default replacement: prefix match from start */
   if (suggestion.insertText.toLowerCase().startsWith(input.toLowerCase())) {
     return {
       newValue: suggestion.insertText,

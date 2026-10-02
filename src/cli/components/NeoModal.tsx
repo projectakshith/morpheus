@@ -1,8 +1,8 @@
 import React, { useState, useEffect } from "react";
 import { Text, useInput } from "ink";
-import { theme } from "../theme.js";
-import type { TokenUsage } from "../../core/types.js";
-import { cellWidth, truncateCells } from "../utils/cells.js";
+import { theme } from "../theme";
+import type { TokenUsage } from "../../core/types";
+import { cellWidth, truncateCells } from "../../display/cells";
 import {
   Modal,
   Split,
@@ -16,7 +16,7 @@ import {
   formatTokens,
   statusStyle,
   type Status,
-} from "./ui/kit.js";
+} from "./ui/kit";
 
 export interface NeoModalProps {
   baseURL?: string;

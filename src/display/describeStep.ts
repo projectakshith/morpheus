@@ -1,6 +1,6 @@
-import * as path from "../../../utils/posixPath";
-import type { ThreadStep } from "../../types";
-import { sanitizeOutputLine } from "../../utils/cells";
+import * as path from "../utils/posixPath";
+import type { ThreadStep } from "../core/thread";
+import { sanitizeOutputLine } from "./cells";
 
 const QUIET_TOOLS = new Set([
   "read_file",

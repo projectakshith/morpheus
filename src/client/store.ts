@@ -1,8 +1,3 @@
-/*
- * SessionStore: client-side mirror of one daemon session. Folds events with the shared reducer and
- * exposes subscribe/getSnapshot, which plugs straight into React's useSyncExternalStore.
- */
-
 import { applyEvent } from "../protocol/reducer";
 import type { MorpheusEvent, SessionSnapshot } from "../protocol/types";
 
@@ -12,7 +7,6 @@ export class SessionStore {
   private snapshot: SessionSnapshot | null = null;
   private listeners = new Set<() => void>();
   private eventListeners = new Set<(event: MorpheusEvent) => void>();
-  /* Events can arrive before the subscribe response; hold them until a base snapshot exists. */
   private pending: MorpheusEvent[] = [];
   private syncing = false;
 
@@ -28,7 +22,6 @@ export class SessionStore {
     return () => this.listeners.delete(listener);
   };
 
-  /* Live event feed, for hints the snapshot doesn't carry (session.switched, ui.request). */
   onEvent(listener: (event: MorpheusEvent) => void): () => void {
     this.eventListeners.add(listener);
     return () => this.eventListeners.delete(listener);
@@ -67,7 +60,6 @@ export class SessionStore {
     const base = this.snapshot;
     if (!base || event.seq <= base.seq) return false;
     if (event.seq !== base.seq + 1) {
-      /* A gap means we missed events; ask the daemon to fill it. */
       this.syncing = true;
       this.pending.push(event);
       this.resync(base.seq);

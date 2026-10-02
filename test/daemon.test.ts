@@ -1,7 +1,3 @@
-/*
- * Daemon tests: drives the real WebSocket server with a scripted agent and checks events, queueing, abort, and replay.
- */
-
 import { describe, it, before, after } from "node:test";
 import assert from "node:assert/strict";
 import fs from "node:fs";
@@ -11,7 +7,6 @@ import { WebSocket } from "ws";
 import type { AgentOptions, AgentRunResult, ChatMessage } from "../src/core/types";
 import type { MorpheusEvent, SessionSnapshot } from "../src/protocol/types";
 
-/* Session listing reads ~/.morpheus/sessions, so sandbox $HOME before loading the daemon. */
 const sandbox = fs.mkdtempSync(path.join(os.tmpdir(), "morpheus-daemon-"));
 process.env.HOME = sandbox;
 
@@ -20,7 +15,6 @@ const USAGE = { promptTokens: 10, completionTokens: 5, totalTokens: 15 };
 
 let lastOptions: AgentOptions = {};
 
-/* Turns whose prompt starts with "block" wait until aborted, so queueing can be observed. */
 async function fakeRunAgent(prompt: string, history: ChatMessage[] = [], o: AgentOptions = {}): Promise<AgentRunResult> {
   lastOptions = o;
   const messages: ChatMessage[] = [...history, { role: "user", content: prompt }];

@@ -1,8 +1,8 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
-import { parseDiffLines } from "../src/cli/components/DiffModal.js";
-import { getLangFromPath, highlightCode } from "../src/cli/highlight.js";
-import { stripAnsi } from "../src/cli/utils/text.js";
+import { parseDiffLines } from "../src/cli/components/DiffModal";
+import { getLangFromPath, highlightCode } from "../src/cli/highlight";
+import { stripAnsi } from "../src/cli/utils/text";
 
 describe("Diff Line Parser & Inspector", () => {
   it("parses unified diff hunks and calculates accurate line numbers", () => {

@@ -1,12 +1,12 @@
 import React, { useState, useEffect, useMemo } from "react";
 import { Box, Text, useInput } from "ink";
-import { theme } from "../theme.js";
-import type { TokenUsage } from "../../core/types.js";
-import { truncateCells } from "../utils/cells.js";
-import type { Thread, FileEditRecord } from "../types.js";
-import { PROVIDERS, providerLabel, type ProviderKey } from "../providers.js";
-import { sessionStats, formatWorkTime, usageTotals } from "../stats.js";
-import { listSessions, sessionTokenTotal, type SessionSummary } from "../../core/session.js";
+import { theme } from "../theme";
+import type { TokenUsage } from "../../core/types";
+import { truncateCells } from "../../display/cells";
+import type { Thread, FileEditRecord } from "../types";
+import { PROVIDERS, providerLabel, type ProviderKey } from "../providers";
+import { sessionStats, formatWorkTime, usageTotals } from "../../core/stats";
+import { listSessions, sessionTokenTotal, type SessionSummary } from "../../core/session";
 import {
   Modal,
   Split,
@@ -19,7 +19,7 @@ import {
   Blank,
   Meter,
   formatTokens,
-} from "./ui/kit.js";
+} from "./ui/kit";
 
 export interface ModelUsageSpec {
   id: string;

@@ -1,19 +1,19 @@
-import type { CommandHandler, CommandContext } from "./types.js";
-import type { Thread } from "../types.js";
-import { sessionCommand } from "./session.js";
-import { diffCommand } from "./diff.js";
-import { modelCommand } from "./model.js";
-import { loginCommand } from "./login.js";
-import { authCommand } from "./auth.js";
-import { settingsCommand } from "./settings.js";
-import { stopCommand } from "./stop.js";
-import { queueCommand } from "./queue.js";
-import { skillsCommand } from "./skills.js";
-import { helpCommand } from "./help.js";
-import { morpheusCommand } from "./morpheus.js";
-import { neoCommand } from "./neo.js";
-import { usageCommand } from "./usage.js";
-import { cuaCommand } from "./cua.js";
+import type { CommandHandler, CommandContext } from "./types";
+import type { Thread } from "../core/thread";
+import { sessionCommand } from "./session";
+import { diffCommand } from "./diff";
+import { modelCommand } from "./model";
+import { loginCommand } from "./login";
+import { authCommand } from "./auth";
+import { settingsCommand } from "./settings";
+import { stopCommand } from "./stop";
+import { queueCommand } from "./queue";
+import { skillsCommand } from "./skills";
+import { helpCommand } from "./help";
+import { morpheusCommand } from "./morpheus";
+import { neoCommand } from "./neo";
+import { usageCommand } from "./usage";
+import { cuaCommand } from "./cua";
 
 export class CommandRegistry {
   private handlers: CommandHandler[] = [];

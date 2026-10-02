@@ -2,7 +2,7 @@ import fs from "node:fs";
 import fsp from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
-import type { SubagentRole } from "../core/types.js";
+import type { SubagentRole } from "./types";
 
 export type SubagentModelMap = Partial<Record<SubagentRole, string>>;
 

@@ -1,7 +1,3 @@
-/*
- * Minimal POSIX path helpers with no node: imports, so display code can run in browsers (Trinity) too.
- */
-
 export function isAbsolute(p: string): boolean {
   return p.startsWith("/");
 }

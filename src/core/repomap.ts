@@ -196,14 +196,21 @@ function fitToBudget(lines: string[], maxChars: number): string[] {
   return kept.map((l) => shortenEntry(l, Math.max(lo, minEntry(l))));
 }
 
-function pickCentralFiles(lines: string[], maxFiles: number): string[] {
+function pickCentralFiles(cwd: string, lines: string[], maxFiles: number): string[] {
   if (lines.length <= maxFiles) return lines;
   const filePath = (line: string) => line.slice(0, line.indexOf(":"));
+  const size = (line: string) => {
+    try {
+      return fs.statSync(path.join(cwd, filePath(line))).size;
+    } catch {
+      return 0;
+    }
+  };
   const rank = (line: string) => {
     const p = filePath(line);
     return (/\/index\.[a-z]+$/.test(p) ? 0 : 100) + p.split("/").length;
   };
-  const kept = new Set([...lines].sort((a, b) => rank(a) - rank(b)).slice(0, maxFiles));
+  const kept = new Set([...lines].sort((a, b) => rank(a) - rank(b) || size(b) - size(a)).slice(0, maxFiles));
   return lines.filter((line) => kept.has(line));
 }
 
@@ -229,5 +236,5 @@ export function generateRepoMap(
     lines.push(...scanDirectory(cwd, cwd, maxDepth));
   }
 
-  return fitToBudget(pickCentralFiles(lines, maxFiles), maxChars).join("\n");
+  return fitToBudget(pickCentralFiles(cwd, lines, maxFiles), maxChars).join("\n");
 }

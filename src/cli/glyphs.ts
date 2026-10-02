@@ -245,7 +245,7 @@ export function cycleGlyphMode(): GlyphMode {
 
 /**
  * Dynamic Proxy providing instant access to the active glyph set.
- * Usage: import { glyphs } from "./glyphs.js"; glyphs.gitBranch;
+ * Usage: import { glyphs } from "./glyphs"; glyphs.gitBranch;
  */
 export const glyphs: GlyphSet = new Proxy({} as GlyphSet, {
   get: (_target, prop: string) => {

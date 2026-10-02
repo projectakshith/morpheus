@@ -1,7 +1,7 @@
 import React from "react";
 import { Text } from "ink";
-import type { FeedLine } from "../types.js";
-import { getMorpheusPixel } from "../ascii/morpheusArt.js";
+import type { FeedLine } from "../types";
+import { getMorpheusPixel } from "../../display/morpheusArt";
 
 const HERO_STOPS: Array<[number, [number, number, number]]> = [
   [0.00, [ 24,  28,  22]],

@@ -1,8 +1,3 @@
-/*
- * Pre-flight provider auth check against Neo, run before each turn so a missing login fails fast with a fix hint.
- */
-
-/* Returns a markdown explanation when the model's provider is not authenticated, null when it is (or Neo can't tell). */
 export async function checkProviderAuth(model: string, baseURL?: string): Promise<string | null> {
   try {
     const neoBase = baseURL || "http://127.0.0.1:8787/v1";
@@ -37,7 +32,6 @@ export async function checkProviderAuth(model: string, baseURL?: string): Promis
     }
     return `## Authentication Required for ${authData.name || providerId}\n\n${authData.error || "Provider is not authenticated."}\n\n*${fixHint}*`;
   } catch {
-    /* Neo unreachable or slow: let the run surface the real error. */
     return null;
   }
 }

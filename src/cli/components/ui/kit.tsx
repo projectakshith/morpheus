@@ -1,7 +1,7 @@
 import React from "react";
 import { Box, Text } from "ink";
-import { theme } from "../../theme.js";
-import { cellWidth, truncateCells } from "../../utils/cells.js";
+import { theme } from "../../theme";
+import { cellWidth, truncateCells } from "../../../display/cells";
 
 export function fit(text: string, width: number): string {
   const t = truncateCells(text, Math.max(0, width));

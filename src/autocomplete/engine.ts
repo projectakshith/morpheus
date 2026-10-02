@@ -6,11 +6,11 @@ import type {
   SuggestionItem,
   AutocompleteContext,
   AutocompleteResult,
-} from "./types.js";
-import { getCommandSuggestions } from "./providers/commandProvider.js";
-import { getFileSuggestions } from "./providers/fileProvider.js";
-import { getHistorySuggestions } from "./providers/historyProvider.js";
-import { getIntentSuggestions } from "./providers/intentProvider.js";
+} from "./types";
+import { getCommandSuggestions } from "./providers/commandProvider";
+import { getFileSuggestions } from "./providers/fileProvider";
+import { getHistorySuggestions } from "./providers/historyProvider";
+import { getIntentSuggestions } from "./providers/intentProvider";
 
 export function computeAutocomplete(
   ctx: AutocompleteContext,
@@ -87,4 +87,4 @@ export function computeAutocomplete(
   };
 }
 
-export { applySuggestion } from "./apply.js";
+export { applySuggestion } from "./apply";

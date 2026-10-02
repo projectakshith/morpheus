@@ -2,8 +2,8 @@
  * Command autocomplete provider: handles slash commands and argument completions.
  */
 
-import type { SuggestionItem, AutocompleteContext } from "../types.js";
-import { similarity } from "../../../utils/levenshtein.js";
+import type { SuggestionItem, AutocompleteContext } from "../types";
+import { similarity } from "../../utils/levenshtein";
 
 interface CommandDef {
   name: string;

@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { advanceReveal, isRevealSettled, type RevealState } from "../effects/streamReveal.js";
+import { advanceReveal, isRevealSettled, type RevealState } from "../effects/streamReveal";
 
 const FRAME_MS = 1000 / 30;
 

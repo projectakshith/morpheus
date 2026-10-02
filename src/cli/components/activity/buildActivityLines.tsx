@@ -1,10 +1,10 @@
 import React from "react";
 import { Text } from "ink";
-import type { Thread, ThreadStep, FileEditRecord, RightLine } from "../../types.js";
-import { theme } from "../../theme.js";
-import { highlightCode } from "../../highlight.js";
-import { cellWidth, truncateCells, truncateCellsStart, wrapCells } from "../../utils/cells.js";
-import { describeStep, relativePath, type CardModel, type QuietItem } from "./describeStep.js";
+import type { Thread, ThreadStep, FileEditRecord, RightLine } from "../../types";
+import { theme } from "../../theme";
+import { highlightCode } from "../../highlight";
+import { cellWidth, truncateCells, truncateCellsStart, wrapCells } from "../../../display/cells";
+import { describeStep, relativePath, type CardModel, type QuietItem } from "../../../display/describeStep";
 
 const BODY_LIMITS = { diff: 10, code: 6, text: 6 } as const;
 const STRIP_MAX_LINES = 2;

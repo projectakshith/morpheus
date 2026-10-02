@@ -1,23 +1,18 @@
-/*
- * SessionHost: one live Morpheus session inside the daemon. Runs turns, queues prompts,
- * and publishes every change as a sequenced event that clients can replay after reconnecting.
- */
-
-import type { runAgent as RunAgent } from "../core/agent.js";
-import type { ChatMessage, SubagentRole, ToolResult } from "../core/types.js";
-import type { Thread } from "../core/thread.js";
-import type { SessionData } from "../core/session.js";
-import { generateSessionId } from "../core/session.js";
-import { PLACEHOLDER_TITLE, isTrivialPrompt, promptTitle, type TitleSource } from "../core/sessionTitle.js";
-import { getGitInfo } from "../core/context.js";
-import { isToolError } from "../utils/errors.js";
-import { formatAgentError } from "../utils/agentErrors.js";
-import { extractDiffRecord } from "../cli/utils/diffRecord.js";
-import { accumulateUsage } from "../cli/stats.js";
-import { commandRegistry } from "../cli/commands/registry.js";
-import type { CommandContext } from "../cli/commands/types.js";
-import { applyEvent } from "../protocol/reducer.js";
-import type { EventBody, MorpheusEvent, SessionSnapshot } from "../protocol/types.js";
+import type { runAgent as RunAgent } from "../core/agent";
+import type { ChatMessage, SubagentRole, ToolResult } from "../core/types";
+import type { Thread } from "../core/thread";
+import type { SessionData } from "../core/session";
+import { generateSessionId } from "../core/session";
+import { PLACEHOLDER_TITLE, isTrivialPrompt, promptTitle, type TitleSource } from "../core/sessionTitle";
+import { getGitInfo } from "../core/context";
+import { isToolError } from "../utils/errors";
+import { formatAgentError } from "../utils/agentErrors";
+import { extractDiffRecord } from "../display/diffRecord";
+import { accumulateUsage } from "../core/stats";
+import { commandRegistry } from "../commands/registry";
+import type { CommandContext } from "../commands/types";
+import { applyEvent } from "../protocol/reducer";
+import type { EventBody, MorpheusEvent, SessionSnapshot } from "../protocol/types";
 
 const REPLAY_BUFFER_SIZE = 20_000;
 
@@ -31,12 +26,13 @@ export interface SessionHostDeps {
   subagentModels?: () => Partial<Record<SubagentRole, string>>;
   generateTitle?: (model: string, prompt: string, response: string) => Promise<string | null>;
   checkAuth?: (model: string, baseURL: string) => Promise<string | null>;
-  /* Lets /new and /resume hand clients over to another session. */
   sessions?: {
     create(from: SessionHost): SessionHost;
     open(id: string): Promise<SessionHost | null>;
   };
 }
+
+export type CommandUi = Partial<Pick<CommandContext, "openModal" | "closeModal" | "setIsModelSelectorOpen" | "setPromptHistory">>;
 
 export type SubscribeResult = { snapshot: SessionSnapshot } | { events: MorpheusEvent[] };
 
@@ -72,7 +68,6 @@ export class SessionHost {
       updatedAt: data?.updatedAt ?? now,
       status: "idle",
       queued: 0,
-      /* A turn that was mid-flight when the previous process died can never finish. */
       threads: (data?.threads ?? []).map((t) =>
         t.status === "running" || t.status === "queued" ? { ...t, status: "aborted", isStreaming: false } : t
       ),
@@ -160,11 +155,7 @@ export class SessionHost {
     }
   }
 
-  /*
-   * Runs input through the TUI's slash-command registry. Commands write whole threads via setThreads;
-   * those writes are diffed into thread.upserted / thread.removed events. Returns false for plain prompts.
-   */
-  async runCommand(text: string): Promise<boolean> {
+  async runCommand(text: string, ui: CommandUi = {}): Promise<boolean> {
     let target: SessionHost = this;
     const switchTo = (next: SessionHost) => {
       if (next === target) return;
@@ -179,7 +170,7 @@ export class SessionHost {
       setIsModelSelectorOpen: (open) => {
         if (open) target.emit({ type: "ui.request", modal: "model" });
       },
-      setThreads: (action) => target.applyThreads(action),
+      setThreads: (action) => target.writeThreads(action),
       setPromptHistory: () => {},
       threadsCount: this.state.threads.length,
       sessionId: this.id,
@@ -200,6 +191,7 @@ export class SessionHost {
       getQueue: () => target.queue.map((q) => q.prompt),
       clearQueue: () => target.clearQueue(),
       isAgentRunning: this.running,
+      ...ui,
     };
     const handled = await commandRegistry.dispatch(text, ctx);
     if (handled) {
@@ -209,7 +201,7 @@ export class SessionHost {
     return handled;
   }
 
-  private applyThreads(action: Thread[] | ((prev: Thread[]) => Thread[])): void {
+  writeThreads(action: Thread[] | ((prev: Thread[]) => Thread[])): void {
     const prev = this.state.threads;
     const next = typeof action === "function" ? action(prev) : action;
     const nextIds = new Set(next.map((t) => t.id));
@@ -222,14 +214,12 @@ export class SessionHost {
     }
   }
 
-  /* Aborts work and waits for the in-flight turn to settle so its final state is persisted. */
   async shutdown(): Promise<void> {
     this.abort();
     while (this.running) await new Promise((r) => setTimeout(r, 20));
     await this.persist();
   }
 
-  /* Called when the session is deleted: late work (title generation, a finishing turn) must not re-save it. */
   dispose(): void {
     this.disposed = true;
     this.abort();
@@ -245,7 +235,6 @@ export class SessionHost {
       try {
         listener(event);
       } catch {
-        /* One broken client must not stall the run. */
       }
     }
   }

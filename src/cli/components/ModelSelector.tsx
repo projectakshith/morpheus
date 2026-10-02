@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useMemo } from "react";
 import { Box, Text, useInput } from "ink";
-import { theme } from "../theme.js";
-import { truncateCells } from "../utils/cells.js";
+import { theme } from "../theme";
+import { truncateCells } from "../../display/cells";
 import {
   Modal,
   Split,
@@ -15,8 +15,8 @@ import {
   Blank,
   wrapWords,
   formatTokens,
-} from "./ui/kit.js";
-import type { TokenUsage } from "../../core/types.js";
+} from "./ui/kit";
+import type { TokenUsage } from "../../core/types";
 
 export interface ModelOption {
   id: string;

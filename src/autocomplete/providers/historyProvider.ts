@@ -2,7 +2,7 @@
  * History autocomplete provider: autocompletes from previous user prompts.
  */
 
-import type { SuggestionItem, AutocompleteContext } from "../types.js";
+import type { SuggestionItem, AutocompleteContext } from "../types";
 
 export function getHistorySuggestions(ctx: AutocompleteContext): SuggestionItem[] {
   const { input, cursorPos, history } = ctx;

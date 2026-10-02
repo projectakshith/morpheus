@@ -1,4 +1,4 @@
-import type { FileEditRecord } from "../types.js";
+import type { FileEditRecord } from "../core/thread";
 
 /* Extracts file modification records and diff stats from tool outputs */
 export function extractDiffRecord(

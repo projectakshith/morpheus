@@ -1,6 +1,6 @@
 import picocolors from "picocolors";
 const pc = picocolors.createColors(true);
-import { highlightCode } from "./highlight.js";
+import { highlightCode } from "./highlight";
 
 /**
  * Terminal markdown formatter with streaming table buffering and ANSI styling.

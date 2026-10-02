@@ -1,8 +1,3 @@
-/*
- * Folds daemon events into a SessionSnapshot. Pure and deterministic (time comes from event.ts),
- * so the daemon and every client arrive at the same state from the same event stream.
- */
-
 import type { Thread, ThreadStep } from "../core/thread";
 import type { MorpheusEvent, SessionSnapshot } from "./types";
 

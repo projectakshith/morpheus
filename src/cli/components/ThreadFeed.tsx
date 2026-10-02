@@ -2,14 +2,14 @@ import React from "react";
 import path from "node:path";
 import { Box, Text } from "ink";
 import Spinner from "ink-spinner";
-import type { FeedLine, Thread, ThreadStep } from "../types.js";
-import { MarkdownFormatter } from "../format.js";
-import { wrapLine, visibleLength } from "../utils/text.js";
-import { buildHeroFeedLines } from "./MatrixIntro.js";
-import { CyberPulse } from "./CyberPulse.js";
-import { theme } from "../theme.js";
-import { glyphs } from "../glyphs.js";
-import { applyTrail } from "../effects/streamReveal.js";
+import type { FeedLine, Thread, ThreadStep } from "../types";
+import { MarkdownFormatter } from "../format";
+import { wrapLine, visibleLength } from "../utils/text";
+import { buildHeroFeedLines } from "./MatrixIntro";
+import { CyberPulse } from "./CyberPulse";
+import { theme } from "../theme";
+import { glyphs } from "../glyphs";
+import { applyTrail } from "../effects/streamReveal";
 
 export interface BuildFeedOptions {
   threads: Thread[];

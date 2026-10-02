@@ -11,9 +11,9 @@ import {
   listSessions,
   deleteSession,
   type SessionData,
-} from "../src/core/session.js";
-import { commandRegistry } from "../src/cli/commands/registry.js";
-import type { CommandContext } from "../src/cli/commands/types.js";
+} from "../src/core/session";
+import { commandRegistry } from "../src/commands/registry";
+import type { CommandContext } from "../src/commands/types";
 
 describe("Session Management Engine", () => {
   it("generates well-formed unique session IDs", () => {

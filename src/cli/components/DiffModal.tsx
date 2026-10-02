@@ -2,11 +2,11 @@ import React, { useState, useMemo, useEffect } from "react";
 import { Box, Text, useInput } from "ink";
 import path from "node:path";
 import { execSync } from "node:child_process";
-import { theme } from "../theme.js";
-import { HintLine } from "./ui/kit.js";
-import { highlightCode, getLangFromPath } from "../highlight.js";
-import { visibleLength } from "../utils/text.js";
-import type { FileEditRecord } from "../types.js";
+import { theme } from "../theme";
+import { HintLine } from "./ui/kit";
+import { highlightCode, getLangFromPath } from "../highlight";
+import { visibleLength } from "../utils/text";
+import type { FileEditRecord } from "../types";
 
 export interface DiffModalProps {
   fileEdits: FileEditRecord[];

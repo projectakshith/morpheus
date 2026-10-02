@@ -1,11 +1,11 @@
 import React, { useState, useEffect } from "react";
 import { Text, useInput } from "ink";
-import { listSessions, deleteSession, type SessionSummary } from "../../core/session.js";
-import { theme } from "../theme.js";
-import { displayTitle } from "../../core/sessionTitle.js";
-import { truncateCells } from "../utils/cells.js";
-import { providerOf, providerLabel } from "../providers.js";
-import { Modal, Split, Section, RowList, Lines, ListRow, KeyValue, StatusValue, Callout, Blank, type Row } from "./ui/kit.js";
+import { listSessions, deleteSession, type SessionSummary } from "../../core/session";
+import { theme } from "../theme";
+import { displayTitle } from "../../core/sessionTitle";
+import { truncateCells } from "../../display/cells";
+import { providerOf, providerLabel } from "../providers";
+import { Modal, Split, Section, RowList, Lines, ListRow, KeyValue, StatusValue, Callout, Blank, type Row } from "./ui/kit";
 
 function formatAge(timestamp: number): string {
   if (!timestamp) return "unknown";

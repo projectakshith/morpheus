@@ -1,9 +1,9 @@
 import React, { useState, useMemo, useEffect } from "react";
 import { Box, Text, useInput } from "ink";
-import { theme } from "../theme.js";
-import { computeAutocomplete, applySuggestion } from "../autocomplete/engine.js";
-import { AutocompletePopup, POPUP_TOTAL_HEIGHT } from "./AutocompletePopup.js";
-import { glyphs } from "../glyphs.js";
+import { theme } from "../theme";
+import { computeAutocomplete, applySuggestion } from "../../autocomplete/engine";
+import { AutocompletePopup, POPUP_TOTAL_HEIGHT } from "./AutocompletePopup";
+import { glyphs } from "../glyphs";
 
 export { POPUP_TOTAL_HEIGHT };
 

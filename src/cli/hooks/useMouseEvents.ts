@@ -3,7 +3,7 @@
  */
 
 import { useEffect, type MutableRefObject, type Dispatch, type SetStateAction } from "react";
-import type { FeedLine, RightLine } from "../types.js";
+import type { FeedLine, RightLine } from "../types";
 
 export interface MouseEventsOptions {
   activeModal?: string;

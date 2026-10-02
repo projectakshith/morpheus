@@ -1,8 +1,8 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { buildActivityLines } from "../src/cli/components/activity/buildActivityLines";
-import { describeStep, parseUnifiedDiff } from "../src/cli/components/activity/describeStep";
-import { cellWidth, sanitizeOutputLine, truncateCells, wrapCells, charWidth } from "../src/cli/utils/cells";
+import { describeStep, parseUnifiedDiff } from "../src/display/describeStep";
+import { cellWidth, sanitizeOutputLine, truncateCells, wrapCells, charWidth } from "../src/display/cells";
 import type { Thread, ThreadStep, FileEditRecord, RightLine } from "../src/cli/types";
 
 const CWD = "/repo";

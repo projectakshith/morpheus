@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { accumulateUsage, sessionStats, usageTotals } from "../src/cli/stats";
+import { accumulateUsage, sessionStats, usageTotals } from "../src/core/stats";
 import { sessionTokenTotal } from "../src/core/session";
 import { dayLabel } from "../src/cli/components/SessionSelector";
 import { providerOf } from "../src/cli/providers";

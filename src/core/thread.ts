@@ -1,7 +1,3 @@
-/*
- * Turn-level records shared by every Morpheus interface (TUI, daemon, remote clients).
- */
-
 export interface ThreadStep {
   id: string;
   type: "thinking" | "tool" | "note";

@@ -3,8 +3,8 @@ import fsp from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { spawnSync } from "node:child_process";
-import type { CommandHandler, CommandContext } from "./types.js";
-import type { Thread } from "../types.js";
+import type { CommandHandler, CommandContext } from "./types";
+import type { Thread } from "../core/thread";
 
 type CuaServer = { command?: string; args?: string[]; disabled?: boolean; [key: string]: unknown };
 type MorpheusConfig = { mcpServers?: Record<string, CuaServer>; [key: string]: unknown };

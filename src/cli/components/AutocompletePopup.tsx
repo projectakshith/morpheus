@@ -5,9 +5,9 @@
 
 import React from "react";
 import { Box, Text } from "ink";
-import { theme } from "../theme.js";
-import type { SuggestionItem, SuggestionCategory } from "../autocomplete/types.js";
-import { glyphs } from "../glyphs.js";
+import { theme } from "../theme";
+import type { SuggestionItem, SuggestionCategory } from "../../autocomplete/types";
+import { glyphs } from "../glyphs";
 
 export const POPUP_ROW_COUNT = 5;
 export const POPUP_TOTAL_HEIGHT = POPUP_ROW_COUNT + 2; // 5 rows + top border + bottom border = 7

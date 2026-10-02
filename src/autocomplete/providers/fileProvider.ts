@@ -4,7 +4,7 @@
 
 import fs from "node:fs";
 import path from "node:path";
-import type { SuggestionItem, AutocompleteContext } from "../types.js";
+import type { SuggestionItem, AutocompleteContext } from "../types";
 
 const IGNORED_DIRS = new Set([
   ".git",

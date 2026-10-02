@@ -3,8 +3,8 @@
  */
 
 import type React from "react";
-import type { Thread, FileEditRecord } from "../types.js";
-import type { ChatMessage, Finding, TokenUsage } from "../../core/types.js";
+import type { Thread, FileEditRecord } from "../core/thread";
+import type { ChatMessage, Finding, TokenUsage } from "../core/types";
 
 export interface CommandContext {
   taskText: string;

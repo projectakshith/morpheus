@@ -1,11 +1,6 @@
-/*
- * Wire protocol between the Morpheus daemon and its clients (TUI, Trinity, scripts).
- * JSON-RPC 2.0 over WebSocket; see docs/daemon-protocol.md.
- */
-
 import type { Finding, TokenUsage } from "../core/types";
 import type { Thread, FileEditRecord } from "../core/thread";
-import type { AutocompleteResult } from "../cli/autocomplete/types";
+import type { AutocompleteResult } from "../autocomplete/types";
 
 export const PROTOCOL_VERSION = 1;
 
@@ -23,7 +18,6 @@ export interface SessionSnapshot {
   title: string;
   cwd: string;
   model: string;
-  /* Step limit per turn; undefined means the agent default. */
   maxSteps?: number;
   createdAt: number;
   updatedAt: number;
@@ -34,15 +28,12 @@ export interface SessionSnapshot {
   findings: Finding[];
   usage?: TokenUsage;
   workspace: WorkspaceInfo;
-  /* Sequence number of the last event folded into this snapshot. */
   seq: number;
 }
 
 export type EventBody =
   | { type: "session.updated"; title?: string; model?: string; maxSteps?: number | null }
-  /* The session was replaced by another (/new, /resume): clients should subscribe to `to`. */
   | { type: "session.switched"; to: string }
-  /* A command asked for an interactive picker (e.g. bare /model). Live-only hint; the reducer ignores it. */
   | { type: "ui.request"; modal: "model" }
   | { type: "workspace"; workspace: WorkspaceInfo }
   | { type: "status"; status: SessionStatus; queued: number }
@@ -58,7 +49,6 @@ export type EventBody =
   | { type: "tool.finished"; threadId: string; stepId: string; output: string; isError: boolean }
   | { type: "file.edited"; record: FileEditRecord }
   | { type: "findings"; findings: Finding[] }
-  /* Whole-thread writes from slash commands, whose output is not streamed. */
   | { type: "thread.upserted"; thread: Thread }
   | { type: "thread.removed"; threadId: string }
   | { type: "usage"; usage: TokenUsage }
@@ -94,7 +84,6 @@ export interface Methods {
     params: { cwd?: string; model?: string };
     result: { session: SessionSnapshot };
   };
-  /* Without afterSeq, or when afterSeq has fallen out of the replay buffer, the full snapshot is returned. */
   "session.subscribe": {
     params: { sessionId: string; afterSeq?: number };
     result: { snapshot: SessionSnapshot } | { events: MorpheusEvent[] };
@@ -119,12 +108,10 @@ export interface Methods {
     params: { sessionId: string; maxSteps: number | null };
     result: { ok: true };
   };
-  /* Slash commands run immediately (even mid-turn) and report through thread.upserted events. */
   "turn.start": {
     params: { sessionId: string; prompt: string };
     result: { threadId: string; queued: boolean } | { command: true };
   };
-  /* Stops the running turn and cancels everything queued behind it. */
   "turn.abort": {
     params: { sessionId: string };
     result: { ok: true };
@@ -133,7 +120,6 @@ export interface Methods {
     params: Record<string, never>;
     result: { commands: { name: string; description: string; aliases: string[] }[] };
   };
-  /* Same engine as the TUI input box: commands, @files, prompt history, intents. */
   autocomplete: {
     params: { sessionId: string; input: string; cursorPos?: number; history?: string[] };
     result: AutocompleteResult;
@@ -150,7 +136,6 @@ export interface Methods {
     params: { subagentModels: Partial<Record<"explore" | "review" | "implement", string>> };
     result: { ok: true };
   };
-  /* Relays to the Neo proxy so remote clients can read models, auth status and log in. */
   "neo.request": {
     params: { path: string; method?: "GET" | "POST"; body?: unknown };
     result: { status: number; body: unknown };

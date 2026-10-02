@@ -1,10 +1,10 @@
 import test, { describe, it } from "node:test";
 import assert from "node:assert";
-import { computeAutocomplete, applySuggestion } from "../src/cli/autocomplete/engine.js";
-import { getCommandSuggestions } from "../src/cli/autocomplete/providers/commandProvider.js";
-import { getFileSuggestions } from "../src/cli/autocomplete/providers/fileProvider.js";
-import { getHistorySuggestions } from "../src/cli/autocomplete/providers/historyProvider.js";
-import { getIntentSuggestions } from "../src/cli/autocomplete/providers/intentProvider.js";
+import { computeAutocomplete, applySuggestion } from "../src/autocomplete/engine";
+import { getCommandSuggestions } from "../src/autocomplete/providers/commandProvider";
+import { getFileSuggestions } from "../src/autocomplete/providers/fileProvider";
+import { getHistorySuggestions } from "../src/autocomplete/providers/historyProvider";
+import { getIntentSuggestions } from "../src/autocomplete/providers/intentProvider";
 
 describe("Autocomplete Engine & Providers", () => {
   it("suggests built-in slash commands on slash prefix", () => {

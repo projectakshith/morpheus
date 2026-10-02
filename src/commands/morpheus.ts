@@ -1,6 +1,6 @@
-import type { CommandHandler, CommandContext } from "./types.js";
-import type { Thread } from "../types.js";
-import { MORPHEUS_ANSI_LINES } from "../ascii/morpheusArt.js";
+import type { CommandHandler, CommandContext } from "./types";
+import type { Thread } from "../core/thread";
+import { MORPHEUS_ANSI_LINES } from "../display/morpheusArt";
 
 export class MorpheusCommand implements CommandHandler {
   public readonly name = "morpheus";

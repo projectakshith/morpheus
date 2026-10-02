@@ -2,8 +2,8 @@
  * SettingsCommand: Slash command to open interactive settings and auth dashboard.
  */
 
-import type { CommandHandler, CommandContext } from "./types.js";
-import type { Thread } from "../types.js";
+import type { CommandHandler, CommandContext } from "./types";
+import type { Thread } from "../core/thread";
 
 export class SettingsCommand implements CommandHandler {
   public readonly name = "settings";

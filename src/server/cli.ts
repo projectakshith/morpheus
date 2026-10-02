@@ -1,17 +1,13 @@
-/*
- * `morpheus serve`: boots the headless daemon. Deliberately avoids importing the Ink TUI.
- */
-
 import os from "node:os";
 import { parseArgs } from "node:util";
 import pc from "picocolors";
-import { loadEnv, resolveEndpoint, ensureNeoDaemon } from "../runtime.js";
-import { closeMcpConnections } from "../tools/mcp.js";
-import { loadSubagentModels } from "../cli/userSettings.js";
-import { Operator } from "../provider/operator.js";
-import { generateSessionTitle } from "../core/sessionTitle.js";
-import { startDaemon } from "./daemon.js";
-import { loadOrCreateDaemonConfig, daemonConfigPath } from "./config.js";
+import { loadEnv, resolveEndpoint, ensureNeoDaemon } from "../runtime";
+import { closeMcpConnections } from "../tools/mcp";
+import { loadSubagentModels } from "../core/userSettings";
+import { Operator } from "../provider/operator";
+import { generateSessionTitle } from "../core/sessionTitle";
+import { startDaemon } from "./daemon";
+import { loadOrCreateDaemonConfig, daemonConfigPath } from "./config";
 
 const DEFAULT_PORT = 7878;
 

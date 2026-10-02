@@ -1,6 +1,6 @@
-import type { Thread, FileEditRecord } from "./types.js";
-import type { TokenUsage } from "../core/types.js";
-import type { SessionSummary } from "../core/session.js";
+import type { Thread, FileEditRecord } from "./thread";
+import type { TokenUsage } from "./types";
+import type { SessionSummary } from "./session";
 
 export interface SessionStats {
   turns: number;

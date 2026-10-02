@@ -1,7 +1,7 @@
 import React from "react";
 import { Box, Text } from "ink";
-import { theme } from "../theme.js";
-import type { RightLine, DiffColumnProps, FileEditRecord, ToolStepRecord } from "../types.js";
+import { theme } from "../theme";
+import type { RightLine, DiffColumnProps, FileEditRecord, ToolStepRecord } from "../types";
 
 export type { RightLine, DiffColumnProps, FileEditRecord, ToolStepRecord };
 

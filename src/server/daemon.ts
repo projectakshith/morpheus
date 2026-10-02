@@ -1,21 +1,16 @@
-/*
- * Morpheus daemon: headless agent host speaking JSON-RPC 2.0 over WebSocket.
- * Any number of clients can attach to the same session and watch or drive it.
- */
-
 import http from "node:http";
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 import { timingSafeEqual } from "node:crypto";
 import { WebSocketServer, WebSocket } from "ws";
-import { runAgent } from "../core/agent.js";
-import { listSessions, loadSession, deleteSession, saveSession, sessionTokenTotal } from "../core/session.js";
-import { MORPHEUS_VERSION } from "../index.js";
-import { checkProviderAuth } from "../core/providerAuth.js";
-import { commandRegistry } from "../cli/commands/registry.js";
-import { computeAutocomplete } from "../cli/autocomplete/engine.js";
-import { loadSubagentModels, saveSubagentModels, type SubagentModelMap } from "../cli/userSettings.js";
-import { SessionHost, type SessionHostDeps } from "./sessionHost.js";
+import { runAgent } from "../core/agent";
+import { listSessions, loadSession, deleteSession, saveSession, sessionTokenTotal } from "../core/session";
+import { MORPHEUS_VERSION } from "../index";
+import { checkProviderAuth } from "../core/providerAuth";
+import { commandRegistry } from "../commands/registry";
+import { computeAutocomplete } from "../autocomplete/engine";
+import { loadSubagentModels, saveSubagentModels, type SubagentModelMap } from "../core/userSettings";
+import { SessionHost, type SessionHostDeps } from "./sessionHost";
 import {
   ErrorCodes,
   PROTOCOL_VERSION,
@@ -23,12 +18,11 @@ import {
   type Methods,
   type MorpheusEvent,
   type SessionListItem,
-} from "../protocol/types.js";
+} from "../protocol/types";
 
 const HEARTBEAT_MS = 30_000;
 export const UNAUTHORIZED_CLOSE = 4401;
 const execFileAsync = promisify(execFile);
-/* Only Neo's read/auth surface is relayed; model traffic goes through turns. */
 const NEO_PATHS = /^\/(health|v1\/models|v1\/auth\/[a-z0-9_\/-]+)(\?[^#]*)?$/;
 const SUBAGENT_ROLES = ["explore", "review", "implement"] as const;
 
@@ -272,7 +266,6 @@ export async function startDaemon(opts: DaemonOptions): Promise<Daemon> {
         try {
           body = JSON.parse(text);
         } catch {
-          /* Non-JSON bodies are returned as text. */
         }
         return { status: res.status, body };
       } catch (err) {
@@ -342,7 +335,6 @@ export async function startDaemon(opts: DaemonOptions): Promise<Daemon> {
   const wss = new WebSocketServer({ noServer: true });
 
   server.on("upgrade", (req, socket, head) => {
-    /* Browsers can't read an HTTP 401 on a WebSocket, so reject with a close code clients can see. */
     if (!tokenMatches(requestToken(req), opts.token)) {
       wss.handleUpgrade(req, socket, head, (ws) => ws.close(UNAUTHORIZED_CLOSE, "unauthorized"));
       return;

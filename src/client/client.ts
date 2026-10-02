@@ -1,19 +1,12 @@
-/*
- * MorpheusClient: typed JSON-RPC client for the Morpheus daemon. Works in browsers and Node 22+
- * (global WebSocket), reconnects with backoff, and resumes session streams from their last seq.
- */
-
 import type { MethodName, Methods, MorpheusEvent } from "../protocol/types";
 import { SessionStore, type SubscribeResponse } from "./store";
 
 export type ConnectionState = "idle" | "connecting" | "open" | "reconnecting" | "unauthorized" | "closed";
 
 export interface ClientOptions {
-  /* ws:// or wss:// address of the daemon, e.g. ws://100.64.0.2:7878 */
   url: string;
   token: string;
   clientName?: string;
-  /* Max wait for a request while (re)connecting before it fails. */
   requestTimeoutMs?: number;
   WebSocketImpl?: typeof WebSocket;
 }
@@ -60,7 +53,6 @@ export class MorpheusClient {
     return () => this.stateListeners.delete(listener);
   }
 
-  /* Every event for every subscribed session. */
   onEvent(listener: (event: MorpheusEvent) => void): () => void {
     this.eventListeners.add(listener);
     return () => this.eventListeners.delete(listener);
@@ -72,7 +64,6 @@ export class MorpheusClient {
     this.open();
   }
 
-  /* Skip the backoff wait, e.g. when a phone app returns to the foreground. */
   reconnectNow(): void {
     if (this.stopped || this._state === "open" || this._state === "connecting") return;
     if (this.reconnectTimer) clearTimeout(this.reconnectTimer);
@@ -104,10 +95,6 @@ export class MorpheusClient {
     );
   }
 
-  /*
-   * A live store for one session. Stores are ref-counted: call release() when a view no longer needs it.
-   * The store re-syncs automatically after reconnects and sequence gaps.
-   */
   session(sessionId: string): { store: SessionStore; release: () => void } {
     let entry = this.stores.get(sessionId);
     if (!entry) {
@@ -135,7 +122,6 @@ export class MorpheusClient {
     this.request("session.subscribe", { sessionId: store.sessionId, afterSeq })
       .then((res) => store.applySubscribeResponse(res as SubscribeResponse))
       .catch(() => {
-        /* Retried on the next reconnect. */
       });
   }
 
@@ -174,7 +160,6 @@ export class MorpheusClient {
 
     ws.onopen = () => {
       if (this.ws !== ws) return;
-      /* An auth rejection also "opens" first; wait for initialize before declaring the link healthy. */
       const id = this.nextId++;
       this.pending.set(id, {
         resolve: () => {
@@ -227,7 +212,6 @@ export class MorpheusClient {
     };
 
     ws.onerror = () => {
-      /* onclose follows and handles retry. */
     };
   }
 

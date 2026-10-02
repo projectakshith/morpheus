@@ -2,7 +2,7 @@
  * Coding intent autocomplete provider: contextual quick actions for common developer workflows.
  */
 
-import type { SuggestionItem, AutocompleteContext } from "../types.js";
+import type { SuggestionItem, AutocompleteContext } from "../types";
 
 interface IntentTemplate {
   trigger: string;

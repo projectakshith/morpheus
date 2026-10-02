@@ -1,6 +1,6 @@
-import type { CommandHandler, CommandContext } from "./types.js";
-import type { Thread } from "../types.js";
-import { loadSkills } from "../../core/skills.js";
+import type { CommandHandler, CommandContext } from "./types";
+import type { Thread } from "../core/thread";
+import { loadSkills } from "../core/skills";
 
 export class SkillsCommand implements CommandHandler {
   public readonly name = "skills";

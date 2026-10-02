@@ -3,7 +3,7 @@ import path from "node:path";
 import os from "node:os";
 import { fileURLToPath } from "node:url";
 import type { Skill, Rule } from "./types";
-import { similarity } from "../utils/levenshtein.js";
+import { similarity } from "../utils/levenshtein";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);

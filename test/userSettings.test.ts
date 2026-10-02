@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
-import { loadSubagentModels, saveSubagentModels } from "../src/cli/userSettings";
+import { loadSubagentModels, saveSubagentModels } from "../src/core/userSettings";
 
 test("worker model preferences persist and leave other user settings intact", async () => {
   const dir = await fs.mkdtemp(path.join(os.tmpdir(), "morpheus-settings-"));

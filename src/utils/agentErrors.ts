@@ -1,7 +1,3 @@
-/*
- * Turns provider/agent failures into a user-facing message with a fix hint.
- */
-
 export function formatAgentError(errMsg: string, baseURL?: string): string {
   const lowErr = errMsg.toLowerCase();
   let response = `error: ${lowErr}`;

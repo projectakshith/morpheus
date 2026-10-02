@@ -1,7 +1,3 @@
-/*
- * Daemon credentials in ~/.morpheus/daemon.json (owner-only). The token gates shell access, so treat it like a password.
- */
-
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
@@ -21,7 +17,6 @@ export function loadOrCreateDaemonConfig(opts: { rotate?: boolean } = {}, filePa
       const parsed = JSON.parse(fs.readFileSync(filePath, "utf8")) as Partial<DaemonConfig>;
       if (typeof parsed.token === "string" && parsed.token.length >= 32) return { token: parsed.token };
     } catch {
-      /* Missing or malformed: mint a fresh token below. */
     }
   }
   const config: DaemonConfig = { token: randomBytes(24).toString("base64url") };

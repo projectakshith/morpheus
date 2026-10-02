@@ -1,4 +1,4 @@
-import type { Operator } from "../provider/operator.js";
+import type { Operator } from "../provider/operator";
 
 export type TitleSource = "placeholder" | "prompt" | "generated" | "manual";
 

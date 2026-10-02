@@ -1,7 +1,3 @@
-/*
- * Process bootstrap shared by the TUI and the headless daemon: env files, endpoint defaults, Neo proxy.
- */
-
 import dotenv from "dotenv";
 import path from "node:path";
 import os from "node:os";
@@ -11,7 +7,6 @@ import { fileURLToPath } from "node:url";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
-/* Precedence: project .env, then ~/.morpheus/.env, then the package's own .env. */
 export function loadEnv(): void {
   dotenv.config();
 
@@ -42,7 +37,6 @@ export function resolveEndpoint(opts: { isLocal?: boolean; model?: string; baseU
   };
 }
 
-/* Auto-spawns Neo background proxy router if not yet running */
 export async function ensureNeoDaemon(baseURL: string): Promise<void> {
   if (!baseURL.includes("8787") && !baseURL.includes("127.0.0.1:8787")) {
     return;
@@ -56,7 +50,6 @@ export async function ensureNeoDaemon(baseURL: string): Promise<void> {
     const res = await fetch(healthUrl, { signal: AbortSignal.timeout(300) });
     if (res.ok) return;
   } catch {
-    /* Neo not responding, attempt to launch daemon */
   }
 
   const candidateDirs = [
@@ -85,7 +78,6 @@ export async function ensureNeoDaemon(baseURL: string): Promise<void> {
           } catch {}
         }
       } catch {
-        /* Fallthrough */
       }
     }
   }

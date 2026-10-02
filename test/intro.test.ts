@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { buildFullScreenIntro } from "../src/cli/components/MatrixIntro";
-import { cellWidth } from "../src/cli/utils/cells";
+import { cellWidth } from "../src/display/cells";
 
 const stripAnsi = (s: string) => s.replace(/\x1b\[[0-9;?]*[ -/]*[@-~]/g, "");
 function textOf(node: unknown): string {

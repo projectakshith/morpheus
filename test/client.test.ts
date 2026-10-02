@@ -1,7 +1,3 @@
-/*
- * Client library tests: the browser-style WebSocket client against a real daemon with a scripted agent.
- */
-
 import { describe, it, before, after } from "node:test";
 import assert from "node:assert/strict";
 import fs from "node:fs";

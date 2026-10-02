@@ -5,9 +5,9 @@
 import fs from "node:fs/promises";
 import path from "node:path";
 import os from "node:os";
-import type { CommandHandler, CommandContext } from "./types.js";
-import type { Thread } from "../types.js";
-import { listSessions, loadSession } from "../../core/session.js";
+import type { CommandHandler, CommandContext } from "./types";
+import type { Thread } from "../core/thread";
+import { listSessions, loadSession } from "../core/session";
 
 function formatAge(timestamp: number): string {
   if (!timestamp) return "unknown";
