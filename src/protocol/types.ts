@@ -3,9 +3,9 @@
  * JSON-RPC 2.0 over WebSocket; see docs/daemon-protocol.md.
  */
 
-import type { Finding, TokenUsage } from "../core/types.js";
-import type { Thread, FileEditRecord } from "../core/thread.js";
-import type { AutocompleteResult } from "../cli/autocomplete/types.js";
+import type { Finding, TokenUsage } from "../core/types";
+import type { Thread, FileEditRecord } from "../core/thread";
+import type { AutocompleteResult } from "../cli/autocomplete/types";
 
 export const PROTOCOL_VERSION = 1;
 

@@ -2,7 +2,7 @@
  * Applies a chosen suggestion to the input. Pure, so remote clients (Trinity) can reuse it.
  */
 
-import type { SuggestionItem } from "./types.js";
+import type { SuggestionItem } from "./types";
 
 export function applySuggestion(
   input: string,

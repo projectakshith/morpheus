@@ -3,8 +3,8 @@
  * so the daemon and every client arrive at the same state from the same event stream.
  */
 
-import type { Thread, ThreadStep } from "../core/thread.js";
-import type { MorpheusEvent, SessionSnapshot } from "./types.js";
+import type { Thread, ThreadStep } from "../core/thread";
+import type { MorpheusEvent, SessionSnapshot } from "./types";
 
 function updateThread(state: SessionSnapshot, threadId: string, fn: (t: Thread) => Thread): Thread[] {
   return state.threads.map((t) => (t.id === threadId ? fn(t) : t));

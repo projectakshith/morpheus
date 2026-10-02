@@ -3,8 +3,8 @@
  * (global WebSocket), reconnects with backoff, and resumes session streams from their last seq.
  */
 
-import type { MethodName, Methods, MorpheusEvent } from "../protocol/types.js";
-import { SessionStore, type SubscribeResponse } from "./store.js";
+import type { MethodName, Methods, MorpheusEvent } from "../protocol/types";
+import { SessionStore, type SubscribeResponse } from "./store";
 
 export type ConnectionState = "idle" | "connecting" | "open" | "reconnecting" | "unauthorized" | "closed";
 

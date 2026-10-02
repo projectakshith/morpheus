@@ -3,8 +3,8 @@
  * exposes subscribe/getSnapshot, which plugs straight into React's useSyncExternalStore.
  */
 
-import { applyEvent } from "../protocol/reducer.js";
-import type { MorpheusEvent, SessionSnapshot } from "../protocol/types.js";
+import { applyEvent } from "../protocol/reducer";
+import type { MorpheusEvent, SessionSnapshot } from "../protocol/types";
 
 export type SubscribeResponse = { snapshot: SessionSnapshot } | { events: MorpheusEvent[] };
 
