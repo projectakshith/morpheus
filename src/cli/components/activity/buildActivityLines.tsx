@@ -4,9 +4,9 @@ import type { Thread, ThreadStep, FileEditRecord, RightLine } from "../../types"
 import { theme } from "../../theme";
 import { highlightCode } from "../../highlight";
 import { cellWidth, truncateCells, truncateCellsStart, wrapCells } from "../../../display/cells";
-import { describeStep, relativePath, type CardModel, type QuietItem } from "../../../display/describeStep";
+import { describeStep, relativePath, type CardModel, type QuietItem, type SeraphHit } from "../../../display/describeStep";
 
-const BODY_LIMITS = { diff: 10, code: 6, text: 6 } as const;
+const BODY_LIMITS = { diff: 10, code: 6, text: 6, seraph: 24 } as const;
 const STRIP_MAX_LINES = 2;
 const VERB_WIDTH = 6;
 
@@ -90,6 +90,8 @@ function verbColor(verb: string, failed: boolean): string {
       return theme.warning;
     case "fetch":
       return theme.diffHunk;
+    case "seraph":
+      return theme.accentBright;
     default:
       return theme.secondary;
   }
@@ -163,6 +165,155 @@ function codeBody(card: CardModel, inner: number): BodyRow[] {
   }));
 }
 
+const SCAN_TRAIL = "░▒▓█▓▒░";
+const VIEW_LABELS: Record<string, string> = {
+  lexical: "α lex",
+  semantic: "β sem",
+  structural: "γ struct",
+  graph: "δ graph",
+  evolution: "ε evo",
+};
+
+function shortCommit(commit: string): string {
+  return commit.slice(0, 7);
+}
+
+function commitColor(commit: string, commits: string[]): string {
+  const palette = [theme.diffHunk, theme.warning, theme.accentBright, theme.diffRemove];
+  return palette[Math.max(0, commits.indexOf(commit)) % palette.length];
+}
+
+function meter(fraction: number, cells: number, fill = "█", empty = "░"): Seg[] {
+  const filled = Math.max(0, Math.min(cells, Math.round(fraction * cells)));
+  return [
+    { text: fill.repeat(filled), color: theme.accentBright },
+    { text: empty.repeat(cells - filled), color: theme.border },
+  ];
+}
+
+function seraphScan(inner: number, now: number): BodyRow[] {
+  const label = "◌ seraph scanning index ";
+  const lane = Math.max(8, inner - label.length);
+  const pos = Math.floor(now / 70) % (lane + SCAN_TRAIL.length);
+  const cells = Array.from({ length: lane }, (_, i) => {
+    const offset = i - (pos - SCAN_TRAIL.length);
+    return offset >= 0 && offset < SCAN_TRAIL.length ? SCAN_TRAIL[offset] : "·";
+  }).join("");
+  return [
+    {
+      segs: [
+        { text: label, color: theme.accent, italic: true },
+        { text: cells, color: theme.accentBright },
+      ],
+    },
+  ];
+}
+
+function seraphIndexRows(card: CardModel, inner: number): BodyRow[] {
+  if (card.body.type !== "seraph" || !card.body.index) return [];
+  const { commit, parsedFiles, reusedChunks, totalChunks, ms } = card.body.index;
+  const rows: BodyRow[] = [];
+  const time = ms === undefined ? "" : ms < 1000 ? ` · ${Math.round(ms)}ms` : ` · ${(ms / 1000).toFixed(1)}s`;
+  rows.push({
+    segs: [
+      { text: "⬡ ", color: theme.accent },
+      { text: shortCommit(commit), color: theme.warning, bold: true },
+      { text: ` · ${totalChunks} chunks · parsed ${parsedFiles} file${parsedFiles === 1 ? "" : "s"}${time}`, color: theme.muted },
+    ],
+  });
+  if (totalChunks > 0) {
+    const ratio = reusedChunks / totalChunks;
+    const label = "  reuse ";
+    const pct = ` ${Math.round(ratio * 100)}%`;
+    const cells = Math.max(6, Math.min(28, inner - label.length - pct.length));
+    rows.push({ segs: [{ text: label, color: theme.muted }, ...meter(ratio, cells, "▰", "▱"), { text: pct, color: theme.accentBright, bold: true }] });
+  }
+  return rows;
+}
+
+function seraphHitRows(hit: SeraphHit, rank: number, inner: number, commits: string[], showCommit: boolean, expanded: boolean): BodyRow[] {
+  const glyph = rank === 1 ? "◈" : "◇";
+  const name = hit.symbol || hit.path.split("/").pop() || hit.path;
+  const scoreText = ` ${hit.relevance.toFixed(2)}`;
+  const barCells = inner >= 48 ? 10 : inner >= 36 ? 6 : 0;
+  const rankText = `${glyph} ${rank} `;
+  const right = barCells ? barCells + scoreText.length : 0;
+  const nameRoom = Math.max(4, inner - cellWidth(rankText) - right - 1);
+  const shownName = truncateCells(name, nameRoom);
+  const gap = Math.max(1, inner - cellWidth(rankText) - cellWidth(shownName) - right);
+  const rows: BodyRow[] = [
+    {
+      segs: [
+        { text: rankText, color: rank === 1 ? theme.accentBright : theme.accent, bold: rank === 1 },
+        { text: shownName, color: theme.text, bold: true },
+        { text: " ".repeat(gap) },
+        ...(barCells ? meter(hit.relevance, barCells) : []),
+        ...(barCells ? [{ text: scoreText, color: rank === 1 ? theme.accentBright : theme.muted }] : []),
+      ],
+    },
+  ];
+  const location = `${hit.path}:${hit.startLine}-${hit.endLine}`;
+  const tag = showCommit && hit.commit ? ` @${shortCommit(hit.commit)}` : "";
+  const others = hit.versions.length - 1;
+  const spread = others > 0 ? ` +${others} version${others === 1 ? "" : "s"} same code` : "";
+  rows.push({
+    segs: [
+      { text: "    " },
+      { text: truncateCellsStart(location, Math.max(4, inner - 4 - tag.length - spread.length)), color: theme.diffHunk },
+      ...(tag ? [{ text: tag, color: commitColor(hit.commit, commits), bold: true }] : []),
+      ...(spread ? [{ text: spread, color: theme.muted, italic: true }] : []),
+    ],
+  });
+  if (expanded) {
+    const gutter = String(hit.startLine + hit.preview.length).length;
+    hit.preview.forEach((line, i) => {
+      rows.push({
+        bg: theme.bgCode,
+        segs: [
+          { text: "    " },
+          { text: String(hit.startLine + i).padStart(gutter), color: theme.muted, bg: theme.bgCode },
+          { text: " ┃ ", color: theme.border, bg: theme.bgCode },
+          { text: truncateCells(highlightCode(line, hit.lang), Math.max(0, inner - 7 - gutter)), bg: theme.bgCode },
+        ],
+      });
+    });
+    const views = Object.entries(hit.views).filter(([, v]) => v > 0);
+    if (views.length > 1) {
+      const segs: Seg[] = [{ text: "    " }];
+      for (const [view, value] of views) {
+        segs.push({ text: `${VIEW_LABELS[view] ?? view} `, color: theme.muted }, ...meter(value, 4, "▮", "▯"), { text: "  " });
+      }
+      rows.push({ segs });
+    }
+  }
+  return rows;
+}
+
+function seraphBodyRows(card: CardModel, inner: number): BodyRow[] {
+  if (card.body.type !== "seraph") return [];
+  const body = card.body;
+  const rows = seraphIndexRows(card, inner);
+  if (body.mode === "index") return rows;
+  if (body.mode === "history" && body.commits.length > 1) {
+    const segs: Seg[] = [{ text: "  across ", color: theme.muted }];
+    body.commits.forEach((commit, i) => {
+      if (i > 0) segs.push({ text: " ", color: theme.muted });
+      segs.push({ text: shortCommit(commit), color: commitColor(commit, body.commits), bold: true });
+    });
+    rows.push({ segs });
+  }
+  if (body.hits.length === 0) {
+    rows.push({ segs: [{ text: "◌ no matching code", color: theme.muted, italic: true }] });
+    return rows;
+  }
+  if (rows.length > 0) rows.push({ segs: [] });
+  const showCommit = body.mode !== "search";
+  body.hits.forEach((hit, i) => {
+    rows.push(...seraphHitRows(hit, i + 1, inner, body.commits, showCommit, i === 0 || (body.mode === "history" && i < 3)));
+  });
+  return rows;
+}
+
 function textBody(card: CardModel, inner: number): BodyRow[] {
   if (card.body.type !== "text") return [];
   if (card.body.lines.length === 0) {
@@ -175,7 +326,7 @@ function textBody(card: CardModel, inner: number): BodyRow[] {
   );
 }
 
-function cardLines(card: CardModel, width: number, open: boolean, meta: RowMeta): RightLine[] {
+function cardLines(card: CardModel, width: number, open: boolean, meta: RowMeta, now: number = Date.now()): RightLine[] {
   const id = `card_${card.stepId}`;
   const verb = card.verb.padEnd(Math.min(VERB_WIDTH, Math.max(card.verb.length, 5)));
   const vColor = verbColor(card.verb, card.failed);
@@ -241,8 +392,16 @@ function cardLines(card: CardModel, width: number, open: boolean, meta: RowMeta)
       body = textBody(card, inner);
       keepTail = card.body.keep === "tail";
       break;
+    case "seraph":
+      body = seraphBodyRows(card, inner);
+      limit = BODY_LIMITS.seraph;
+      break;
     case "none":
-      body = card.running ? [{ segs: [{ text: "⋯", color: theme.muted }] }] : [];
+      body = card.running
+        ? card.verb === "seraph"
+          ? seraphScan(inner, now)
+          : [{ segs: [{ text: "⋯", color: theme.muted }] }]
+        : [];
   }
 
   const hidden = Math.max(0, body.length - limit);
@@ -398,10 +557,10 @@ function toBlocks(steps: ThreadStep[], cwd: string, now: number): Block[] {
   return blocks;
 }
 
-function renderBlock(block: Block, open: boolean, width: number): RightLine[] {
+function renderBlock(block: Block, open: boolean, width: number, now: number = Date.now()): RightLine[] {
   const meta: RowMeta = { toolId: block.id };
   if (block.type === "strip") return stripLines(block.items, width, open, meta, `strip_${block.id}`);
-  return cardLines(block.card, width, open, meta);
+  return cardLines(block.card, width, open, meta, now);
 }
 
 function promptExcerpt(prompt: string): string {
@@ -510,7 +669,7 @@ export function buildActivityLines({
     lines.push(turnSummary(thread, width, open));
     if (open) {
       for (const block of toBlocks(thread.steps, cwd, now)) {
-        lines.push(...renderBlock(block, flip(block.id, false), width));
+        lines.push(...renderBlock(block, flip(block.id, false), width, now));
       }
     }
   }
@@ -528,7 +687,7 @@ export function buildActivityLines({
 
     for (const block of latestBlocks) {
       const byDefault = block.type === "card" && block.id === openCard;
-      lines.push(...renderBlock(block, flip(block.id, byDefault), width));
+      lines.push(...renderBlock(block, flip(block.id, byDefault), width, now));
     }
   }
 

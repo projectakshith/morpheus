@@ -30,7 +30,39 @@ export interface TextLine {
   error: boolean;
 }
 
+export interface SeraphHit {
+  path: string;
+  symbol: string;
+  startLine: number;
+  endLine: number;
+  commit: string;
+  score: number;
+  relevance: number;
+  lang: string;
+  preview: string[];
+  views: Record<string, number>;
+  versions: string[];
+}
+
+export interface SeraphIndexStats {
+  commit: string;
+  parsedFiles: number;
+  reusedChunks: number;
+  totalChunks: number;
+  ms?: number;
+}
+
+export interface SeraphBody {
+  type: "seraph";
+  mode: "search" | "version" | "history" | "index";
+  hits: SeraphHit[];
+  index?: SeraphIndexStats;
+  searchMs?: number;
+  commits: string[];
+}
+
 export type CardBody =
+  | SeraphBody
   | { type: "diff"; rows: DiffRow[]; lang: string }
   | { type: "code"; lines: string[]; lang: string }
   | { type: "text"; lines: TextLine[]; keep: "head" | "tail" }
@@ -260,6 +292,10 @@ export function describeStep(step: ThreadStep, cwd: string, now: number = Date.n
     };
   }
 
+  if ((step.name ?? "").startsWith(SERAPH_PREFIX)) {
+    return { kind: "card", card: seraphCard(step, base, runningStatus) };
+  }
+
   switch (step.name) {
     case "edit_file": {
       const filePath = relativePath(str(args.filePath), cwd);
@@ -388,6 +424,107 @@ export function describeStep(step: ThreadStep, cwd: string, now: number = Date.n
       };
     }
   }
+}
+
+const SERAPH_PREFIX = "mcp_seraph_";
+const SERAPH_PREVIEW_LINES = 3;
+
+function num(value: unknown): number {
+  return typeof value === "number" && Number.isFinite(value) ? value : 0;
+}
+
+function parseSeraphOutput(output: string | undefined): Record<string, any> | undefined {
+  if (!output) return undefined;
+  const start = output.indexOf("{");
+  if (start < 0) return undefined;
+  try {
+    const value = JSON.parse(output.slice(start));
+    return value && typeof value === "object" ? value : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+function seraphIndexStats(raw: any): SeraphIndexStats | undefined {
+  if (!raw || typeof raw !== "object" || typeof raw.commit !== "string") return undefined;
+  return {
+    commit: raw.commit,
+    parsedFiles: num(raw.parsed_files),
+    reusedChunks: num(raw.reused_chunks),
+    totalChunks: num(raw.total_chunks),
+    ms: typeof raw.ms === "number" ? raw.ms : undefined,
+  };
+}
+
+export function seraphBody(tool: string, output: string | undefined): SeraphBody | undefined {
+  const data = parseSeraphOutput(output);
+  if (!data) return undefined;
+  if (tool === "index_repository") {
+    const index = seraphIndexStats(data);
+    return index ? { type: "seraph", mode: "index", hits: [], index, commits: [index.commit] } : undefined;
+  }
+  const results: any[] = Array.isArray(data.results) ? data.results : [];
+  const top = Math.max(...results.map((r) => num(r.score)), 0);
+  const viewMax: Record<string, number> = {};
+  for (const r of results) {
+    for (const [view, value] of Object.entries(r.retrieval_scores ?? {})) {
+      viewMax[view] = Math.max(viewMax[view] ?? 0, num(value));
+    }
+  }
+  const hits: SeraphHit[] = results.map((r) => {
+    const views: Record<string, number> = {};
+    for (const [view, value] of Object.entries(r.retrieval_scores ?? {})) {
+      views[view] = viewMax[view] ? num(value) / viewMax[view] : 0;
+    }
+    const preview = str(r.text)
+      .split("\n")
+      .map(sanitizeOutputLine)
+      .filter((line) => line.trim())
+      .slice(0, SERAPH_PREVIEW_LINES);
+    return {
+      path: str(r.path),
+      symbol: str(r.symbol),
+      startLine: num(r.start_line),
+      endLine: num(r.end_line),
+      commit: str(r.commit),
+      score: num(r.score),
+      relevance: top > 0 ? num(r.score) / top : 0,
+      lang: langFor(str(r.path)),
+      preview,
+      views,
+      versions: Array.isArray(r.versions) ? r.versions.filter((v: unknown): v is string => typeof v === "string") : [],
+    };
+  });
+  const commits = [...new Set(hits.flatMap((h) => [h.commit, ...h.versions]).filter(Boolean))];
+  const mode = tool === "search_history" ? "history" : tool === "search_at_version" ? "version" : "search";
+  return {
+    type: "seraph",
+    mode,
+    hits,
+    index: seraphIndexStats(data.index),
+    searchMs: typeof data.search_ms === "number" ? data.search_ms : undefined,
+    commits,
+  };
+}
+
+function seraphCard(step: ThreadStep, base: { stepId: string; running: boolean; failed: boolean }, runningStatus: string): CardModel {
+  const tool = (step.name ?? "").slice(SERAPH_PREFIX.length);
+  const args = step.args ?? {};
+  const query = str(args.query);
+  const version = str(args.version);
+  const target = tool === "index_repository"
+    ? `index ${version || "HEAD"}`
+    : `"${query}"${version ? ` @${version.slice(0, 10)}` : tool === "search_history" ? " · all versions" : ""}`;
+  const card = { ...base, verb: "seraph", target, targetIsPath: false };
+  if (base.running) return { ...card, status: runningStatus, body: { type: "none" } };
+  const body = base.failed ? undefined : seraphBody(tool, step.output);
+  if (!body) {
+    return { ...card, status: base.failed ? "failed" : "", body: { type: "text", lines: plainLines(step.output, base.failed), keep: "head" } };
+  }
+  const timing = body.mode === "index" ? body.index?.ms : body.searchMs;
+  const timeLabel = timing === undefined ? "" : timing < 1000 ? `${Math.max(1, Math.round(timing))}ms` : `${(timing / 1000).toFixed(1)}s`;
+  const count = body.mode === "index" ? plural(body.index?.totalChunks ?? 0, "chunk") : plural(body.hits.length, "hit");
+  return { ...card, status: [count, timeLabel].filter(Boolean).join(" · "), body };
 }
 
 function httpStatus(output: string | undefined): string {

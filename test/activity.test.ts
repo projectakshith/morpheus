@@ -219,3 +219,44 @@ test("activity: empty state when nothing has run", () => {
   const text = plain(buildActivityLines({ threads: [], edits: [], width: 40, cwd: CWD }));
   assert.ok(text.some((l) => l.includes("no tool calls yet")));
 });
+
+test("seraph search renders ranked hits with code preview and timing", () => {
+  const output = JSON.stringify({
+    query: "start mcp servers",
+    resolved_commit: "abcdef1234567",
+    index: { commit: "abcdef1234567", base_commit: null, parsed_files: 2, reused_chunks: 8, total_chunks: 10, ms: 120 },
+    search_ms: 4.2,
+    results: [
+      { score: 8, path: "src/mcp.ts", symbol: "connect", start_line: 10, end_line: 20, commit: "abcdef1234567", text: "async connect() {\n  return client;\n}", retrieval_scores: { lexical: 8, semantic: 0.9 } },
+      { score: 4, path: "src/cli.ts", symbol: "runServe", start_line: 3, end_line: 9, commit: "abcdef1234567", text: "function runServe() {}", retrieval_scores: { lexical: 4, semantic: 0.5 } },
+    ],
+  }, null, 2);
+  const step = tool("mcp_seraph_search_code", { query: "start mcp servers" }, output);
+  const model = describeStep(step, CWD);
+  assert.ok(model.kind === "card" && model.card.verb === "seraph");
+  assert.equal(model.card.status, "2 hits · 4ms");
+  const text = plain(buildActivityLines({ threads: [turn("t", 1, "find", [step])], edits: [], width: 72, cwd: CWD })).join("\n");
+  assert.match(text, /◈ 1 connect/);
+  assert.match(text, /◇ 2 runServe/);
+  assert.match(text, /src\/mcp\.ts:10-20/);
+  assert.match(text, /async connect\(\)/);
+  assert.match(text, /reuse .* 80%/);
+});
+
+test("seraph history collapses identical versions into one hit", () => {
+  const output = JSON.stringify({
+    results: [
+      { score: 1, path: "a.py", symbol: "f", start_line: 1, end_line: 2, commit: "c2", text: "def f(): pass", versions: ["c2", "c1"] },
+    ],
+  });
+  const step = tool("mcp_seraph_search_history", { query: "f" }, output);
+  const text = plain(buildActivityLines({ threads: [turn("t", 1, "find", [step])], edits: [], width: 72, cwd: CWD })).join("\n");
+  assert.match(text, /all versions/);
+  assert.match(text, /@c2 \+1 version same code/);
+});
+
+test("running seraph call shows the scan lane", () => {
+  const step = tool("mcp_seraph_search_code", { query: "x" }, "", { isRunning: true, startTime: 0 });
+  const text = plain(buildActivityLines({ threads: [turn("t", 1, "find", [step])], edits: [], width: 72, cwd: CWD, now: 500 })).join("\n");
+  assert.match(text, /◌ seraph scanning index/);
+});
