@@ -148,9 +148,9 @@ export function useAgentRunner({
     async (taskText: string) => {
       const trimmed = taskText.trim();
       if (!trimmed) return;
-      const handled = await host.runCommand(trimmed, { openModal, closeModal, setIsModelSelectorOpen, setPromptHistory });
+      setPromptHistory((prev) => (prev[prev.length - 1] === trimmed ? prev : [...prev, trimmed]));
+      const handled = await host.runCommand(trimmed, { openModal, closeModal, setIsModelSelectorOpen, setPromptHistory: () => {} });
       if (handled) return;
-      setPromptHistory((prev) => [...prev, trimmed]);
       host.startTurn(trimmed);
     },
     [host, openModal, closeModal, setIsModelSelectorOpen, setPromptHistory]
