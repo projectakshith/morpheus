@@ -151,7 +151,7 @@ export class SeraphCommand implements CommandHandler {
       `- **Runtime:** ${runtimeStatus}`,
       `- **Repository:** ${repo ? `\`${repo}\`, ${indexed}` : "not inside a Git repository"}`,
       "",
-      "Run /seraph setup to add the MCP server. Tools appear as `mcp_seraph_search_code`, `mcp_seraph_search_at_version`, `mcp_seraph_search_history` and `mcp_seraph_index_repository`.",
+      "Run /seraph setup to add the MCP server. Tools: `search_code`, `search_at_version`, `search_history`, `find_symbol`, `find_dependencies`, `compare_versions` and `index_repository` (as `mcp_seraph_*`).",
     ].join("\n");
     addThread(ctx, response);
     return true;

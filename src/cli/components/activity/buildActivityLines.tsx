@@ -4,7 +4,7 @@ import type { Thread, ThreadStep, FileEditRecord, RightLine } from "../../types"
 import { theme } from "../../theme";
 import { highlightCode } from "../../highlight";
 import { cellWidth, truncateCells, truncateCellsStart, wrapCells } from "../../../display/cells";
-import { describeStep, relativePath, type CardModel, type QuietItem, type SeraphHit } from "../../../display/describeStep";
+import { describeStep, relativePath, shortSymbol, type CardModel, type QuietItem, type SeraphBody, type SeraphHit } from "../../../display/describeStep";
 
 const BODY_LIMITS = { diff: 10, code: 6, text: 6, seraph: 24 } as const;
 const STRIP_MAX_LINES = 2;
@@ -231,11 +231,11 @@ function seraphIndexRows(card: CardModel, inner: number): BodyRow[] {
   return rows;
 }
 
-function seraphHitRows(hit: SeraphHit, rank: number, inner: number, commits: string[], showCommit: boolean, expanded: boolean): BodyRow[] {
+function seraphHitRows(hit: SeraphHit, rank: number, inner: number, commits: string[], showCommit: boolean, expanded: boolean, ranked = true): BodyRow[] {
   const glyph = rank === 1 ? "◈" : "◇";
   const name = hit.symbol || hit.path.split("/").pop() || hit.path;
   const scoreText = ` ${hit.relevance.toFixed(2)}`;
-  const barCells = inner >= 48 ? 10 : inner >= 36 ? 6 : 0;
+  const barCells = !ranked ? 0 : inner >= 48 ? 10 : inner >= 36 ? 6 : 0;
   const rankText = `${glyph} ${rank} `;
   const right = barCells ? barCells + scoreText.length : 0;
   const nameRoom = Math.max(4, inner - cellWidth(rankText) - right - 1);
@@ -289,9 +289,95 @@ function seraphHitRows(hit: SeraphHit, rank: number, inner: number, commits: str
   return rows;
 }
 
+const CHANGE_GLYPH: Record<string, string> = { added: "+", modified: "~", renamed: "↷", moved: "⇢", deleted: "−" };
+
+function changeColor(change: string): string {
+  if (change === "added") return theme.diffAdd;
+  if (change === "deleted") return theme.diffRemove;
+  if (change === "renamed" || change === "moved") return theme.warning;
+  return theme.diffHunk;
+}
+
+function seraphDepsRows(body: SeraphBody, inner: number): BodyRow[] {
+  const deps = body.deps;
+  if (!deps) return [];
+  const rows: BodyRow[] = [
+    {
+      segs: [
+        { text: "◈ ", color: theme.accentBright },
+        { text: truncateCells(shortSymbol(deps.root), Math.max(4, inner - 20)), color: theme.text, bold: true },
+        { text: `  ${deps.direction === "in" ? "callers" : deps.direction === "both" ? "both ways" : "calls out"}`, color: theme.muted },
+      ],
+    },
+  ];
+  if (deps.chains.length === 0) {
+    rows.push({ segs: [{ text: "  ◌ no dependencies found", color: theme.muted, italic: true }] });
+    return rows;
+  }
+  for (const chain of deps.chains) {
+    const segs: Seg[] = [{ text: "  " }];
+    chain.steps.forEach((step, i) => {
+      segs.push({ text: i === 0 ? "└ " : " → ", color: theme.border });
+      segs.push({ text: `${step.kind} `, color: theme.muted });
+      segs.push({ text: shortSymbol(step.symbol), color: i === chain.steps.length - 1 ? theme.diffHunk : theme.secondary });
+    });
+    const last = chain.steps[chain.steps.length - 1]?.symbol ?? "";
+    const file = last.includes("::") ? last.slice(0, last.lastIndexOf("::")) : last;
+    const used = segsWidth(segs);
+    if (file && used + file.length + 2 < inner) segs.push({ text: `  ${file}`, color: theme.border });
+    rows.push({ segs });
+  }
+  return rows;
+}
+
+function seraphCompareRows(body: SeraphBody, inner: number): BodyRow[] {
+  const cmp = body.compare;
+  if (!cmp) return [];
+  const rows: BodyRow[] = [];
+  const head: Seg[] = [
+    { text: "⬡ ", color: theme.accent },
+    { text: shortCommit(cmp.from), color: theme.warning, bold: true },
+    { text: " → ", color: theme.muted },
+    { text: shortCommit(cmp.to), color: theme.diffHunk, bold: true },
+    { text: "   " },
+  ];
+  for (const kind of ["added", "modified", "renamed", "moved", "deleted"]) {
+    const n = cmp.summary[kind] ?? 0;
+    if (n > 0) head.push({ text: `${CHANGE_GLYPH[kind]}${n} ${kind}  `, color: changeColor(kind), bold: true });
+  }
+  rows.push({ segs: head });
+  if (cmp.depsAdded || cmp.depsRemoved) {
+    rows.push({ segs: [{ text: `  dependencies  `, color: theme.muted }, { text: `+${cmp.depsAdded}`, color: theme.diffAdd, bold: true }, { text: " " }, { text: `−${cmp.depsRemoved}`, color: theme.diffRemove, bold: true }] });
+  }
+  rows.push({ segs: [] });
+  for (const c of cmp.changes.slice(0, 10)) {
+    const where = `${c.path}:${c.line}`;
+    const name = shortSymbol(c.symbol);
+    const room = Math.max(4, inner - 4 - cellWidth(name) - 2);
+    rows.push({
+      segs: [
+        { text: ` ${CHANGE_GLYPH[c.change] ?? "·"} `, color: changeColor(c.change), bold: true },
+        { text: name, color: theme.text, bold: true },
+        { text: "  " },
+        { text: truncateCellsStart(where, room), color: theme.border },
+      ],
+    });
+  }
+  if (cmp.changes.length > 10) rows.push({ segs: [{ text: `   … ${cmp.changes.length - 10} more`, color: theme.muted, italic: true }] });
+  if (cmp.commitSubjects.length) {
+    rows.push({ segs: [] });
+    for (const c of cmp.commitSubjects.slice(0, 4)) {
+      rows.push({ segs: [{ text: `  ${shortCommit(c.sha)} `, color: theme.warning }, { text: truncateCells(c.subject, Math.max(4, inner - 11)), color: theme.secondary }] });
+    }
+  }
+  return rows;
+}
+
 function seraphBodyRows(card: CardModel, inner: number): BodyRow[] {
   if (card.body.type !== "seraph") return [];
   const body = card.body;
+  if (body.mode === "deps") return seraphDepsRows(body, inner);
+  if (body.mode === "compare") return seraphCompareRows(body, inner);
   const rows = seraphIndexRows(card, inner);
   if (body.mode === "index") return rows;
   if (body.mode === "history" && body.commits.length > 1) {
@@ -307,9 +393,9 @@ function seraphBodyRows(card: CardModel, inner: number): BodyRow[] {
     return rows;
   }
   if (rows.length > 0) rows.push({ segs: [] });
-  const showCommit = body.mode !== "search";
+  const showCommit = body.mode !== "search" && body.mode !== "symbol";
   body.hits.forEach((hit, i) => {
-    rows.push(...seraphHitRows(hit, i + 1, inner, body.commits, showCommit, i === 0 || (body.mode === "history" && i < 3)));
+    rows.push(...seraphHitRows(hit, i + 1, inner, body.commits, showCommit, i === 0 || (body.mode === "history" && i < 3), body.mode !== "symbol"));
   });
   return rows;
 }

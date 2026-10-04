@@ -50,7 +50,7 @@ cd ~/seraph && uv sync --extra mcp
 
 - the agent searches with seraph first when it looks for code by behavior, and keeps grep for exact names
 - results show up as ranked cards in the activity panel: relevance bars, a highlighted preview, index reuse and timings
-- tools: `search_code`, `search_at_version`, `search_history`, `index_repository`; seraph searches whichever git repo morpheus runs in
+- tools: `search_code`, `search_at_version`, `search_history`, `find_symbol`, `find_dependencies`, `compare_versions`, `index_repository`; seraph searches whichever git repo morpheus runs in
 - `/seraph status` checks the runtime and index, `/seraph disable` turns it off
 - `/versus <question>` (or `/vs`) runs one question through seraph and grep side by side
 

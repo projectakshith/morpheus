@@ -207,7 +207,7 @@ export async function runAgent(
     const notes: string[] = [];
     if (hasSeraphTools) {
       notes.push(
-        "Seraph code search is connected. To locate code by behavior or intent, call mcp_seraph_search_code first and read the returned paths and line ranges instead of guessing grep patterns; use grep_code for exact identifiers or strings. Use mcp_seraph_search_at_version for code at a past commit, branch or tag, and mcp_seraph_search_history for how code changed across versions."
+        "Seraph code search is connected. To locate code by behavior or intent, call mcp_seraph_search_code first and read the returned paths and line ranges instead of guessing grep patterns; use grep_code for exact identifiers or strings. Use mcp_seraph_search_at_version for code at a past commit, branch or tag, mcp_seraph_search_history for how code changed across versions, mcp_seraph_find_symbol and mcp_seraph_find_dependencies to jump to a definition and walk its callers or callees, and mcp_seraph_compare_versions to see what changed between two refs."
       );
     }
     if (delegateTool) {

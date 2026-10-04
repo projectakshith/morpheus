@@ -52,13 +52,36 @@ export interface SeraphIndexStats {
   ms?: number;
 }
 
+export interface SeraphDepChain {
+  steps: { kind: string; symbol: string }[];
+}
+
+export interface SeraphChange {
+  change: string;
+  symbol: string;
+  path: string;
+  line: number;
+}
+
+export interface SeraphCompare {
+  from: string;
+  to: string;
+  summary: Record<string, number>;
+  changes: SeraphChange[];
+  depsAdded: number;
+  depsRemoved: number;
+  commitSubjects: { sha: string; subject: string }[];
+}
+
 export interface SeraphBody {
   type: "seraph";
-  mode: "search" | "version" | "history" | "index";
+  mode: "search" | "version" | "history" | "index" | "symbol" | "deps" | "compare";
   hits: SeraphHit[];
   index?: SeraphIndexStats;
   searchMs?: number;
   commits: string[];
+  deps?: { root: string; direction: string; chains: SeraphDepChain[] };
+  compare?: SeraphCompare;
 }
 
 export type CardBody =
@@ -456,9 +479,48 @@ function seraphIndexStats(raw: any): SeraphIndexStats | undefined {
   };
 }
 
+export function shortSymbol(id: string): string {
+  const at = id.lastIndexOf("::");
+  return at >= 0 ? id.slice(at + 2) : id.split("/").pop() || id;
+}
+
+function seraphDeps(data: Record<string, any>): SeraphBody {
+  const results: any[] = Array.isArray(data.results) ? data.results : [];
+  const chains: SeraphDepChain[] = results.flatMap((r) =>
+    (Array.isArray(r.chains) ? r.chains : []).map((c: any) => ({
+      steps: (Array.isArray(c.edges) ? c.edges : []).map((e: any) => ({ kind: str(e.kind), symbol: str(e.dst) })),
+    }))
+  );
+  const root = str(results[0]?.symbol) || str(data.query);
+  return { type: "seraph", mode: "deps", hits: [], commits: [], deps: { root, direction: str(data.direction) || "out", chains } };
+}
+
+function seraphCompare(data: Record<string, any>): SeraphBody {
+  const symbols: any[] = Array.isArray(data.symbols) ? data.symbols : [];
+  const deps = data.dependencies && typeof data.dependencies === "object" ? data.dependencies : {};
+  const commitList: any[] = Array.isArray(data.commits) ? data.commits : [];
+  return {
+    type: "seraph",
+    mode: "compare",
+    hits: [],
+    commits: [str(data.from), str(data.to)].filter(Boolean),
+    compare: {
+      from: str(data.from),
+      to: str(data.to),
+      summary: Object.fromEntries(Object.entries(data.summary ?? {}).map(([k, v]) => [k, num(v)])),
+      changes: symbols.map((c) => ({ change: str(c.change_type), symbol: str(c.symbol), path: str(c.path), line: num(c.start_line) })),
+      depsAdded: Array.isArray(deps.added) ? deps.added.length : 0,
+      depsRemoved: Array.isArray(deps.removed) ? deps.removed.length : 0,
+      commitSubjects: commitList.map((c) => ({ sha: str(c.commit), subject: str(c.subject) })),
+    },
+  };
+}
+
 export function seraphBody(tool: string, output: string | undefined): SeraphBody | undefined {
   const data = parseSeraphOutput(output);
   if (!data) return undefined;
+  if (tool === "find_dependencies") return seraphDeps(data);
+  if (tool === "compare_versions") return seraphCompare(data);
   if (tool === "index_repository") {
     const index = seraphIndexStats(data);
     return index ? { type: "seraph", mode: "index", hits: [], index, commits: [index.commit] } : undefined;
@@ -496,7 +558,7 @@ export function seraphBody(tool: string, output: string | undefined): SeraphBody
     };
   });
   const commits = [...new Set(hits.flatMap((h) => [h.commit, ...h.versions]).filter(Boolean))];
-  const mode = tool === "search_history" ? "history" : tool === "search_at_version" ? "version" : "search";
+  const mode = tool === "find_symbol" ? "symbol" : tool === "search_history" ? "history" : tool === "search_at_version" ? "version" : "search";
   return {
     type: "seraph",
     mode,
@@ -512,9 +574,16 @@ function seraphCard(step: ThreadStep, base: { stepId: string; running: boolean; 
   const args = step.args ?? {};
   const query = str(args.query);
   const version = str(args.version);
+  const at = version && version !== "HEAD" ? ` @${version.slice(0, 10)}` : "";
   const target = tool === "index_repository"
     ? `index ${version || "HEAD"}`
-    : `"${query}"${version ? ` @${version.slice(0, 10)}` : tool === "search_history" ? " · all versions" : ""}`;
+    : tool === "find_symbol"
+      ? `symbol ${str(args.name)}${at}`
+      : tool === "find_dependencies"
+        ? `deps ${str(args.symbol)} · ${str(args.direction) || "out"}${at}`
+        : tool === "compare_versions"
+          ? `compare ${str(args.from_version)} → ${str(args.to_version)}`
+          : `"${query}"${version ? ` @${version.slice(0, 10)}` : tool === "search_history" ? " · all versions" : ""}`;
   const card = { ...base, verb: "seraph", target, targetIsPath: false };
   if (base.running) return { ...card, status: runningStatus, body: { type: "none" } };
   const body = base.failed ? undefined : seraphBody(tool, step.output);
@@ -523,7 +592,15 @@ function seraphCard(step: ThreadStep, base: { stepId: string; running: boolean; 
   }
   const timing = body.mode === "index" ? body.index?.ms : body.searchMs;
   const timeLabel = timing === undefined ? "" : timing < 1000 ? `${Math.max(1, Math.round(timing))}ms` : `${(timing / 1000).toFixed(1)}s`;
-  const count = body.mode === "index" ? plural(body.index?.totalChunks ?? 0, "chunk") : plural(body.hits.length, "hit");
+  const count = body.mode === "index"
+    ? plural(body.index?.totalChunks ?? 0, "chunk")
+    : body.mode === "symbol"
+      ? plural(body.hits.length, "definition")
+      : body.mode === "deps"
+        ? plural(body.deps?.chains.length ?? 0, "path")
+        : body.mode === "compare"
+          ? plural(Object.values(body.compare?.summary ?? {}).reduce((a, b) => a + b, 0), "symbol") + " changed"
+          : plural(body.hits.length, "hit");
   return { ...card, status: [count, timeLabel].filter(Boolean).join(" · "), body };
 }
 

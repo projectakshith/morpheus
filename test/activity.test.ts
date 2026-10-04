@@ -260,3 +260,30 @@ test("running seraph call shows the scan lane", () => {
   const text = plain(buildActivityLines({ threads: [turn("t", 1, "find", [step])], edits: [], width: 72, cwd: CWD, now: 500 })).join("\n");
   assert.match(text, /◌ seraph scanning index/);
 });
+
+test("seraph dependency and compare results render as their own cards", () => {
+  const deps = JSON.stringify({
+    query: "build",
+    direction: "out",
+    results: [{ symbol: "src/a.ts::build", chains: [{ symbols: ["src/a.ts::build", "src/b.ts::connect"], score: 1, edges: [{ src: "src/a.ts::build", dst: "src/b.ts::connect", kind: "calls" }] }] }],
+  });
+  const compare = JSON.stringify({
+    from: "aaaaaaa1", to: "bbbbbbb2",
+    summary: { added: 2, modified: 1, renamed: 1, moved: 0, deleted: 0 },
+    symbols: [{ change_type: "renamed", symbol: "src/a.ts::start", path: "src/a.ts", start_line: 4, end_line: 9 }],
+    dependencies: { added: [{ src: "x", dst: "y", kind: "calls" }], removed: [] },
+    commits: [{ commit: "bbbbbbb2", subject: "rename run to start" }],
+  });
+  const steps = [
+    tool("mcp_seraph_find_dependencies", { symbol: "build", direction: "out" }, deps),
+    tool("mcp_seraph_compare_versions", { from_version: "v1", to_version: "v2" }, compare),
+  ];
+  const d = describeStep(steps[0], CWD);
+  const c = describeStep(steps[1], CWD);
+  assert.ok(d.kind === "card" && d.card.status === "1 path");
+  assert.ok(c.kind === "card" && c.card.status === "4 symbols changed");
+  const text = plain(buildActivityLines({ threads: [turn("t", 1, "x", steps)], edits: [], width: 72, cwd: CWD, toggledIds: new Set([steps[0].id]) })).join("\n");
+  assert.match(text, /└ calls connect/);
+  assert.match(text, /↷1 renamed/);
+  assert.match(text, /rename run to start/);
+});
