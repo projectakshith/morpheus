@@ -30,6 +30,7 @@ import { useStreamReveal, REDUCED_MOTION } from "../hooks/useStreamReveal";
 import type { SubagentRole } from "../../core/types";
 import { loadSubagentModels, saveSubagentModels } from "../../core/userSettings";
 import { isCloudEndpoint } from "../../runtime";
+import { loadPromptHistory, savePromptHistory } from "../../core/promptHistory";
 
 export type { Thread, ThreadStep, AppProps, FeedLine };
 
@@ -49,7 +50,13 @@ export function App({
   const [activeModal, setActiveModal] = useState<"none" | "model" | "session" | "settings" | "diff" | "neo" | "usage">("none");
   const [selectedDiffFile, setSelectedDiffFile] = useState<string | null>(null);
   const [scrollOffset, setScrollOffset] = useState(0);
-  const [promptHistory, setPromptHistory] = useState<string[]>([]);
+  const [promptHistory, setPromptHistory] = useState<string[]>(() => loadPromptHistory());
+  const loadedHistoryLength = useRef(promptHistory.length);
+  useEffect(() => {
+    if (promptHistory.length === loadedHistoryLength.current) return;
+    loadedHistoryLength.current = promptHistory.length;
+    savePromptHistory(promptHistory);
+  }, [promptHistory]);
   const [expandedToolIds, setExpandedToolIds] = useState<Set<string>>(new Set());
   const [expandedThinkingIds, setExpandedThinkingIds] = useState<Set<string>>(new Set());
   const [collapsedThreadIds, setCollapsedThreadIds] = useState<Set<string>>(new Set());
