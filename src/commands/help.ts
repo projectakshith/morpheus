@@ -29,6 +29,7 @@ export class HelpCommand implements CommandHandler {
 • \`/help\` - show this overview
 • \`/cua setup|status|enable|disable\` - configure and check Cua Driver computer use
 • \`/seraph setup|status|enable|disable\` - configure and check Seraph code search
+• \`/versus <question>\` or \`/vs\` - compare Seraph search with grep side by side
 
 type any instruction or question to run an agentic task.`;
 
