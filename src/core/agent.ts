@@ -197,15 +197,25 @@ export async function runAgent(
     }
     return Object.fromEntries(Object.entries(tools).filter(([name]) => !name.startsWith("mcp_cua_")));
   };
+  const hasSeraphTools = Object.keys(mcp.tools).some((name) => name.startsWith("mcp_seraph_"));
   const buildRunSystemPrompt = () => {
     const systemPrompt = buildSystemPrompt({
       ...baseContext,
       findings: [...findings],
       activeSkills: [...activeSkills],
     });
-    return delegateTool
-      ? `${systemPrompt}\n\nUse delegate_tasks only for genuinely independent work. Give each worker a focused task and only the context it needs. Review worker findings and verify any changes yourself before reporting completion.`
-      : systemPrompt;
+    const notes: string[] = [];
+    if (hasSeraphTools) {
+      notes.push(
+        "Seraph code search is connected. To locate code by behavior or intent, call mcp_seraph_search_code first and read the returned paths and line ranges instead of guessing grep patterns; use grep_code for exact identifiers or strings. Use mcp_seraph_search_at_version for code at a past commit, branch or tag, and mcp_seraph_search_history for how code changed across versions."
+      );
+    }
+    if (delegateTool) {
+      notes.push(
+        "Use delegate_tasks only for genuinely independent work. Give each worker a focused task and only the context it needs. Review worker findings and verify any changes yourself before reporting completion."
+      );
+    }
+    return notes.length ? `${systemPrompt}\n\n${notes.join("\n\n")}` : systemPrompt;
   };
   const logger = new SessionLogger();
   await logger.init(prompt, cwd, operator.getModel(), runTokenBudget);
