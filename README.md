@@ -27,6 +27,24 @@ morpheus
 - `morpheus --local` — run locally via ollama (`qwen2.5-coder:7b`)
 - `morpheus -v` — stream raw reasoning and tool deltas
 
+### seraph code search
+
+this branch wires in [Seraph](https://github.com/wtfPrethiv/seraph), a code retrieval engine that ranks functions by meaning and searches across git versions (0.9795 nDCG@10 on CoIR AppsRetrieval).
+
+```bash
+git clone https://github.com/wtfPrethiv/seraph ~/seraph
+cd ~/seraph && uv sync --extra mcp
+
+# inside morpheus
+/seraph setup ~/seraph
+```
+
+- the agent searches with seraph first when it looks for code by behavior, and keeps grep for exact names
+- results show up as ranked cards in the activity panel: relevance bars, a highlighted preview, index reuse and timings
+- tools: `search_code`, `search_at_version`, `search_history`, `index_repository`; seraph searches whichever git repo morpheus runs in
+- `/seraph status` checks the runtime and index, `/seraph disable` turns it off
+- `/versus <question>` (or `/vs`) runs one question through seraph and grep side by side
+
 ### daemon
 
 `morpheus serve` runs Morpheus headless: no UI, just a WebSocket API that interfaces like Trinity connect to. Sessions keep running when clients disconnect, and several clients can watch the same session.
