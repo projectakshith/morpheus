@@ -7,6 +7,31 @@ import { fileURLToPath } from "node:url";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
+export const CLOUD_BASE_URL = "https://morpheus-cloud.akshitrajesh2020.workers.dev/v1";
+export const CLOUD_MODEL = "deepseek/deepseek-v4-flash";
+
+function neoDirs(): string[] {
+  return [
+    path.resolve(process.cwd(), "../neo"),
+    path.resolve(process.cwd(), "Developer/neo"),
+    path.join(os.homedir(), "Developer", "neo"),
+  ];
+}
+
+export function neoInstalled(): boolean {
+  return neoDirs().some((dir) => fs.existsSync(path.join(dir, "package.json")));
+}
+
+export function isCloudEndpoint(baseURL: string | undefined): boolean {
+  return Boolean(baseURL?.startsWith(CLOUD_BASE_URL));
+}
+
+export function applyCloudFallback(env: NodeJS.ProcessEnv = process.env, hasNeo: boolean = neoInstalled()): void {
+  if (env.MORPHEUS_BASE_URL || hasNeo || env.MORPHEUS_CLOUD === "0") return;
+  env.MORPHEUS_BASE_URL = env.OPENROUTER_API_KEY ? "https://openrouter.ai/api/v1" : CLOUD_BASE_URL;
+  env.MORPHEUS_MODEL ??= CLOUD_MODEL;
+}
+
 export function loadEnv(): void {
   dotenv.config();
 
@@ -19,6 +44,8 @@ export function loadEnv(): void {
   if (fs.existsSync(repoEnv)) {
     dotenv.config({ path: repoEnv });
   }
+
+  applyCloudFallback();
 }
 
 export function resolveEndpoint(opts: { isLocal?: boolean; model?: string; baseURL?: string }): {
@@ -52,13 +79,7 @@ export async function ensureNeoDaemon(baseURL: string): Promise<void> {
   } catch {
   }
 
-  const candidateDirs = [
-    path.resolve(process.cwd(), "../neo"),
-    path.resolve(process.cwd(), "Developer/neo"),
-    path.join(os.homedir(), "Developer", "neo"),
-  ];
-
-  for (const dir of candidateDirs) {
+  for (const dir of neoDirs()) {
     if (fs.existsSync(dir) && fs.existsSync(path.join(dir, "package.json"))) {
       try {
         const neoProc = spawn("npm", ["start"], {

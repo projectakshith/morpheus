@@ -29,6 +29,7 @@ import { useAgentRunner } from "../hooks/useAgentRunner";
 import { useStreamReveal, REDUCED_MOTION } from "../hooks/useStreamReveal";
 import type { SubagentRole } from "../../core/types";
 import { loadSubagentModels, saveSubagentModels } from "../../core/userSettings";
+import { isCloudEndpoint } from "../../runtime";
 
 export type { Thread, ThreadStep, AppProps, FeedLine };
 
@@ -125,6 +126,32 @@ export function App({
     openModal,
     closeModal,
   });
+
+  const onCloud = !isLocal && isCloudEndpoint(baseURL);
+  useEffect(() => {
+    if (!onCloud) return;
+    const notice: Thread = {
+      id: "thread_cloud_notice",
+      index: 0,
+      prompt: "morpheus cloud",
+      response: [
+        "Running on **Morpheus Cloud**: a shared demo model with a hard spending cap, served through OpenRouter.",
+        "",
+        "- Your prompts and the code the agent reads are sent through the Morpheus Cloud proxy to OpenRouter.",
+        "- `/model` switches between the cloud models.",
+        "- Set `OPENROUTER_API_KEY` or `MORPHEUS_BASE_URL` to use your own provider, or run `morpheus --local` for Ollama.",
+        "- If the cap is used up, requests fail until it is topped up.",
+      ].join("\n"),
+      isStreaming: false,
+      steps: [],
+      isExpanded: false,
+      status: "completed",
+      stepCount: 0,
+      startTime: Date.now(),
+      durationMs: 0,
+    };
+    setThreads((prev) => (prev.some((t) => t.id === notice.id) ? prev : [notice, ...prev]));
+  }, [onCloud, setThreads]);
 
   const {
     terminalWidth,
@@ -354,6 +381,7 @@ export function App({
         branch={baseContext.current.branch}
         gitStatus={baseContext.current.gitStatus}
         width={terminalWidth}
+        cloud={onCloud}
       />
 
       <Box flexDirection="row" width={terminalWidth} height={effectiveWorkspaceHeight} overflow="hidden">

@@ -10,14 +10,16 @@ export interface HeaderProps {
   gitStatus?: string;
   cwd?: string;
   width?: number;
+  cloud?: boolean;
 }
 
-export function Header({ version, model, branch, gitStatus, width: customWidth }: HeaderProps) {
+export function Header({ version, model, branch, gitStatus, width: customWidth, cloud = false }: HeaderProps) {
   const width = customWidth ?? Math.max(40, process.stdout.columns ? process.stdout.columns - 2 : 76);
 
   const brand = `▰ morpheus v${version}`;
   const gitInfo = branch ? ` │ ◈ ${branch}${gitStatus ? ` [${gitStatus}]` : ""}` : "";
-  const modelTag = `[ ${glyphs.chip} ${model} ]`;
+  const cloudTag = cloud ? "capped cloud · " : "";
+  const modelTag = `[ ${glyphs.chip} ${cloudTag}${model} ]`;
 
   const leftLen = brand.length + gitInfo.length;
   const rightLen = modelTag.length;
@@ -45,6 +47,7 @@ export function Header({ version, model, branch, gitStatus, width: customWidth }
           {" ".repeat(padBetween)}
           <Text color={theme.border}>[ </Text>
           <Text color={theme.accent}>{glyphs.chip} </Text>
+          {cloud ? <Text color={theme.accentBright}>{cloudTag}</Text> : null}
           <Text color={theme.secondary} bold>{model}</Text>
           <Text color={theme.border}> ]</Text>
         </Text>

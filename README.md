@@ -21,6 +21,15 @@ npm link
 morpheus
 ```
 
+### models
+
+no setup needed: without [neo](https://github.com/projectakshith/neo) or your own key, morpheus runs on **morpheus cloud**, a shared demo model with a hard spending cap, served through openrouter by the worker in [`cloud/`](cloud/). the header shows `capped cloud`, and the first screen says what is sent where.
+
+- `/model` switches between the cloud models (deepseek v4 flash by default)
+- `OPENROUTER_API_KEY=...` uses your own openrouter key directly
+- `MORPHEUS_BASE_URL` and `MORPHEUS_API_KEY` point at any openai-compatible api
+- `morpheus --local` runs on ollama, `MORPHEUS_CLOUD=0` turns the cloud off
+
 ### flags
 
 - `morpheus "task"` — jump straight in with an initial prompt
