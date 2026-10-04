@@ -334,6 +334,41 @@ describe("CommandRegistry", () => {
     assert.equal(handled, true);
     assert.equal(openedModal, "usage");
   });
+
+  it("dispatches /seraph setup and writes the MCP server entry", { skip: process.platform === "win32" }, async () => {
+    const fs = await import("node:fs");
+    const os = await import("node:os");
+    const path = await import("node:path");
+    const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "seraph-cmd-"));
+    const checkout = path.join(tmp, "seraph");
+    const python = path.join(checkout, ".venv", "bin", "python");
+    fs.mkdirSync(path.dirname(python), { recursive: true });
+    fs.writeFileSync(python, "#!/bin/sh\nexit 0\n", { mode: 0o755 });
+    const previousHome = process.env.HOME;
+    process.env.HOME = tmp;
+    let response = "";
+    const ctx: CommandContext = {
+      taskText: `/seraph setup ${checkout}`,
+      baseURL: "http://127.0.0.1:8787/v1",
+      currentModel: "flash",
+      setCurrentModel: () => {},
+      setIsModelSelectorOpen: () => {},
+      setThreads: (updater) => {
+        const next = typeof updater === "function" ? updater([]) : updater;
+        response = next[0]?.response ?? "";
+      },
+      setPromptHistory: () => {},
+      threadsCount: 0,
+    };
+    try {
+      const handled = await commandRegistry.dispatch(`/seraph setup ${checkout}`, ctx);
+      assert.equal(handled, true);
+      assert.ok(response.includes("Seraph MCP is configured"), response);
+      const config = JSON.parse(fs.readFileSync(path.join(tmp, ".morpheus", "config.json"), "utf8"));
+      assert.deepEqual(config.mcpServers.seraph, { command: python, args: ["-m", "seraph.server"], disabled: false });
+    } finally {
+      process.env.HOME = previousHome;
+      fs.rmSync(tmp, { recursive: true, force: true });
+    }
+  });
 });
-
-

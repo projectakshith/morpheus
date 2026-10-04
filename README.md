@@ -66,6 +66,8 @@ MCP tools are available to the main agent as `mcp_<server>_<tool>` (for example,
 For desktop tasks, install Cua Driver and grant its required OS permissions. The `computer_use` skill guides Morpheus through app discovery, fresh UI snapshots, actions, and verification.
 Use `/cua setup` to register Cua Driver in Morpheus, `/cua status` to check installation and permissions, and `/cua enable` or `/cua disable` to control whether Morpheus starts its MCP server.
 
+For code search, [Seraph](https://github.com/wtfPrethiv/seraph) ranks functions and classes by meaning across Git versions. Install it with `uv sync --extra mcp` in its checkout, then run `/seraph setup <path-to-checkout>` (or set `SERAPH_HOME`). It searches whichever Git repository Morpheus is running in and indexes it on the first search. `/seraph status` shows the runtime and index state.
+
 ### controls
 
 - `tab` — toggle panel focus (chat / tool calls & telemetry)

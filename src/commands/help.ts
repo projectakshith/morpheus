@@ -28,6 +28,7 @@ export class HelpCommand implements CommandHandler {
 • \`/new\` - start a fresh conversation session
 • \`/help\` - show this overview
 • \`/cua setup|status|enable|disable\` - configure and check Cua Driver computer use
+• \`/seraph setup|status|enable|disable\` - configure and check Seraph code search
 
 type any instruction or question to run an agentic task.`;
 

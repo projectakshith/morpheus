@@ -14,6 +14,7 @@ import { morpheusCommand } from "./morpheus";
 import { neoCommand } from "./neo";
 import { usageCommand } from "./usage";
 import { cuaCommand } from "./cua";
+import { seraphCommand } from "./seraph";
 
 export class CommandRegistry {
   private handlers: CommandHandler[] = [];
@@ -34,6 +35,7 @@ export class CommandRegistry {
     this.register(neoCommand);
     this.register(usageCommand);
     this.register(cuaCommand);
+    this.register(seraphCommand);
   }
 
   public register(handler: CommandHandler): void {
