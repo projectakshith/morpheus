@@ -3,7 +3,7 @@ import { parseArgs } from "node:util";
 import pc from "picocolors";
 import { loadEnv, resolveEndpoint, ensureNeoDaemon } from "../runtime";
 import { closeMcpConnections } from "../tools/mcp";
-import { loadSubagentModels } from "../core/userSettings";
+import { loadPermissionMode, loadSubagentModels } from "../core/userSettings";
 import { Operator } from "../provider/operator";
 import { generateSessionTitle } from "../core/sessionTitle";
 import { startDaemon } from "./daemon";
@@ -72,6 +72,7 @@ export async function runServe(argv: string[]): Promise<void> {
       maxSteps: maxSteps && maxSteps > 0 ? maxSteps : undefined,
       verbose: values.verbose,
       subagentModels: () => loadSubagentModels(),
+      permissionMode: () => loadPermissionMode(),
       generateTitle: (titleModel, prompt, response) =>
         generateSessionTitle(new Operator({ model: titleModel, baseURL, isLocal }), prompt, response),
     },

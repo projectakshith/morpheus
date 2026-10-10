@@ -16,6 +16,8 @@ export interface QuietItem {
   verb: string;
   target: string;
   result: string;
+  output: string[];
+  outputMore: boolean;
   running: boolean;
 }
 
@@ -173,6 +175,9 @@ function quietItem(step: ThreadStep, cwd: string): QuietItem {
   const args = step.args ?? {};
   const running = Boolean(step.isRunning);
   const out = step.output ?? "";
+  const outputLinesList = outputLines(out);
+  const output = outputLinesList.slice(0, 6);
+  const outputMore = outputLinesList.length > output.length;
   switch (step.name) {
     case "read_file": {
       const file = path.basename(str(args.filePath)) || "file";
@@ -183,20 +188,22 @@ function quietItem(step: ThreadStep, cwd: string): QuietItem {
         verb: "read",
         target: offset > 1 ? `${file}:${offset}` : file,
         result: running ? "" : plural(lines, "line"),
+        output,
+        outputMore,
         running,
       };
     }
     case "list_dir": {
       const dir = relativePath(str(args.dirPath) || ".", cwd);
       const entries = (out.match(/[├└]──/g) ?? []).length;
-      return { stepId: step.id, verb: "list", target: dir.endsWith("/") ? dir : `${dir}/`, result: running ? "" : plural(entries, "entry", "entries"), running };
+      return { stepId: step.id, verb: "list", target: dir.endsWith("/") ? dir : `${dir}/`, result: running ? "" : plural(entries, "entry", "entries"), output, outputMore, running };
     }
     case "grep_code": {
       const where = str(args.path) ? ` in ${relativePath(str(args.path), cwd)}` : "";
       const hits = (out.match(/^\s+\d+:/gm) ?? []).length;
       const files = out.split("\n").filter((l) => /^\S.*:$/.test(l)).length;
       const result = running ? "" : hits === 0 ? "no hits" : `${plural(hits, "hit")} · ${plural(files, "file")}`;
-      return { stepId: step.id, verb: "search", target: `"${str(args.pattern)}"${where}`, result, running };
+      return { stepId: step.id, verb: "search", target: `"${str(args.pattern)}"${where}`, result, output, outputMore, running };
     }
     case "outline_code": {
       const symbols = out.match(/(\d+) symbols?\)/);
@@ -205,15 +212,17 @@ function quietItem(step: ThreadStep, cwd: string): QuietItem {
         verb: "outline",
         target: path.basename(str(args.filePath)),
         result: symbols ? plural(Number(symbols[1]), "symbol") : "",
+        output,
+        outputMore,
         running,
       };
     }
     case "load_skill":
-      return { stepId: step.id, verb: "skill", target: str(args.name) || str(args.skill) || "skill", result: "", running };
+      return { stepId: step.id, verb: "skill", target: str(args.name) || str(args.skill) || "skill", result: "", output, outputMore, running };
     case "record_finding":
-      return { stepId: step.id, verb: "noted", target: str(args.topic) || "finding", result: "", running };
+      return { stepId: step.id, verb: "noted", target: str(args.topic) || "finding", result: "", output, outputMore, running };
     default:
-      return { stepId: step.id, verb: step.name ?? "tool", target: "", result: "", running };
+      return { stepId: step.id, verb: step.name ?? "tool", target: "", result: "", output, outputMore, running };
   }
 }
 

@@ -82,6 +82,8 @@ export type AgentStopReason =
   | "loop_guard"
   | "truncated_tool";
 
+export type PermissionMode = "guarded" | "fullAccess";
+
 export interface Finding {
   topic: string;
   takeaway: string;
@@ -136,7 +138,6 @@ export interface AgentOptions {
   maxTotalTokens?: number;
   /** Reuse MCP server processes across runs; the host must call closeMcpConnections() before exiting. */
   persistentMcp?: boolean;
-  /** Stable only for the lifetime of this run; used for provider-side prompt-cache affinity. */
   promptCacheKey?: string;
   abortSignal?: AbortSignal;
   findings?: Finding[];
@@ -145,10 +146,16 @@ export interface AgentOptions {
   onReasoningDelta?: (delta: string) => void;
   onToolCall?: (toolName: string, args: Record<string, unknown>, callId?: string) => void;
   onToolResult?: (toolName: string, result: ToolResult, callId?: string) => void;
+  /** Tool result for an approved action that completed after the agent advanced. */
+  onPermissionResult?: (toolName: string, result: ToolResult, callId?: string) => void;
+  /** Runs only for actions classified as high impact; callers should deny if no user can decide. */
+  onPermissionRequest?: (request: { id: string; tool: string; args: Record<string, unknown>; reason: string; cancel: () => void }) => Promise<"allow" | "deny">;
   onUsage?: (usage: TokenUsage) => void;
   /* Called when a step's streamed text turns out to be narration rather than the final answer. */
   onNarration?: (text: string) => void;
   verbose?: boolean;
+  /** Full access bypasses all action approval prompts. */
+  permissionMode?: PermissionMode;
 }
 
 export type SubagentRole = "explore" | "review" | "implement";

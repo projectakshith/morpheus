@@ -47,6 +47,8 @@ export type EventBody =
   | { type: "narration"; threadId: string; stepId: string; text: string }
   | { type: "tool.started"; threadId: string; stepId: string; name: string; args: Record<string, unknown> }
   | { type: "tool.finished"; threadId: string; stepId: string; output: string; isError: boolean }
+  | { type: "permission.requested"; threadId: string; requestId: string; tool: string; args: Record<string, unknown>; reason: string }
+  | { type: "permission.resolved"; requestId: string; decision: "allow" | "deny" }
   | { type: "file.edited"; record: FileEditRecord }
   | { type: "findings"; findings: Finding[] }
   | { type: "thread.upserted"; thread: Thread }
@@ -114,6 +116,10 @@ export interface Methods {
   };
   "turn.abort": {
     params: { sessionId: string };
+    result: { ok: true };
+  };
+  "permission.resolve": {
+    params: { sessionId: string; requestId: string; decision: "allow" | "deny" };
     result: { ok: true };
   };
   "commands.list": {

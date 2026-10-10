@@ -268,6 +268,44 @@ export const AVAILABLE_MODELS: ModelOption[] = [
     speed: "gpu / metal",
   },
 
+  /* Groq */
+  {
+    id: "groq/openai/gpt-oss-120b",
+    name: "groq/openai/gpt-oss-120b",
+    description: "gpt-oss 120b (groq)",
+    category: "cloud",
+    providerName: "groq",
+    contextLimit: "131,072 tokens",
+    costTier: "free tier",
+    rateLimit: "groq free tier",
+    badge: "131k · groq",
+    speed: "very fast",
+  },
+  {
+    id: "groq/openai/gpt-oss-20b",
+    name: "groq/openai/gpt-oss-20b",
+    description: "gpt-oss 20b (groq)",
+    category: "cloud",
+    providerName: "groq",
+    contextLimit: "131,072 tokens",
+    costTier: "free tier",
+    rateLimit: "groq free tier",
+    badge: "131k · groq",
+    speed: "very fast",
+  },
+  {
+    id: "groq/qwen/qwen3.8-27b",
+    name: "groq/qwen/qwen3.8-27b",
+    description: "qwen 3.8 27b (groq)",
+    category: "cloud",
+    providerName: "groq",
+    contextLimit: "131,072 tokens",
+    costTier: "free tier",
+    rateLimit: "groq free tier",
+    badge: "131k · groq",
+    speed: "very fast",
+  },
+
   /* Cloud OpenRouter (100% Free Tier Models & Hosted NVIDIA Nemotron) */
   {
     id: "cloud/nvidia/nemotron-3.5-lightning:free",

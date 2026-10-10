@@ -319,13 +319,13 @@ function groupQuiet(items: QuietItem[]): StripGroup[] {
 
 function stripLines(items: QuietItem[], width: number, open: boolean, meta: RowMeta, idBase: string): RightLine[] {
   if (open) {
-    return items.map((item, i) => {
+    return items.flatMap((item, i) => {
       const verb = item.verb.padEnd(8);
       const result = item.running ? "…" : item.result;
       const targetRoom = width - 2 - verb.length - (result ? cellWidth(result) + 2 : 0);
       const target = truncateCells(item.target, targetRoom);
       const gap = Math.max(1, width - 2 - verb.length - cellWidth(target) - cellWidth(result));
-      return row(
+      const rows = [row(
         `${idBase}_d${i}`,
         [
           { text: "  " },
@@ -336,7 +336,23 @@ function stripLines(items: QuietItem[], width: number, open: boolean, meta: RowM
         ],
         width,
         meta
+      )];
+      const outputWidth = Math.max(8, width - 6);
+      const previews = item.output.flatMap((line, j) =>
+        wrapCells(line, outputWidth).map((part, k) => row(
+          `${idBase}_d${i}_out${j}_${k}`,
+          [{ text: "    · ", color: theme.border }, { text: part, color: theme.secondary }],
+          width,
+          meta
+        ))
       );
+      rows.push(...previews);
+      if (item.outputMore) {
+        rows.push(row(`${idBase}_d${i}_more`, [{ text: "    · more results omitted", color: theme.muted, italic: true }], width, meta));
+      } else if (!item.running && item.output.length === 0) {
+        rows.push(row(`${idBase}_d${i}_empty`, [{ text: "    · no output", color: theme.muted, italic: true }], width, meta));
+      }
+      return rows;
     });
   }
 
@@ -471,13 +487,13 @@ function changesLine(edits: FileEditRecord[], width: number, cwd: string): Right
   );
 }
 
-function focusedCardId(steps: ThreadStep[], blocks: Block[]): string | undefined {
+function focusedBlockId(steps: ThreadStep[], blocks: Block[]): string | undefined {
   const running = steps.filter((s) => s.type === "tool" && s.isRunning);
   if (running.length > 0) {
-    const cardIds = new Set(blocks.filter((b) => b.type === "card").map((b) => b.id));
-    return running.map((s) => s.id).reverse().find((id) => cardIds.has(id));
+    const blockIds = new Set(blocks.map((b) => b.id));
+    return running.map((s) => s.id).reverse().find((id) => blockIds.has(id));
   }
-  return [...blocks].reverse().find((b) => b.type === "card")?.id;
+  return blocks[blocks.length - 1]?.id;
 }
 
 export function buildActivityLines({
@@ -524,10 +540,10 @@ export function buildActivityLines({
       lines.push(turnSummary(latest, width, true));
     }
 
-    const openCard = focusedCardId(latest.steps, latestBlocks);
+    const openBlock = focusedBlockId(latest.steps, latestBlocks);
 
     for (const block of latestBlocks) {
-      const byDefault = block.type === "card" && block.id === openCard;
+      const byDefault = block.id === openBlock;
       lines.push(...renderBlock(block, flip(block.id, byDefault), width));
     }
   }

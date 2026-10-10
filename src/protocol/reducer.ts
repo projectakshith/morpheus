@@ -21,6 +21,8 @@ export function applyEvent(state: SessionSnapshot, event: MorpheusEvent): Sessio
 
     case "session.switched":
     case "ui.request":
+    case "permission.requested":
+    case "permission.resolved":
       return next;
 
     case "workspace":

@@ -16,6 +16,7 @@ import { SessionSelector } from "./SessionSelector";
 import { SettingsSelector } from "./SettingsSelector";
 import { NeoModal } from "./NeoModal";
 import { UsageModal } from "./UsageModal";
+import { PermissionApproval } from "./PermissionApproval";
 import { DiffModal } from "./DiffModal";
 import { gatherContext } from "../../core/context";
 import { MORPHEUS_VERSION } from "../../index";
@@ -27,8 +28,8 @@ import { useTerminalLayout } from "../hooks/useTerminalLayout";
 import { useMouseEvents } from "../hooks/useMouseEvents";
 import { useAgentRunner } from "../hooks/useAgentRunner";
 import { useStreamReveal, REDUCED_MOTION } from "../hooks/useStreamReveal";
-import type { SubagentRole } from "../../core/types";
-import { loadSubagentModels, saveSubagentModels } from "../../core/userSettings";
+import type { PermissionMode, SubagentRole } from "../../core/types";
+import { loadPermissionMode, loadSubagentModels, savePermissionMode, saveSubagentModels } from "../../core/userSettings";
 
 export type { Thread, ThreadStep, AppProps, FeedLine };
 
@@ -43,6 +44,8 @@ export function App({
 }: AppProps) {
   const [currentModel, setCurrentModel] = useState(model);
   const [subagentModels, setSubagentModels] = useState(() => loadSubagentModels());
+  const [permissionMode, setPermissionMode] = useState<PermissionMode>(() => loadPermissionMode());
+  const [permissionModeSaveError, setPermissionModeSaveError] = useState(false);
   const [workerModelSaveError, setWorkerModelSaveError] = useState(false);
   const [workerModelRole, setWorkerModelRole] = useState<SubagentRole | null>(null);
   const [activeModal, setActiveModal] = useState<"none" | "model" | "session" | "settings" | "diff" | "neo" | "usage">("none");
@@ -63,6 +66,13 @@ export function App({
     void saveSubagentModels(models).then(
       () => setWorkerModelSaveError(false),
       () => setWorkerModelSaveError(true),
+    );
+  };
+  const updatePermissionMode = (mode: PermissionMode) => {
+    setPermissionMode(mode);
+    void savePermissionMode(mode).then(
+      () => setPermissionModeSaveError(false),
+      () => setPermissionModeSaveError(true),
     );
   };
 
@@ -105,6 +115,8 @@ export function App({
     resetSession,
     executeTask,
     abort,
+    pendingPermission,
+    resolvePermission,
     queuedCount,
   } = useAgentRunner({
     currentModel,
@@ -115,6 +127,7 @@ export function App({
     isVerbose,
     maxSteps: stepBudget,
     subagentModels,
+    permissionMode,
     initialTask,
     resumeSessionId,
     isUserScrolledRef,
@@ -184,6 +197,16 @@ export function App({
   });
 
   useInput((input, key) => {
+    if (pendingPermission) {
+      if (key.ctrl && input.toLowerCase() === "y") {
+        resolvePermission("allow");
+        return;
+      }
+      if (key.ctrl && input.toLowerCase() === "n") {
+        resolvePermission("deny");
+        return;
+      }
+    }
     if (isIntroActive) {
       setIsIntroActive(false);
       return;
@@ -428,6 +451,9 @@ export function App({
             height={effectiveWorkspaceHeight}
             maxSteps={stepBudget}
             onUpdateMaxSteps={setStepBudget}
+            permissionMode={permissionMode}
+            onUpdatePermissionMode={updatePermissionMode}
+            permissionModeSaveError={permissionModeSaveError}
             sessionId={sessionId}
             sessionTitle={sessionTitle}
             onOpenModelSelector={() => openModal("model")}
@@ -541,6 +567,8 @@ export function App({
             ? "browsing sessions... (use [↑/↓] to navigate, [enter] to resume, [esc] to cancel)"
             : activeModal === "settings"
             ? "settings dashboard... (use [↑/↓] to navigate, [enter] to toggle, [esc] to cancel)"
+            : pendingPermission
+            ? "approval pending · ctrl+y approve once · ctrl+n deny · /new starts another session"
             : activeModal === "diff"
             ? "code & diff inspector... (use [Tab] to toggle pane, [↑/↓] to scroll/select, [←/→] switch files, [esc] to close)"
             : undefined
@@ -559,6 +587,9 @@ export function App({
         onPopupOpenChange={setIsPopupOpen}
         onTab={handleTab}
       />
+      {pendingPermission ? (
+        <PermissionApproval request={pendingPermission} />
+      ) : null}
     </Box>
   );
 }

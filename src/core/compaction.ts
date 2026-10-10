@@ -32,9 +32,70 @@ export interface CompactionOptions {
    * Default: 1
    */
   recentVisualsToKeep?: number;
+
+  summarizeOlderTurns?: boolean;
 }
 
 const VISUAL_PREFIX = "Visual result from ";
+const HISTORY_SUMMARY_USER = "Earlier conversation requests (condensed):";
+const HISTORY_SUMMARY_ASSISTANT = "Earlier outcomes (condensed):";
+const MAX_OLDER_TURN_SUMMARY_CHARS = 3_000;
+
+function messageText(content: unknown): string {
+  if (typeof content === "string") return content;
+  if (!Array.isArray(content)) return "";
+  return content
+    .map((part: any) => typeof part?.text === "string" ? part.text : "")
+    .filter(Boolean)
+    .join("\n");
+}
+
+function collectUserIndices(history: (ChatMessage | CoreMessage)[]): number[] {
+  return history.flatMap((msg, index) =>
+    msg.role === "user" && !isToolVisualMessage(msg) ? [index] : []
+  );
+}
+
+function compactOlderTurns(
+  history: (ChatMessage | CoreMessage)[],
+  userIndices: number[],
+  cutoffIndex: number
+): (ChatMessage | CoreMessage)[] {
+  const oldTurns = userIndices
+    .filter((index) => index < cutoffIndex)
+    .map((start, turnIndex, starts) => {
+      const end = starts[turnIndex + 1] ?? cutoffIndex;
+      const user = messageText(history[start].content).replace(/\s+/g, " ").trim();
+      const finalAssistant = history
+        .slice(start + 1, end)
+        .filter((msg) => msg.role === "assistant" && !(msg as ChatMessage).tool_calls?.length)
+        .map((msg) => messageText(msg.content).replace(/\s+/g, " ").trim())
+        .filter(Boolean)
+        .at(-1) ?? "";
+      return {
+        user: user.slice(0, 900),
+        assistant: finalAssistant.slice(0, 1_200),
+      };
+    });
+
+  if (oldTurns.length === 0) return history;
+
+  const requests = oldTurns.map((turn) => `- ${turn.user || "(no text)"}`).join("\n");
+  const outcomes = oldTurns
+    .filter((turn) => turn.assistant)
+    .map((turn) => `- ${turn.assistant}`)
+    .join("\n");
+  const clipSummary = (value: string) => value.length <= MAX_OLDER_TURN_SUMMARY_CHARS
+    ? value
+    : `[Earlier items omitted]\n${value.slice(-(MAX_OLDER_TURN_SUMMARY_CHARS - 25))}`;
+
+  const summaryMessages: ChatMessage[] = [
+    { role: "user", content: `${HISTORY_SUMMARY_USER}\n${clipSummary(requests)}` },
+    { role: "assistant", content: `${HISTORY_SUMMARY_ASSISTANT}\n${clipSummary(outcomes)}` },
+  ];
+  const systemMessages = history.slice(0, cutoffIndex).filter((msg) => msg.role === "system");
+  return [...systemMessages, ...summaryMessages, ...history.slice(cutoffIndex)];
+}
 
 export function isToolVisualMessage(msg: ChatMessage | CoreMessage): boolean {
   if (msg.role !== "user") return false;
@@ -214,14 +275,21 @@ export function compactHistory(
     return history as ChatMessage[];
   }
 
-  const userIndices: number[] = [];
+  let userIndices = collectUserIndices(history);
   const toolStepAssistantIndices: number[] = [];
+
+  const turnCutoffIndex = userIndices.length > recentTurnsToProtect
+    ? userIndices[userIndices.length - recentTurnsToProtect]
+    : -1;
+
+  if (options.summarizeOlderTurns && turnCutoffIndex !== -1) {
+    history = compactOlderTurns(history, userIndices, turnCutoffIndex);
+    userIndices = collectUserIndices(history);
+  }
 
   for (let i = 0; i < history.length; i++) {
     const msg = history[i];
-    if (msg.role === "user" && !isToolVisualMessage(msg)) {
-      userIndices.push(i);
-    } else if (msg.role === "assistant") {
+    if (msg.role === "assistant") {
       const chatMsg = msg as ChatMessage;
       if (chatMsg.tool_calls && chatMsg.tool_calls.length > 0) {
         toolStepAssistantIndices.push(i);
@@ -234,7 +302,7 @@ export function compactHistory(
     }
   }
 
-  const turnCutoffIndex =
+  const compactedTurnCutoffIndex =
     userIndices.length > recentTurnsToProtect
       ? userIndices[userIndices.length - recentTurnsToProtect]
       : -1;
@@ -244,12 +312,12 @@ export function compactHistory(
       ? toolStepAssistantIndices[toolStepAssistantIndices.length - recentStepsToProtect]
       : -1;
 
-  if (turnCutoffIndex === -1 && stepCutoffIndex === -1) {
+  if (compactedTurnCutoffIndex === -1 && stepCutoffIndex === -1) {
     return history as ChatMessage[];
   }
 
   return history.map((msg, idx) => {
-    const isColdTurn = turnCutoffIndex !== -1 && idx < turnCutoffIndex;
+    const isColdTurn = compactedTurnCutoffIndex !== -1 && idx < compactedTurnCutoffIndex;
     const isColdStep = stepCutoffIndex !== -1 && idx < stepCutoffIndex;
 
     if (!isColdTurn && !isColdStep) {

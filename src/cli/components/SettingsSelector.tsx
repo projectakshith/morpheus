@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from "react";
 import { Text, useInput } from "ink";
 import { theme } from "../theme";
-import type { SubagentRole, TokenUsage } from "../../core/types";
+import type { PermissionMode, SubagentRole, TokenUsage } from "../../core/types";
 import type { SubagentModelMap } from "../../core/userSettings";
 import {
   Modal,
@@ -26,6 +26,9 @@ export interface SettingsSelectorProps {
   onOpenWorkerModelSelector?: (role: SubagentRole) => void;
   subagentModels?: SubagentModelMap;
   workerModelSaveError?: boolean;
+  permissionMode?: PermissionMode;
+  onUpdatePermissionMode?: (mode: PermissionMode) => void;
+  permissionModeSaveError?: boolean;
   onOpenSessionSelector: () => void;
   onOpenNeoModal?: () => void;
   onOpenUsageModal?: () => void;
@@ -73,6 +76,9 @@ export function SettingsSelector({
   onOpenWorkerModelSelector,
   subagentModels = {},
   workerModelSaveError = false,
+  permissionMode = "guarded",
+  onUpdatePermissionMode,
+  permissionModeSaveError = false,
   onOpenModelSelector,
   onOpenSessionSelector,
   onOpenNeoModal,
@@ -248,6 +254,23 @@ export function SettingsSelector({
       action: () => onUpdateMaxSteps?.(nextBudget),
     },
     {
+      id: "permissions",
+      section: "runtime",
+      label: "access mode",
+      value: permissionMode === "fullAccess" ? "full access" : "guarded",
+      heading: permissionMode === "fullAccess" ? "Full access" : "Guarded access",
+      description: permissionMode === "fullAccess"
+        ? "Morpheus runs tools without approval prompts. It can run destructive shell commands, access files outside the project, make web requests, and use connected apps."
+        : "Morpheus asks before high impact actions. Reads and searches run automatically, and writes are limited to the active project unless approved.",
+      details: [
+        { k: "mode", v: permissionMode === "fullAccess" ? "fully automatic" : "approval prompts for high impact actions", color: permissionMode === "fullAccess" ? theme.warning : theme.accentBright },
+        { k: "saved", v: "~/.morpheus/config.json" },
+      ],
+      cta: onUpdatePermissionMode ? "enter switches access mode" : "access mode",
+      ctaTone: permissionMode === "fullAccess" ? "danger" : "accent",
+      action: () => onUpdatePermissionMode?.(permissionMode === "fullAccess" ? "guarded" : "fullAccess"),
+    },
+    {
       id: "sessions",
       section: "session",
       label: "sessions",
@@ -368,6 +391,7 @@ export function SettingsSelector({
                 ? wrapWords(feedback, rw).map((line) => <Text color={theme.secondary}>{line}</Text>)
                 : null}
               {workerModelSaveError ? <Text color={theme.error}>could not save worker models to ~/.morpheus/config.json</Text> : null}
+              {permissionModeSaveError ? <Text color={theme.error}>could not save access mode to ~/.morpheus/config.json</Text> : null}
             </Lines>
           )}
         />

@@ -1,8 +1,9 @@
 import type { runAgent as RunAgent } from "../core/agent";
-import type { ChatMessage, SubagentRole, ToolResult } from "../core/types";
+import type { ChatMessage, PermissionMode, SubagentRole, ToolResult } from "../core/types";
 import type { Thread } from "../core/thread";
 import type { SessionData } from "../core/session";
 import { generateSessionId } from "../core/session";
+import { randomUUID } from "node:crypto";
 import { PLACEHOLDER_TITLE, isTrivialPrompt, promptTitle, type TitleSource } from "../core/sessionTitle";
 import { getGitInfo } from "../core/context";
 import { isToolError } from "../utils/errors";
@@ -24,6 +25,7 @@ export interface SessionHostDeps {
   maxSteps?: number;
   verbose?: boolean;
   subagentModels?: () => Partial<Record<SubagentRole, string>>;
+  permissionMode?: () => PermissionMode;
   generateTitle?: (model: string, prompt: string, response: string) => Promise<string | null>;
   checkAuth?: (model: string, baseURL: string) => Promise<string | null>;
   sessions?: {
@@ -43,6 +45,7 @@ function uid(prefix: string): string {
 
 export class SessionHost {
   private state: SessionSnapshot;
+  private readonly promptCacheKey: string;
   private history: ChatMessage[];
   private titleSource: TitleSource;
   private log: MorpheusEvent[] = [];
@@ -52,6 +55,10 @@ export class SessionHost {
   private running = false;
   private titleAttempted = false;
   private disposed = false;
+  private permissionWaiters = new Map<string, (decision: "allow" | "deny") => void>();
+  private permissionCancels = new Map<string, () => void>();
+  private permissionHistoryUpdates: ChatMessage[] = [];
+  private persistQueue: Promise<void> = Promise.resolve();
 
   constructor(
     private deps: SessionHostDeps,
@@ -59,6 +66,7 @@ export class SessionHost {
   ) {
     const data = init.data;
     const now = Date.now();
+    this.promptCacheKey = data?.promptCacheKey ?? randomUUID();
     this.state = {
       id: data?.id ?? generateSessionId(),
       title: data?.title || PLACEHOLDER_TITLE,
@@ -126,8 +134,15 @@ export class SessionHost {
 
   abort(): void {
     this.clearQueue();
+    if (this.running) this.abortController?.abort();
+    for (const cancel of this.permissionCancels.values()) cancel();
+    for (const [requestId, resolve] of this.permissionWaiters) {
+      resolve("deny");
+      this.emit({ type: "permission.resolved", requestId, decision: "deny" });
+    }
+    this.permissionWaiters.clear();
+    this.permissionCancels.clear();
     if (this.running) {
-      this.abortController?.abort();
       this.emit({ type: "status", status: "aborted", queued: 0 });
     }
   }
@@ -241,10 +256,12 @@ export class SessionHost {
 
   private persist(): Promise<void> {
     if (this.disposed) return Promise.resolve();
-    const s = this.state;
-    return this.deps
-      .persist({
+    this.persistQueue = this.persistQueue.catch(() => {}).then(() => {
+      if (this.disposed) return;
+      const s = this.state;
+      return this.deps.persist({
         id: s.id,
+        promptCacheKey: this.promptCacheKey,
         title: s.title,
         titleSource: this.titleSource,
         cwd: s.cwd,
@@ -256,8 +273,9 @@ export class SessionHost {
         findings: s.findings,
         fileEdits: s.fileEdits,
         tokenUsage: s.usage,
-      })
-      .catch(() => {});
+      });
+    }).catch(() => {});
+    return this.persistQueue;
   }
 
   private async runTurn(threadId: string, prompt: string): Promise<void> {
@@ -299,20 +317,50 @@ export class SessionHost {
       return thinkingId;
     };
     const activeTools = new Map<string, { stepId: string; args: Record<string, unknown> }>();
+    const finishTool = (name: string, res: ToolResult, callId?: string, late = false) => {
+      const key = callId || name;
+      const tool = activeTools.get(key);
+      activeTools.delete(key);
+      if (late && callId) this.permissionCancels.delete(callId);
+      if (!tool) return;
+      const isError = isToolError(res.output, res.metadata?.isError as boolean | undefined);
+      this.emit({ type: "tool.finished", threadId, stepId: tool.stepId, output: res.output, isError });
+      const record = isError ? null : extractDiffRecord(name, tool.args, res.output);
+      if (record) this.emit({ type: "file.edited", record });
+      if (late) {
+        const update: ChatMessage = {
+          role: "assistant",
+          content: `[Approval update for ${name}: ${isError ? "denied, cancelled, or failed" : "approved and executed"}. Result: ${res.output}]`,
+        };
+        if (this.running) this.permissionHistoryUpdates.push(update);
+        else this.history.push(update);
+        this.refreshWorkspace();
+        void this.persist();
+      }
+    };
 
     let outcome: "completed" | "aborted" | "error" = "completed";
     try {
       const result = await this.deps.runAgent(prompt, this.history, {
         cwd: this.state.cwd,
         model,
+        promptCacheKey: this.promptCacheKey,
         baseURL: this.deps.baseURL,
         isLocal: this.deps.isLocal,
         verbose: this.deps.verbose,
         maxSteps: this.state.maxSteps ?? this.deps.maxSteps,
         abortSignal: abortController.signal,
         subagents: { models: this.deps.subagentModels?.() },
+        permissionMode: this.deps.permissionMode?.(),
         persistentMcp: true,
         findings: this.state.findings,
+        onPermissionRequest: (request) => new Promise((resolve) => {
+          this.permissionWaiters.set(request.id, resolve);
+          this.permissionCancels.set(request.id, request.cancel);
+          this.emit({ type: "permission.requested", threadId, requestId: request.id, tool: request.tool, args: request.args, reason: request.reason });
+          const timeout = setTimeout(() => this.resolvePermission(request.id, "deny"), 5 * 60_000);
+          timeout.unref?.();
+        }),
         onStepStart: (step) => {
           this.emit({ type: "step.started", threadId, step });
           if (!thinkingId) startThinking();
@@ -334,16 +382,8 @@ export class SessionHost {
           activeTools.set(callId || name, { stepId, args });
           this.emit({ type: "tool.started", threadId, stepId, name, args });
         },
-        onToolResult: (name: string, res: ToolResult, callId?: string) => {
-          const key = callId || name;
-          const tool = activeTools.get(key);
-          activeTools.delete(key);
-          if (!tool) return;
-          const isError = isToolError(res.output, res.metadata?.isError as boolean | undefined);
-          this.emit({ type: "tool.finished", threadId, stepId: tool.stepId, output: res.output, isError });
-          const record = isError ? null : extractDiffRecord(name, tool.args, res.output);
-          if (record) this.emit({ type: "file.edited", record });
-        },
+        onToolResult: (name, res, callId) => finishTool(name, res, callId),
+        onPermissionResult: (name, res, callId) => finishTool(name, res, callId, true),
       });
 
       endThinking();
@@ -373,11 +413,28 @@ export class SessionHost {
     } finally {
       this.abortController = null;
       this.running = false;
+      if (this.permissionHistoryUpdates.length > 0) {
+        this.history.push(...this.permissionHistoryUpdates);
+        this.permissionHistoryUpdates = [];
+      }
     }
 
     this.refreshWorkspace();
     await this.persist();
     this.drainQueue(outcome === "completed" ? "idle" : outcome);
+  }
+
+  resolvePermission(requestId: string, decision: "allow" | "deny"): boolean {
+    const resolve = this.permissionWaiters.get(requestId);
+    if (!resolve) return false;
+    this.permissionWaiters.delete(requestId);
+    if (decision === "deny") {
+      this.permissionCancels.get(requestId)?.();
+      this.permissionCancels.delete(requestId);
+    }
+    resolve(decision);
+    this.emit({ type: "permission.resolved", requestId, decision });
+    return true;
   }
 
   private drainQueue(finalStatus: "idle" | "aborted" | "error"): void {

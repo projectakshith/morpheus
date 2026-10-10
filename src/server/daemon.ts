@@ -203,6 +203,17 @@ export async function startDaemon(opts: DaemonOptions): Promise<Daemon> {
       return { ok: true };
     },
 
+    "permission.resolve": async (params) => {
+      const host = await getSession(requireString(params, "sessionId"));
+      if (params.decision !== "allow" && params.decision !== "deny") {
+        throw new RpcError(ErrorCodes.InvalidParams, `"decision" must be "allow" or "deny"`);
+      }
+      if (!host.resolvePermission(requireString(params, "requestId"), params.decision)) {
+        throw new RpcError(ErrorCodes.InvalidParams, "permission request is no longer pending");
+      }
+      return { ok: true };
+    },
+
     "commands.list": () => ({
       commands: commandRegistry.getAll().map((c) => ({ name: c.name, description: c.description, aliases: c.aliases ?? [] })),
     }),

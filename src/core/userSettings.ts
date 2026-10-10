@@ -2,9 +2,33 @@ import fs from "node:fs";
 import fsp from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
-import type { SubagentRole } from "./types";
+import type { PermissionMode, SubagentRole } from "./types";
 
 export type SubagentModelMap = Partial<Record<SubagentRole, string>>;
+
+export function loadPermissionMode(filePath = settingsPath()): PermissionMode {
+  try {
+    const parsed = JSON.parse(fs.readFileSync(filePath, "utf8")) as { permissionMode?: unknown };
+    return parsed.permissionMode === "fullAccess" ? "fullAccess" : "guarded";
+  } catch {
+    return "guarded";
+  }
+}
+
+export async function savePermissionMode(mode: PermissionMode, filePath = settingsPath()): Promise<void> {
+  let existing: Record<string, unknown> = {};
+  try {
+    const value = JSON.parse(fs.readFileSync(filePath, "utf8"));
+    if (value && typeof value === "object" && !Array.isArray(value)) existing = value as Record<string, unknown>;
+  } catch {
+    // A missing or malformed config should not prevent saving this setting.
+  }
+  const tmpPath = `${filePath}.${process.pid}.tmp`;
+  await fsp.mkdir(path.dirname(filePath), { recursive: true });
+  await fsp.writeFile(tmpPath, `${JSON.stringify({ ...existing, permissionMode: mode }, null, 2)}\n`, "utf8");
+  await fsp.chmod(tmpPath, 0o600);
+  await fsp.rename(tmpPath, filePath);
+}
 
 function settingsPath(): string {
   return path.join(os.homedir(), ".morpheus", "config.json");

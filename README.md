@@ -68,6 +68,10 @@ MCP tools are available to the main agent as `mcp_<server>_<tool>` (for example,
 For desktop tasks, install Cua Driver and grant its required OS permissions. The `computer_use` skill guides Morpheus through app discovery, fresh UI snapshots, actions, and verification.
 Use `/cua setup` to register Cua Driver in Morpheus, `/cua status` to check installation and permissions, and `/cua enable` or `/cua disable` to control whether Morpheus starts its MCP server.
 
+### High impact action approvals
+
+Reads and searches, including outside the active project, and routine desktop interaction run without approval. Morpheus asks before destructive shell commands, writes outside the active project, non-GET HTTP requests, and connected MCP tools whose names indicate they can change external data (such as create, update, delete, or send). In `/settings` → `runtime` → `access mode`, switch to **full access** to bypass all approval prompts; this is saved in `~/.morpheus/config.json` and applies to the CLI and daemon. Full access allows tools to run shell commands, access files, make web requests, and use connected apps without pausing. While an action waits in guarded mode, Morpheus can continue independent work; approval runs only that action in the background. The terminal shows its tool, arguments, and reason; press `Ctrl+Y` to approve once or `Ctrl+N` to deny. Daemon clients receive `permission.requested` events and answer through `permission.resolve`. Requests time out to deny after five minutes, and missing approval handlers deny protected actions.
+
 ### controls
 
 - `tab` — toggle panel focus (chat / tool calls & telemetry)

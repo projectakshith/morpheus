@@ -1,6 +1,6 @@
 import React, { useState, useRef, useEffect, useCallback, useMemo, type MutableRefObject } from "react";
 import { runAgent } from "../../core/agent";
-import type { SubagentRole } from "../../core/types";
+import type { PermissionMode, SubagentRole } from "../../core/types";
 import type { Thread } from "../../core/thread";
 import { checkProviderAuth } from "../../core/providerAuth";
 import { generateSessionTitle } from "../../core/sessionTitle";
@@ -18,6 +18,7 @@ export interface AgentRunnerOptions {
   isVerbose?: boolean;
   maxSteps?: number;
   subagentModels?: Partial<Record<SubagentRole, string>>;
+  permissionMode?: PermissionMode;
   initialTask?: string;
   resumeSessionId?: string | boolean;
   isUserScrolledRef: MutableRefObject<boolean>;
@@ -40,6 +41,7 @@ export function useAgentRunner({
   isVerbose = false,
   maxSteps,
   subagentModels,
+  permissionMode = "guarded",
   resumeSessionId,
   isUserScrolledRef,
   setScrollOffset,
@@ -52,6 +54,8 @@ export function useAgentRunner({
   const cwd = process.cwd();
   const subagentModelsRef = useRef(subagentModels);
   subagentModelsRef.current = subagentModels;
+  const permissionModeRef = useRef(permissionMode);
+  permissionModeRef.current = permissionMode;
   const hostsRef = useRef(new Map<string, SessionHost>());
 
   const deps = useMemo<SessionHostDeps>(() => {
@@ -67,6 +71,7 @@ export function useAgentRunner({
       verbose: isVerbose,
       checkAuth: checkProviderAuth,
       subagentModels: () => subagentModelsRef.current ?? {},
+      permissionMode: () => permissionModeRef.current,
       generateTitle: (model, prompt, response) => generateSessionTitle(new Operator({ model, baseURL, isLocal }), prompt, response),
       sessions: {
         create: (from) => register(new SessionHost(d, { cwd, model: from.snapshot().model })),
@@ -88,6 +93,7 @@ export function useAgentRunner({
   });
   const [snapshot, setSnapshot] = useState<SessionSnapshot>(() => host.snapshot());
   const [elapsedSeconds, setElapsedSeconds] = useState(0);
+  const [pendingPermissions, setPendingPermissions] = useState<Array<{ sessionId: string; requestId: string; tool: string; args: Record<string, unknown>; reason: string }>>([]);
 
   useEffect(() => {
     if (!resumeSessionId) return;
@@ -105,7 +111,13 @@ export function useAgentRunner({
     if (host.snapshot().model !== currentModel) setCurrentModel(host.snapshot().model);
     const { unsubscribe } = host.subscribe((event) => {
       setSnapshot(host.snapshot());
-      if (event.type === "turn.started") {
+      if (event.type === "permission.requested") {
+        setPendingPermissions((pending) => pending.some((item) => item.requestId === event.requestId)
+          ? pending
+          : [...pending, { sessionId: event.sessionId, requestId: event.requestId, tool: event.tool, args: event.args, reason: event.reason }]);
+      } else if (event.type === "permission.resolved") {
+        setPendingPermissions((pending) => pending.filter((item) => item.requestId !== event.requestId));
+      } else if (event.type === "turn.started") {
         isUserScrolledRef.current = false;
         setScrollOffset(0);
         isRightUserScrolledRef.current = false;
@@ -172,6 +184,7 @@ export function useAgentRunner({
   }, [deps, host]);
 
   const setThreads = useCallback((action: Thread[] | ((prev: Thread[]) => Thread[])) => host.writeThreads(action), [host]);
+  const pendingPermission = pendingPermissions[0] ?? null;
 
   return {
     status: snapshot.status,
@@ -188,6 +201,12 @@ export function useAgentRunner({
     resetSession,
     executeTask,
     abort: () => host.abort(),
+    pendingPermission,
+    resolvePermission: (decision: "allow" | "deny") => {
+      const request = pendingPermissions[0];
+      if (!request) return;
+      hostsRef.current.get(request.sessionId)?.resolvePermission(request.requestId, decision);
+    },
     queuedCount: snapshot.queued,
     clearQueue: () => host.clearQueue(),
   };

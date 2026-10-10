@@ -12,6 +12,7 @@ import { isConversationalStall } from "./stallGuard";
 import { ToolCallGuard } from "./callGuard";
 import { matchSkills } from "./skills";
 import { createDelegateTasksTool, createSubagentRunnerOptions, resolveSubagentOptions } from "./subagents";
+import { permissionReason } from "./permissions";
 import {
   calculateInitialStepBudget,
   calculateExplorationTokenBudget,
@@ -211,7 +212,7 @@ export async function runAgent(
   await logger.init(prompt, cwd, operator.getModel(), runTokenBudget);
 
   const workingMessages: ChatMessage[] = [
-    ...compactHistory(history),
+    ...compactHistory(history, { recentTurnsToProtect: 1, summarizeOlderTurns: true }),
     { role: "user", content: prompt },
   ];
 
@@ -239,11 +240,15 @@ export async function runAgent(
   let consecutiveNoProgressSteps = 0;
   const usefulResultFingerprints = new Set<string>();
   let conversationalNudges = 0;
+  const approvalUpdates: string[] = [];
 
   while (lifecycle === "exploring" && stepCount < maxSteps) {
     if (options.abortSignal?.aborted) {
       wasAborted = true;
       break;
+    }
+    while (approvalUpdates.length > 0) {
+      workingMessages.push({ role: "assistant", content: approvalUpdates.shift()! });
     }
 
     /* Cached input is billed at a fraction of fresh input, so it counts at 10% toward the budget. */
@@ -267,8 +272,9 @@ export async function runAgent(
     await logger.logStep(stepCount);
 
     const compactedMessages = compactHistory(workingMessages, {
-      recentTurnsToProtect: 2,
+      recentTurnsToProtect: 1,
       recentStepsToProtect: 2,
+      summarizeOlderTurns: true,
     });
 
     let assistantContent = "";
@@ -459,6 +465,7 @@ export async function runAgent(
       let outputStr = "";
       let isError = false;
       let toolExecuted = false;
+      let deferredPermission = false;
       let toolChanged = true;
       let toolImages: { mimeType: string; data: string }[] = [];
       if (toolName.startsWith("mcp_cua_")) activateComputerUse();
@@ -476,6 +483,47 @@ export async function runAgent(
         if (verdict.skip) {
           outputStr = verdict.notice;
         } else {
+          const reason = options.permissionMode === "fullAccess"
+            ? null
+            : await permissionReason(toolName, parsedArgs, cwd);
+          if (reason && !options.onPermissionRequest) {
+            outputStr = `[Permission denied: ${reason} No approval handler is available, so the action was not run.]`;
+            isError = true;
+          } else if (reason) {
+            deferredPermission = true;
+            outputStr = `[Approval pending: ${reason} The action has not run. Continue independent work without assuming it succeeded.]`;
+            const actionController = new AbortController();
+            const decision = options.onPermissionRequest!({
+              id: toolCall.id,
+              tool: toolName,
+              args: parsedArgs,
+              reason,
+              cancel: () => actionController.abort(),
+            });
+            const approvalStep = stepCount;
+            void decision.then(async (approved) => {
+              let result: { output: string; isError: boolean };
+              if (approved !== "allow") {
+                result = { output: `[Permission denied: ${reason} The action was not run.]`, isError: true };
+              } else if (actionController.signal.aborted || options.abortSignal?.aborted) {
+                result = { output: "[Action cancelled before execution.]", isError: true };
+              } else {
+                result = await executeToolSafely(targetTool, parsedArgs, cwd, actionController.signal);
+              }
+              await logger.logToolResult(approvalStep, toolName, result.output, result.isError);
+              options.onPermissionResult?.(toolName, { output: result.output, metadata: { isError: result.isError } }, toolCall.id);
+              const outcome = approved !== "allow" || actionController.signal.aborted || options.abortSignal?.aborted
+                ? "denied or cancelled"
+                : result.isError ? "approved but action failed" : "approved and executed";
+              approvalUpdates.push(
+                `[Approval update for ${toolName}: ${outcome}. Result: ${result.output}]`
+              );
+            }).catch((error) => {
+              const output = `Error while handling approved action: ${formatError(error)}`;
+              options.onPermissionResult?.(toolName, { output, metadata: { isError: true } }, toolCall.id);
+              approvalUpdates.push(`[Approval action failed for ${toolName}: ${output}]`);
+            });
+          } else {
           toolExecuted = true;
           const toolStartedAt = Date.now();
           const executed = await executeToolSafely(targetTool, parsedArgs, cwd, options.abortSignal);
@@ -516,10 +564,11 @@ export async function runAgent(
             }
           }
           await logger.logToolTiming(stepCount, toolName, toolDurationMs, Buffer.byteLength(outputStr, "utf8"));
+          }
         }
       }
 
-      options.onToolResult?.(toolName, { output: outputStr, metadata: { isError } }, toolCall.id);
+      if (!deferredPermission) options.onToolResult?.(toolName, { output: outputStr, metadata: { isError } }, toolCall.id);
       await logger.logToolResult(stepCount, toolName, outputStr, isError);
       if (options.abortSignal?.aborted) wasAborted = true;
 
@@ -545,6 +594,7 @@ export async function runAgent(
       } else {
         consecutiveErrors = 0;
       }
+      if (deferredPermission) stepMadeProgress = true;
 
       workingMessages.push({
         role: "tool",
@@ -601,6 +651,10 @@ export async function runAgent(
     stopReason = "step_limit";
   }
 
+  while (approvalUpdates.length > 0) {
+    workingMessages.push({ role: "assistant", content: approvalUpdates.shift()! });
+  }
+
   if (!wasAborted && !finalError && (!completedCleanly || !fullResponse.trim())) {
     lifecycle = "synthesizing";
     stepCount++;
@@ -609,8 +663,9 @@ export async function runAgent(
 
     const compactedMessages: ChatMessage[] = [
       ...compactHistory(workingMessages, {
-        recentTurnsToProtect: 2,
+        recentTurnsToProtect: 1,
         recentStepsToProtect: 2,
+        summarizeOlderTurns: true,
       }),
       {
         role: "user",
