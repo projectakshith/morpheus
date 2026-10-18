@@ -122,6 +122,19 @@ export async function runAgent(
       reported: previous?.reported !== false && usage.reported !== false,
     };
   };
+  const recordRequestUsage = async (model: string, step: number, usage: TokenUsage) => {
+    usageEvents++;
+    usageReported &&= usage.reported !== false;
+    currentPromptTokens = usage.promptTokens;
+    peakContextTokens = Math.max(peakContextTokens, currentPromptTokens);
+    promptTokens += usage.promptTokens;
+    completionTokens += usage.completionTokens;
+    cachedInputTokens += usage.cachedInputTokens ?? 0;
+    cacheCreationInputTokens += usage.cacheCreationInputTokens ?? 0;
+    reasoningTokens += usage.reasoningTokens ?? 0;
+    accumulateModelUsage(model, usage);
+    await logger.logUsage(step, usage.promptTokens, usage.completionTokens, usage);
+  };
 
   const operator = new Operator({
     model: options.model,
@@ -280,6 +293,7 @@ export async function runAgent(
     let assistantContent = "";
     const toolCalls: ToolCall[] = [];
     let finishReason: string | undefined;
+    let requestUsage: TokenUsage | undefined;
 
     const currentSystemPrompt = buildRunSystemPrompt();
     const stepTools = visibleTools();
@@ -306,24 +320,16 @@ export async function runAgent(
         } else if (event.type === "tool_call" && event.toolCall) {
           toolCalls.push(event.toolCall);
         } else if (event.type === "usage" && event.usage) {
-          usageEvents++;
-          usageReported &&= event.usage.reported !== false;
-          currentPromptTokens = event.usage.promptTokens;
-          if (currentPromptTokens > peakContextTokens) {
-            peakContextTokens = currentPromptTokens;
-          }
-          promptTokens += event.usage.promptTokens;
-          completionTokens += event.usage.completionTokens;
-          cachedInputTokens += event.usage.cachedInputTokens ?? 0;
-          cacheCreationInputTokens += event.usage.cacheCreationInputTokens ?? 0;
-          reasoningTokens += event.usage.reasoningTokens ?? 0;
-          accumulateModelUsage(operator.getModel(), event.usage);
-          await logger.logUsage(stepCount, event.usage.promptTokens, event.usage.completionTokens, event.usage);
+          /* Provider usage events are request snapshots; keep the final snapshot once per request. */
+          requestUsage = event.usage;
         } else if (event.type === "finish") {
           finishReason = event.finishReason;
         }
       }
     } catch (err: unknown) {
+      const partialUsage = requestUsage;
+      requestUsage = undefined;
+      if (partialUsage) await recordRequestUsage(operator.getModel(), stepCount, partialUsage);
       if (options.abortSignal?.aborted || (err instanceof Error && err.name === "AbortError")) {
         wasAborted = true;
         break;
@@ -338,6 +344,10 @@ export async function runAgent(
       }
       break;
     }
+
+    const completedUsage = requestUsage;
+    requestUsage = undefined;
+    if (completedUsage) await recordRequestUsage(operator.getModel(), stepCount, completedUsage);
 
     if (wasAborted) {
       if (assistantContent.trim() && toolCalls.length === 0) {
@@ -678,6 +688,7 @@ export async function runAgent(
     fullResponse = "";
 
     const currentSystemPrompt = buildRunSystemPrompt();
+    let finalRequestUsage: TokenUsage | undefined;
 
     try {
       const finalStream = operator.chatStream({
@@ -699,23 +710,16 @@ export async function runAgent(
         } else if (event.type === "reasoning" && event.reasoning) {
           options.onReasoningDelta?.(event.reasoning);
         } else if (event.type === "usage" && event.usage) {
-          usageEvents++;
-          usageReported &&= event.usage.reported !== false;
-          currentPromptTokens = event.usage.promptTokens;
-          if (currentPromptTokens > peakContextTokens) {
-            peakContextTokens = currentPromptTokens;
-          }
-          promptTokens += event.usage.promptTokens;
-          completionTokens += event.usage.completionTokens;
-          cachedInputTokens += event.usage.cachedInputTokens ?? 0;
-          cacheCreationInputTokens += event.usage.cacheCreationInputTokens ?? 0;
-          reasoningTokens += event.usage.reasoningTokens ?? 0;
-          accumulateModelUsage(operator.getModel(), event.usage);
-          await logger.logUsage(stepCount, event.usage.promptTokens, event.usage.completionTokens, event.usage);
+          /* Usage chunks can repeat cumulative provider snapshots during streaming. */
+          finalRequestUsage = event.usage;
         } else if (event.type === "finish") {
           finalFinishReason = event.finishReason;
         }
       }
+
+      const completedUsage = finalRequestUsage;
+      finalRequestUsage = undefined;
+      if (completedUsage) await recordRequestUsage(operator.getModel(), stepCount, completedUsage);
 
       if (fullResponse.trim()) {
         if (finalFinishReason === "length") {
@@ -727,6 +731,9 @@ export async function runAgent(
         });
       }
     } catch (err: unknown) {
+      const partialUsage = finalRequestUsage;
+      finalRequestUsage = undefined;
+      if (partialUsage) await recordRequestUsage(operator.getModel(), stepCount, partialUsage);
       if (options.abortSignal?.aborted || (err instanceof Error && err.name === "AbortError")) {
         wasAborted = true;
       } else {

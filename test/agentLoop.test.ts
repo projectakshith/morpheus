@@ -108,6 +108,34 @@ test("Agent treats repeated output from novel commands as no progress", async ()
   assert.equal(result.stopReason, "loop_guard");
 });
 
+test("Agent counts the latest provider usage snapshot once per request", async () => {
+  const first = [
+    { choices: [{ delta: { tool_calls: [{ index: 0, id: "snapshot-tool", function: { name: "list_dir", arguments: JSON.stringify({ path: "." }) } }] } }] },
+    { choices: [{ delta: {}, finish_reason: "tool_calls" }] },
+    { usage: { prompt_tokens: 500, completion_tokens: 4, total_tokens: 504 } },
+    { usage: { prompt_tokens: 600, completion_tokens: 10, total_tokens: 610 } },
+  ];
+  const second = [
+    { choices: [{ delta: { content: "Finished." } }] },
+    { choices: [{ delta: {}, finish_reason: "stop" }] },
+    { usage: { prompt_tokens: 300, completion_tokens: 5, total_tokens: 305 } },
+  ];
+  let calls = 0;
+  globalThis.fetch = (async () => sse(calls++ === 0 ? first : second)) as typeof fetch;
+
+  const result = await runAgent("inspect the workspace", [], {
+    cwd: workspace,
+    baseURL: "https://example.test/v1",
+    apiKey: "k",
+  });
+
+  assert.equal(result.text, "Finished.");
+  assert.equal(result.usage.promptTokens, 900, "use 600 from the first response plus 300 from the second");
+  assert.equal(result.usage.completionTokens, 15, "use 10 from the first response plus 5 from the second");
+  assert.equal(result.usage.totalTokens, 915);
+  assert.equal(result.usage.byModel?.flash.totalTokens, 915);
+});
+
 test("Agent marks provider usage unavailable instead of reporting zero as measured", async () => {
   scriptModel([text("Answered without usage metadata.")]);
   const result = await runAgent("say hello", [], { cwd: workspace, baseURL: "https://example.test/v1", apiKey: "k" });
