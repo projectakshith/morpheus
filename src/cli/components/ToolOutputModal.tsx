@@ -3,7 +3,7 @@ import { Box, Text, useInput } from "ink";
 import { Modal } from "./ui/kit";
 import { theme } from "../theme";
 import { getLangFromPath, highlightCode } from "../highlight";
-import { sanitizeOutputLine } from "../../display/cells";
+import { sanitizeOutputLine, wrapCells } from "../../display/cells";
 import type { ThreadStep } from "../../core/thread";
 
 export interface ToolOutputModalProps {
@@ -20,9 +20,13 @@ function copyToClipboard(text: string): void {
 
 export function ToolOutputModal({ step, width, height, onClose }: ToolOutputModalProps) {
   const output = step.output ?? step.outputPreview?.join("\n") ?? "(no output)";
-  const lines = useMemo(
-    () => output.replace(/\r\n/g, "\n").split("\n").map(sanitizeOutputLine),
+  const safeOutput = useMemo(
+    () => output.replace(/\r\n/g, "\n").split("\n").map(sanitizeOutputLine).join("\n"),
     [output],
+  );
+  const lines = useMemo(
+    () => safeOutput.split("\n").flatMap((line) => wrapCells(line || " ", Math.max(20, width - 6))),
+    [safeOutput, width],
   );
   const [offset, setOffset] = useState(0);
   const [copied, setCopied] = useState(false);
@@ -61,7 +65,7 @@ export function ToolOutputModal({ step, width, height, onClose }: ToolOutputModa
       return;
     }
     if (input.toLowerCase() === "c") {
-      copyToClipboard(output);
+      copyToClipboard(safeOutput);
       setCopied(true);
     }
   });
@@ -81,15 +85,16 @@ export function ToolOutputModal({ step, width, height, onClose }: ToolOutputModa
       {({ width: innerWidth, height: innerHeight }) => {
         const visible = lines.slice(offset, offset + innerHeight);
         return (
-          <Box flexDirection="column" width={innerWidth} height={innerHeight} overflow="hidden">
+          <Box flexDirection="column" width={innerWidth} height={innerHeight} overflow="hidden" backgroundColor={theme.bg}>
             {visible.map((line, index) => {
               const isError = Boolean(step.isError);
               const text = language ? highlightCode(line, language) : line;
               return (
-                <Box key={`${offset + index}`} height={1} overflow="hidden">
+                <Box key={`${offset + index}`} height={1} overflow="hidden" backgroundColor={theme.bg}>
                   <Text
                     wrap="truncate-end"
-                    color={isError ? theme.error : language ? undefined : theme.secondary}
+                    backgroundColor={theme.bg}
+                    color={isError ? theme.error : language ? undefined : theme.text}
                   >
                     {text || " "}
                   </Text>
@@ -98,7 +103,7 @@ export function ToolOutputModal({ step, width, height, onClose }: ToolOutputModa
             })}
             {Array.from({ length: Math.max(0, innerHeight - visible.length) }, (_, index) => (
               <Box key={`pad_${index}`} height={1}>
-                <Text> </Text>
+                <Text backgroundColor={theme.bg}> </Text>
               </Box>
             ))}
           </Box>

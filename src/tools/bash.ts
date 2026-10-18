@@ -1,4 +1,5 @@
 import { spawn } from "node:child_process";
+import path from "node:path";
 import { truncateOutput } from "./construct";
 import type { ToolDefinition, ToolResult } from "../core/types";
 import { formatError } from "../utils/errors";
@@ -6,6 +7,56 @@ import { formatError } from "../utils/errors";
 export interface BashParams {
   command: string;
   timeoutMs?: number;
+}
+
+interface PathNode {
+  children: Map<string, PathNode>;
+}
+
+function compactAbsolutePathListing(text: string): string {
+  const lines = text.split(/\r?\n/).map((line) => line.trim()).filter(Boolean);
+  if (lines.length < 8 || !lines.every((line) => path.isAbsolute(line))) return text;
+
+  const uniquePaths = [...new Set(lines.map((line) => path.normalize(line)))];
+  const parentParts = uniquePaths.map((entry) => path.dirname(entry).split(path.sep).filter(Boolean));
+  const commonParts: string[] = [];
+  const maxCommonLength = Math.min(...parentParts.map((parts) => parts.length));
+  for (let index = 0; index < maxCommonLength; index++) {
+    const part = parentParts[0][index];
+    if (parentParts.every((parts) => parts[index] === part)) commonParts.push(part);
+    else break;
+  }
+
+  const root = path.join(path.parse(uniquePaths[0]).root, ...commonParts);
+  const tree: PathNode = { children: new Map() };
+  for (const entry of uniquePaths) {
+    const relative = path.relative(root, entry);
+    if (!relative || relative.startsWith("..") || path.isAbsolute(relative)) return text;
+    let node = tree;
+    for (const part of relative.split(path.sep)) {
+      let child = node.children.get(part);
+      if (!child) {
+        child = { children: new Map() };
+        node.children.set(part, child);
+      }
+      node = child;
+    }
+  }
+
+  const rendered: string[] = [];
+  const visit = (node: PathNode, prefix: string) => {
+    const entries = [...node.children.entries()].sort(([a], [b]) => a.localeCompare(b));
+    entries.forEach(([name, child], index) => {
+      const last = index === entries.length - 1;
+      const directory = child.children.size > 0;
+      rendered.push(`${prefix}${last ? "└── " : "├── "}${name}${directory ? "/" : ""}`);
+      if (directory) visit(child, `${prefix}${last ? "    " : "│   "}`);
+    });
+  };
+  visit(tree, "");
+
+  const duplicateNote = uniquePaths.length === lines.length ? "" : ` (${lines.length} matches, ${uniquePaths.length} unique)`;
+  return `${uniquePaths.length} paths${duplicateNote} under ${root}:\n${rendered.join("\n")}`;
 }
 
 export async function executeBash(
@@ -148,7 +199,7 @@ export async function executeBash(
         .filter(Boolean)
         .join("\n\n");
 
-      const raw = combined || "(command completed with no output)";
+      const raw = compactAbsolutePathListing(combined || "(command completed with no output)");
       const captureTruncated = Object.values(streams).some((stream) =>
         stream.bytes > Buffer.byteLength(stream.head + stream.tail, "utf-8")
       );
@@ -184,7 +235,7 @@ export function createBashTool(cwd: string = process.cwd()): ToolDefinition {
   return {
     name: "bash",
     description:
-      "Execute a terminal command in the host environment. Use this for git, builds, package managers, and tests.",
+      "Execute a terminal command in the host environment. Use this for git, builds, package managers, and tests. For directory discovery, prefer list_dir's bounded tree output; avoid unscoped searches from ~. If a shell search is needed, scope it to likely folders and limit depth/results.",
     parameters: {
       type: "object",
       properties: {

@@ -68,6 +68,7 @@ export function Modal({ title, context, hints, width, height, aside, children }:
       flexDirection="column"
       borderStyle="round"
       borderColor={theme.border}
+      backgroundColor={theme.bg}
       width={width}
       height={height}
       paddingX={2}
