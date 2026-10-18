@@ -14,6 +14,7 @@ import { commandRegistry } from "../commands/registry";
 import type { CommandContext } from "../commands/types";
 import { applyEvent } from "../protocol/reducer";
 import type { EventBody, MorpheusEvent, SessionSnapshot } from "../protocol/types";
+import { savePreferredModel } from "../core/userSettings";
 
 const REPLAY_BUFFER_SIZE = 20_000;
 
@@ -155,6 +156,7 @@ export class SessionHost {
 
   setModel(model: string): void {
     this.emit({ type: "session.updated", model });
+    void savePreferredModel(model).catch(() => {});
     void this.persist();
   }
 

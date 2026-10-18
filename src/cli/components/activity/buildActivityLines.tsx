@@ -431,7 +431,9 @@ function turnStats(steps: ThreadStep[]): { calls: number; failed: number } {
 
 function turnSummary(thread: Thread, width: number, open: boolean): RightLine {
   const { calls, failed } = turnStats(thread.steps);
-  const tail = ` · ${calls} call${calls === 1 ? "" : "s"}${failed ? ` · ${failed} failed` : ""}`;
+  const tail = calls === 0
+    ? " · no tools called"
+    : ` · ${calls} call${calls === 1 ? "" : "s"}${failed ? ` · ${failed} failed` : ""}`;
   const head = `${open ? "▾" : "▸"} turn ${thread.index} · `;
   const excerpt = truncateCells(promptExcerpt(thread.prompt), Math.max(4, width - cellWidth(head) - cellWidth(tail)));
   return row(
@@ -506,10 +508,9 @@ export function buildActivityLines({
   now = Date.now(),
 }: ActivityOptions): RightLine[] {
   const lines: RightLine[] = [];
-  const withTools = threads.filter((t) => t.steps.some((s) => s.type === "tool"));
   const flip = (id: string, byDefault: boolean) => (toggledIds.has(id) ? !byDefault : byDefault);
 
-  if (withTools.length === 0) {
+  if (threads.length === 0) {
     lines.push(blank("empty_0", width));
     lines.push(row("empty_1", [{ text: "  no tool calls yet", color: theme.muted }], width));
     lines.push(
@@ -519,12 +520,12 @@ export function buildActivityLines({
   }
 
   const latest = threads[threads.length - 1];
-  const earlier = withTools.filter((t) => t !== latest);
+  const earlier = threads.slice(0, -1);
 
   for (const thread of earlier) {
     const open = openedTurnIds.has(thread.id);
     lines.push(turnSummary(thread, width, open));
-    if (open) {
+    if (open && thread.steps.some((s) => s.type === "tool")) {
       for (const block of toBlocks(thread.steps, cwd, now)) {
         lines.push(...renderBlock(block, flip(block.id, false), width));
       }
@@ -535,17 +536,15 @@ export function buildActivityLines({
   const latestBlocks = latest.steps.some((s) => s.type === "tool") ? toBlocks(latest.steps, cwd, now) : [];
 
   if (latestBlocks.length > 0) {
-    if (earlier.length > 0) {
-      lines.push(blank("latest_gap", width));
-      lines.push(turnSummary(latest, width, true));
-    }
-
+    lines.push(turnSummary(latest, width, true));
     const openBlock = focusedBlockId(latest.steps, latestBlocks);
 
     for (const block of latestBlocks) {
       const byDefault = block.id === openBlock;
       lines.push(...renderBlock(block, flip(block.id, byDefault), width));
     }
+  } else {
+    lines.push(turnSummary(latest, width, true));
   }
 
   if (footer) {

@@ -737,7 +737,7 @@ export async function runAgent(
       {
         role: "user",
         content: loopStopReason
-          ? `${loopStopReason} Summarize what succeeded, what failed, and the next useful step. Do not retry the failed tool.`
+          ? `${loopStopReason} Give the user a concise, direct answer to their original request in natural language. Do not use a status-report template or headings unless the user asked for one. Be clear about what you verified and what remains incomplete; do not claim unfinished work is complete. Do not retry the failed tool.`
           : "Provide your concise, direct final answer to the user now based on your findings above.",
       },
     ];

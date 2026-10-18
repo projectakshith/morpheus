@@ -4,6 +4,7 @@ import os from "node:os";
 import fs from "node:fs";
 import { spawn } from "node:child_process";
 import { fileURLToPath } from "node:url";
+import { loadPreferredModel } from "./core/userSettings";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -33,7 +34,7 @@ export function resolveEndpoint(opts: { isLocal?: boolean; model?: string; baseU
   }
   return {
     baseURL: opts.baseURL || process.env.MORPHEUS_BASE_URL || "http://127.0.0.1:8787/v1",
-    model: opts.model || process.env.MORPHEUS_MODEL || "flash",
+    model: opts.model || loadPreferredModel() || process.env.MORPHEUS_MODEL || "flash",
   };
 }
 

@@ -2,7 +2,7 @@
  * useMouseEvents: Hook to handle terminal mouse reporting, click interactions, and scrolling.
  */
 
-import { useEffect, type MutableRefObject, type Dispatch, type SetStateAction } from "react";
+import { useEffect, useRef, type MutableRefObject, type Dispatch, type SetStateAction } from "react";
 import type { FeedLine, RightLine } from "../types";
 
 export interface MouseEventsOptions {
@@ -26,6 +26,7 @@ export interface MouseEventsOptions {
   setExpandedFileEdits: Dispatch<SetStateAction<Set<string>>>;
   setExpandedToolIds: Dispatch<SetStateAction<Set<string>>>;
   onOpenFileDiff?: (filePath: string) => void;
+  onOpenToolOutput?: (toolId: string) => void;
 }
 
 export function useMouseEvents({
@@ -49,8 +50,19 @@ export function useMouseEvents({
   setExpandedFileEdits,
   setExpandedToolIds,
   onOpenFileDiff,
+  onOpenToolOutput,
 }: MouseEventsOptions): void {
+  const onOpenToolOutputRef = useRef(onOpenToolOutput);
+  onOpenToolOutputRef.current = onOpenToolOutput;
+
   useEffect(() => {
+    if (activeModal === "tool-output") {
+      try {
+        process.stdout.write("\x1b[?1000l\x1b[?1002l\x1b[?1006l");
+      } catch {}
+      return;
+    }
+
     try {
       process.stdout.write("\x1b]11;#161415\x07");
       process.stdout.write("\x1b[?1000h\x1b[?1006h");
@@ -120,15 +132,15 @@ export function useMouseEvents({
               } else if (clickedLine?.toolId) {
                 const clickedId = clickedLine.toolId;
                 setRightScrollTop(currentRightScrollRef.current);
-                setExpandedToolIds((prev) => {
-                  const next = new Set(prev);
-                  if (next.has(clickedId)) {
-                    next.delete(clickedId);
-                  } else {
-                    next.add(clickedId);
-                  }
-                  return next;
-                });
+                if (onOpenToolOutputRef.current) onOpenToolOutputRef.current(clickedId);
+                else {
+                  setExpandedToolIds((prev) => {
+                    const next = new Set(prev);
+                    if (next.has(clickedId)) next.delete(clickedId);
+                    else next.add(clickedId);
+                    return next;
+                  });
+                }
               }
             }
           }
@@ -183,5 +195,5 @@ export function useMouseEvents({
 
     process.on("exit", cleanup);
     return cleanup;
-  }, [leftWidth, isSplitLayout, isIntroActive]);
+  }, [leftWidth, isSplitLayout, isIntroActive, activeModal]);
 }

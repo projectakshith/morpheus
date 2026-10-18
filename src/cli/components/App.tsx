@@ -3,7 +3,7 @@
  * Orchestrates layout, stream rendering, slash commands, modal selectors, and agent turns.
  */
 
-import React, { useState, useEffect, useRef, useMemo } from "react";
+import React, { useState, useEffect, useRef, useMemo, useCallback } from "react";
 import { Box, Text, useInput } from "ink";
 import { Header } from "./Header";
 import { StatusBar } from "./StatusBar";
@@ -18,6 +18,7 @@ import { NeoModal } from "./NeoModal";
 import { UsageModal } from "./UsageModal";
 import { PermissionApproval } from "./PermissionApproval";
 import { DiffModal } from "./DiffModal";
+import { ToolOutputModal } from "./ToolOutputModal";
 import { gatherContext } from "../../core/context";
 import { MORPHEUS_VERSION } from "../../index";
 import { theme } from "../theme";
@@ -48,7 +49,8 @@ export function App({
   const [permissionModeSaveError, setPermissionModeSaveError] = useState(false);
   const [workerModelSaveError, setWorkerModelSaveError] = useState(false);
   const [workerModelRole, setWorkerModelRole] = useState<SubagentRole | null>(null);
-  const [activeModal, setActiveModal] = useState<"none" | "model" | "session" | "settings" | "diff" | "neo" | "usage">("none");
+  const [activeModal, setActiveModal] = useState<"none" | "model" | "session" | "settings" | "diff" | "neo" | "usage" | "tool-output">("none");
+  const [selectedToolOutputId, setSelectedToolOutputId] = useState<string | null>(null);
   const [selectedDiffFile, setSelectedDiffFile] = useState<string | null>(null);
   const [scrollOffset, setScrollOffset] = useState(0);
   const [promptHistory, setPromptHistory] = useState<string[]>([]);
@@ -87,7 +89,6 @@ export function App({
     if (filePath) setSelectedDiffFile(filePath);
     setActiveModal("diff");
   };
-
   const baseContext = useRef(gatherContext(process.cwd()));
   const initialTaskFired = useRef(false);
   const isUserScrolledRef = useRef(false);
@@ -138,6 +139,15 @@ export function App({
     openModal,
     closeModal,
   });
+
+  const openToolOutput = useCallback((toolId: string) => {
+    if (!threads.some((thread) => thread.steps.some((candidate) => candidate.id === toolId))) return;
+    setSelectedToolOutputId(toolId);
+    setActiveModal("tool-output");
+  }, [threads]);
+  const selectedToolOutput = selectedToolOutputId
+    ? threads.flatMap((thread) => thread.steps).find((candidate) => candidate.id === selectedToolOutputId) ?? null
+    : null;
 
   const {
     terminalWidth,
@@ -194,6 +204,7 @@ export function App({
     setExpandedFileEdits,
     setExpandedToolIds,
     onOpenFileDiff: openDiffModal,
+    onOpenToolOutput: openToolOutput,
   });
 
   useInput((input, key) => {
@@ -504,6 +515,16 @@ export function App({
             height={effectiveWorkspaceHeight}
             onClose={closeModal}
           />
+        ) : activeModal === "tool-output" && selectedToolOutput ? (
+          <ToolOutputModal
+            step={selectedToolOutput}
+            width={terminalWidth}
+            height={effectiveWorkspaceHeight}
+            onClose={() => {
+              setSelectedToolOutputId(null);
+              closeModal();
+            }}
+          />
         ) : (
           <>
             <Box
@@ -571,6 +592,8 @@ export function App({
             ? "approval pending · ctrl+y approve once · ctrl+n deny · /new starts another session"
             : activeModal === "diff"
             ? "code & diff inspector... (use [Tab] to toggle pane, [↑/↓] to scroll/select, [←/→] switch files, [esc] to close)"
+            : activeModal === "tool-output"
+            ? "tool output... (use [↑/↓] to scroll, [c] to copy all, [esc] to close)"
             : undefined
         }
         placeholder={
