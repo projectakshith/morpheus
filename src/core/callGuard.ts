@@ -12,8 +12,8 @@ const READ_ONLY_TOOLS = new Set([
 
 const SINGLE_FILE_WRITERS = new Set(["edit_file", "write_file"]);
 
-const READ_DEFAULT_LIMIT = 1000;
-const READ_MAX_LIMIT = 2000;
+const READ_DEFAULT_LIMIT = 160;
+const READ_MAX_LIMIT = 800;
 
 interface CachedCall {
   toolCallId: string;
@@ -29,6 +29,10 @@ export type GuardVerdict =
   | { skip: false; repeat: boolean }
   | { skip: true; repeat: true; notice: string };
 
+export function isVerificationCommand(command: string): boolean {
+  return /(?:^|[;&|]\s*)(?:npm\s+(?:run\s+)?(?:test|check|typecheck|lint)|pnpm\s+(?:run\s+)?(?:test|check|typecheck|lint)|yarn\s+(?:run\s+)?(?:test|check|typecheck|lint)|bun\s+(?:run\s+)?(?:test|check|typecheck|lint)|npx\s+(?:vitest|jest|playwright|eslint|tsc)|node\s+(?:--test|--experimental-test)|(?:pytest|vitest|jest|playwright|cargo\s+test|go\s+test|dotnet\s+test|swift\s+test)(?:\s|$))/i.test(command);
+}
+
 function toInt(value: unknown, fallback: number): number {
   const n = Number(value);
   return Number.isFinite(n) ? Math.floor(n) : fallback;
@@ -38,6 +42,7 @@ function toInt(value: unknown, fallback: number): number {
 export class ToolCallGuard {
   private reads = new Map<string, CachedRead>();
   private lastBash: { command: string; call: CachedCall } | null = null;
+  private lastVerification: { command: string; call: CachedCall } | null = null;
   private seenSinceChange = new Set<string>();
 
   constructor(private readonly cwd: string) {}
@@ -68,6 +73,15 @@ export class ToolCallGuard {
           notice: `[Notice: '${command}' was just run in step ${last.call.step} and nothing has changed since, so its output would be identical. Use that earlier result, or change something before rerunning.]`,
         };
       }
+      const verification = this.lastVerification;
+      if (isVerificationCommand(command) && verification?.command === command &&
+        this.isVisible(verification.call, step, visibleMessages)) {
+        return {
+          skip: true,
+          repeat: true,
+          notice: `[Notice: '${command}' already ran in step ${verification.call.step}, and no workspace change has occurred since. Use its result instead of rerunning the same verification. Make a relevant change first if another run is needed.]`,
+        };
+      }
     }
     return { skip: false, repeat: this.seenSinceChange.has(this.callKey(toolName, args)) };
   }
@@ -90,6 +104,10 @@ export class ToolCallGuard {
     }
 
     this.lastBash = null;
+    const command = toolName === "bash" && typeof args.command === "string" ? args.command.trim() : "";
+    const preservesVerification = toolName === "bash" &&
+      (isVerificationCommand(command) || this.isReadOnlyDiagnostic(command));
+    if (!preservesVerification) this.lastVerification = null;
     this.seenSinceChange.clear();
     const target = typeof args.filePath === "string" ? this.resolve(args.filePath) : null;
     if (SINGLE_FILE_WRITERS.has(toolName) && target) {
@@ -101,8 +119,10 @@ export class ToolCallGuard {
     }
 
     this.seenSinceChange.add(this.callKey(toolName, args));
-    if (toolName === "bash" && !isError && typeof args.command === "string") {
-      this.lastBash = { command: args.command.trim(), call: { toolCallId, step, output } };
+    if (toolName === "bash" && typeof args.command === "string") {
+      const call = { toolCallId, step, output };
+      this.lastBash = !isError ? { command: command, call } : null;
+      if (isVerificationCommand(command)) this.lastVerification = { command, call };
     }
   }
 
@@ -117,6 +137,10 @@ export class ToolCallGuard {
     const offset = Math.max(1, toInt(args.offset, 1));
     const limit = Math.max(1, Math.min(toInt(args.limit, READ_DEFAULT_LIMIT), READ_MAX_LIMIT));
     return `${this.resolve(args.filePath)}:${offset}:${limit}`;
+  }
+
+  private isReadOnlyDiagnostic(command: string): boolean {
+    return /^(?:git\s+(?:status|diff|log|show|branch|rev-parse|ls-files|diff-tree|config\s+--get)|pwd|ls|find|rg|grep|cat|head|tail|wc|stat|file|tree|which|command\s+-v)(?:\s|$)/i.test(command);
   }
 
   private resolve(filePath: string): string {

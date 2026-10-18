@@ -1,6 +1,7 @@
 import fs from "node:fs/promises";
 import path from "node:path";
 import { resolvePathWithFallbacks, exists } from "../utils/filesystem";
+import { truncateOutput } from "./construct";
 import type { ToolDefinition, ToolResult } from "../core/types";
 import { formatError } from "../utils/errors";
 
@@ -136,7 +137,8 @@ export async function listDir(
   const lines = await buildTree(resolvedDir, "", 1, maxDepth, Boolean(params.includeAssets));
 
   const output = [`${baseName}/`, ...lines].join("\n");
-  return { output };
+  const bounded = await truncateOutput(output, { toolName: "list_dir" });
+  return { output: bounded.content };
 }
 
 export function createListTool(cwd: string = process.cwd()): ToolDefinition {

@@ -12,6 +12,9 @@ export interface ReadFileParams {
   limit?: number;
 }
 
+const DEFAULT_READ_LIMIT = 160;
+const MAX_READ_LIMIT = 800;
+
 /**
  * Suggests closest matching files if target does not exist.
  */
@@ -37,8 +40,10 @@ async function suggestFiles(targetPath: string): Promise<string[]> {
 
 export async function readFile(
   params: ReadFileParams,
-  cwd: string = process.cwd()
+  cwd: string = process.cwd(),
+  outputBudgetBytes = 16 * 1024
 ): Promise<ToolResult> {
+  const maxOutputBytes = Math.max(1024, Math.min(16 * 1024, Math.floor(outputBudgetBytes)));
   const fullPath = await resolvePathWithFallbacks(params.filePath, cwd);
 
   if (!(await exists(fullPath))) {
@@ -58,7 +63,7 @@ export async function readFile(
       .map((e) => (e.isDirectory() ? `${e.name}/` : e.name))
       .sort()
       .join("\n");
-    const result = await truncateOutput(listing, { toolName: "read_file" });
+    const result = await truncateOutput(listing, { toolName: "read_file", maxBytes: maxOutputBytes });
     return { output: result.content };
   }
 
@@ -66,7 +71,7 @@ export async function readFile(
   const lines = raw.split("\n");
 
   const offset = Math.max(1, params.offset ?? 1);
-  const limit = Math.max(1, Math.min(params.limit ?? 1000, 2000));
+  const limit = Math.max(1, Math.min(params.limit ?? DEFAULT_READ_LIMIT, MAX_READ_LIMIT));
   const startIndex = offset - 1;
   const slice = lines.slice(startIndex, startIndex + limit);
 
@@ -79,15 +84,18 @@ export async function readFile(
       ? `\n\n[Lines ${offset}-${Math.min(offset + limit - 1, lines.length)} of ${lines.length} shown. Use offset=${offset + limit} to read more]`
       : "";
 
-  const result = await truncateOutput(`${numbered}${pagination}`, { toolName: "read_file" });
+  const result = await truncateOutput(`${numbered}${pagination}`, { toolName: "read_file", maxBytes: maxOutputBytes });
   return { output: result.content };
 }
 
-export function createReadTool(cwd: string = process.cwd()): ToolDefinition {
+export function createReadTool(
+  cwd: string = process.cwd(),
+  getOutputBudgetBytes: () => number = () => 16 * 1024
+): ToolDefinition {
   return {
     name: "read_file",
     description:
-      "Read contents of a file or directory from the filesystem with 1-indexed line numbers.",
+      "Read a targeted file range with 1-indexed line numbers. Defaults to 160 lines (max 800); use outline_code or grep_code to locate likely files and symbols, then read_file with offset/limit for exact implementation details. Page further only when the task needs it. Use list_dir for a scoped directory tree.",
     parameters: {
       type: "object",
       properties: {
@@ -97,18 +105,18 @@ export function createReadTool(cwd: string = process.cwd()): ToolDefinition {
         },
         offset: {
           type: "number",
-          description: "Line number to start reading from (defaults to 1)",
+          description: "1-indexed starting line for targeted paging (defaults to 1)",
         },
         limit: {
           type: "number",
-          description: "Maximum number of lines to return (defaults to 1000, max 2000)",
+          description: "Maximum lines to return (defaults to 160, max 800)",
         },
       },
       required: ["filePath"],
     },
     execute: async (params: Record<string, any>) => {
       try {
-        return await readFile(params as unknown as ReadFileParams, cwd);
+        return await readFile(params as unknown as ReadFileParams, cwd, getOutputBudgetBytes());
       } catch (err: unknown) {
         return `Error: ${formatError(err)}`;
       }

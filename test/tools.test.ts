@@ -34,6 +34,30 @@ test("Tools: write_file and read_file", async (t) => {
     assert.match(res.output, /3: line three/);
   });
 
+  await t.test("read_file defaults to a focused page and supports explicit paging", async () => {
+    const manyLines = Array.from({ length: 400 }, (_, i) => `line ${i + 1}`).join("\n");
+    await fs.writeFile(targetFile, manyLines, "utf-8");
+    const firstPage = await readFile({ filePath: targetFile });
+    assert.match(firstPage.output, /1: line 1/);
+    assert.match(firstPage.output, /160: line 160/);
+    assert.doesNotMatch(firstPage.output, /161: line 161/);
+    assert.match(firstPage.output, /Use offset=161 to read more/);
+
+    const nextPage = await readFile({ filePath: targetFile, offset: 161, limit: 40 });
+    assert.match(nextPage.output, /161: line 161/);
+    assert.match(nextPage.output, /200: line 200/);
+    assert.doesNotMatch(nextPage.output, /201: line 201/);
+  });
+
+  await t.test("read_file adapts its output cap to the remaining context budget", async () => {
+    const manyLines = Array.from({ length: 800 }, (_, i) => `line ${i + 1} ${"x".repeat(40)}`).join("\n");
+    await fs.writeFile(targetFile, manyLines, "utf-8");
+    const constrained = await readFile({ filePath: targetFile, limit: 800 }, tmpDir, 1024);
+    assert.match(constrained.output, /TRUNCATED/);
+    assert.match(constrained.output, /Use grep or read_file/);
+    assert.doesNotMatch(constrained.output, /line 400 /, "middle content is not sent when the adaptive byte cap is reached");
+  });
+
   await t.test("read_file fuzzy suggests closest file on miss", async () => {
     await assert.rejects(
       async () => {
@@ -101,7 +125,7 @@ test("Tool output limits can be set per tool", async () => {
   const grep = await truncateOutput(output, { toolName: "grep_code" });
   const read = await truncateOutput(output, { toolName: "read_file" });
   assert.equal(grep.truncated, true);
-  assert.equal(read.truncated, false);
+  assert.equal(read.truncated, true, "read output is capped at 16 KiB");
 });
 
 test("Tools: bash execution", async () => {
@@ -126,6 +150,17 @@ test("Tools: listDir tree traversal", async (t) => {
     assert.equal(res.output.includes("node_modules"), false);
   });
 
+  await fs.rm(tmpDir, { recursive: true, force: true });
+});
+
+test("Tools: listDir caps wide tree results and points to the captured output", async () => {
+  const tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), "morpheus-wide-list-"));
+  await Promise.all(Array.from({ length: 300 }, (_, i) =>
+    fs.writeFile(path.join(tmpDir, `file-${String(i).padStart(3, "0")}.txt`), "x")
+  ));
+  const result = await listDir({ dirPath: tmpDir, depth: 1 }, tmpDir);
+  assert.match(result.output, /\[TRUNCATED\]/);
+  assert.match(result.output, /model has not seen this content/);
   await fs.rm(tmpDir, { recursive: true, force: true });
 });
 

@@ -9,7 +9,7 @@ import { SessionLogger } from "./logger";
 import { isToolError, formatError } from "../utils/errors";
 import { tryExtractTextToolCalls } from "../utils/toolExtraction";
 import { isConversationalStall } from "./stallGuard";
-import { ToolCallGuard } from "./callGuard";
+import { ToolCallGuard, isVerificationCommand } from "./callGuard";
 import { matchSkills } from "./skills";
 import { createDelegateTasksTool, createSubagentRunnerOptions, resolveSubagentOptions } from "./subagents";
 import { permissionReason } from "./permissions";
@@ -145,6 +145,7 @@ export async function runAgent(
   });
   const runTokenBudget = options.maxTotalTokens ?? DEFAULT_RUN_TOKEN_BUDGET;
   const explorationTokenBudget = calculateExplorationTokenBudget(runTokenBudget);
+  let activeReadOutputBudgetBytes = 16 * 1024;
   const subagentPolicy = resolveSubagentOptions(options.subagents);
   const delegateTool = !options.disableSubagents && subagentPolicy.enabled
     ? createDelegateTasksTool(subagentPolicy, operator.getModel(), async (input) => {
@@ -187,6 +188,7 @@ export async function runAgent(
       delegateTool,
       access: options.toolAccess,
       allowedWritePaths: options.allowedWritePaths,
+      readOutputBudgetBytes: () => activeReadOutputBudgetBytes,
     }
   );
   const mcp = options.toolAccess
@@ -454,6 +456,58 @@ export async function runAgent(
       tool_calls: toolCalls,
     });
 
+    /* Start consecutive, independent read-only calls together. Results are still
+     * recorded and appended in model order below so the transcript stays valid. */
+    const parallelReadResults = new Map<string, ReturnType<typeof executeToolSafely>>();
+    const parallelReadTools = new Set(["read_file", "list_dir", "grep_code", "outline_code"]);
+    const reserveTokens = 2048;
+    const availableReadTokens = Math.max(256, tokenSafetyCeiling - currentPromptTokens - reserveTokens);
+    const readOutputBytes = Math.min(16 * 1024, availableReadTokens * 4);
+    activeReadOutputBudgetBytes = Math.max(1024, readOutputBytes);
+    for (let start = 0; start < toolCalls.length;) {
+      if (loopStopReason || options.abortSignal?.aborted) break;
+      const firstName = toolCalls[start].function.name;
+      if (!parallelReadTools.has(firstName)) { start++; continue; }
+      let end = start + 1;
+      while (end < toolCalls.length && parallelReadTools.has(toolCalls[end].function.name)) end++;
+      const batch = toolCalls.slice(start, end);
+      if (batch.length < 2) { start = end; continue; }
+
+      const prepared: { call: ToolCall; name: string; args: Record<string, unknown>; tool: ToolDefinition }[] = [];
+      const batchKeys = new Set<string>();
+      let canRunTogether = true;
+      for (const call of batch) {
+        let args: Record<string, unknown>;
+        try { args = JSON.parse(call.function.arguments || "{}"); }
+        catch { canRunTogether = false; break; }
+        const name = call.function.name;
+        const tool = tools[name];
+        const key = `${name}:${JSON.stringify(args)}`;
+        if (!tool || batchKeys.has(key) || callGuard.check(name, args, stepCount, compactedMessages).skip) {
+          canRunTogether = false;
+          break;
+        }
+        batchKeys.add(key);
+        if (options.permissionMode !== "fullAccess" && await permissionReason(name, args, cwd)) {
+          canRunTogether = false;
+          break;
+        }
+        prepared.push({ call, name, args, tool });
+      }
+      if (canRunTogether && prepared.length === batch.length) {
+        activeReadOutputBudgetBytes = Math.max(1024, Math.floor(readOutputBytes / batch.length));
+        for (const item of prepared) {
+          parallelReadResults.set(
+            item.call.id,
+            executeToolSafely(item.tool, item.args, cwd, options.abortSignal)
+          );
+        }
+        /* Each read tool captures this budget synchronously when execution starts. */
+        activeReadOutputBudgetBytes = Math.max(1024, readOutputBytes);
+      }
+      start = end;
+    }
+
     /* Count new, in-workspace information as progress; unique command text alone is insufficient. */
     let stepMadeProgress = false;
     /* Screenshots are appended after every tool result so tool messages stay contiguous. */
@@ -536,7 +590,10 @@ export async function runAgent(
           } else {
           toolExecuted = true;
           const toolStartedAt = Date.now();
-          const executed = await executeToolSafely(targetTool, parsedArgs, cwd, options.abortSignal);
+          const parallelRead = parallelReadResults.get(toolCall.id);
+          const executed = parallelRead
+            ? await parallelRead
+            : await executeToolSafely(targetTool, parsedArgs, cwd, options.abortSignal);
           outputStr = executed.output;
           isError = executed.isError;
           toolChanged = executed.metadata?.changed !== false;
@@ -559,7 +616,7 @@ export async function runAgent(
           const inScope = !WORKSPACE_TOOLS.has(toolName) || isInsideWorkspace;
           const isNoOpMutation = (toolName === "write_file" || toolName === "edit_file") && !toolChanged;
           const usefulOutput =
-            !isError &&
+            (!isError || (toolName === "bash" && isVerificationCommand(String(parsedArgs.command ?? "")))) &&
             !isNoOpMutation &&
             outputStr.trim().length > 0 &&
             !outputStr.includes("completed with no output") && !outputStr.includes("cancelled");
@@ -773,7 +830,7 @@ export async function runAgent(
   options.onUsage?.(usage);
   await mcp.close();
   await logger.logAssistantResponse(fullResponse);
-  await logger.logStopReason(stopReason);
+  await logger.logStopReason(stopReason, finalError);
   await logger.logFinish(usage, wasAborted);
 
   return {

@@ -228,11 +228,15 @@ export function compactToolOutput(
   options: {
     compactThresholdChars?: number;
     errorLinesToPreserve?: number;
+    isColdStep?: boolean;
   } = {}
 ): string {
   if (!isColdTurn) {
     if (toolName === "read_file") {
-      return extractFileOutline(rawContent);
+      /* Keep recent reads verbatim; for older reads retain a clear path to fetch the exact range again. */
+      if (!options.isColdStep) return rawContent;
+      const range = rawContent.match(/^\[(?:Lines )?(\d+):/m);
+      return `[Earlier read_file output omitted from context. Re-read the relevant range of the same file if needed.${range ? ` It started near line ${range[1]}.` : ""}]`;
     }
     if (toolName === "list_dir") {
       return extractDirSummary(rawContent);
@@ -331,6 +335,7 @@ export function compactHistory(
         content: compactToolOutput(toolName, msg.content, isColdTurn, msg.isError, {
           compactThresholdChars,
           errorLinesToPreserve,
+          isColdStep,
         }),
       };
     }
@@ -354,7 +359,7 @@ export function compactHistory(
             rawResult,
             isColdTurn,
             part.isError !== undefined ? Boolean(part.isError) : undefined,
-            { compactThresholdChars, errorLinesToPreserve }
+            { compactThresholdChars, errorLinesToPreserve, isColdStep }
           ),
         };
       });

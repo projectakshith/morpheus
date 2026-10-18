@@ -32,7 +32,7 @@ test("CallGuard treats equivalent paths and default ranges as the same read", ()
   const visible = [toolMsg("c1", "x")];
 
   assert.equal(guard.check("read_file", { filePath: "src/a.ts" }, 2, visible).skip, true);
-  assert.equal(guard.check("read_file", { filePath: "/repo/src/a.ts", offset: 1, limit: 1000 }, 2, visible).skip, true);
+  assert.equal(guard.check("read_file", { filePath: "/repo/src/a.ts", offset: 1, limit: 160 }, 2, visible).skip, true);
   assert.equal(guard.check("read_file", { filePath: "src/a.ts", offset: 50 }, 2, visible).skip, false);
 });
 
@@ -90,11 +90,32 @@ test("CallGuard allows a bash rerun after a different command ran in between", (
   assert.equal(guard.check("bash", { command: "npm test" }, 3, [toolMsg("c1", "fail")]).skip, false);
 });
 
+test("CallGuard remembers a verification across read-only git diagnostics", () => {
+  const guard = new ToolCallGuard(CWD);
+  guard.record("bash", { command: "node --test tests/pricing.test.js" }, 1, "c1", "4 passed, 1 failed", true);
+  guard.record("bash", { command: "git status --short" }, 2, "c2", " M src/pricing.js", false);
+  guard.record("bash", { command: "git log -1 --oneline" }, 3, "c3", "abc123 change", false);
+
+  const verdict = guard.check("bash", { command: "node --test tests/pricing.test.js" }, 4, [
+    toolMsg("c1", "4 passed, 1 failed"),
+  ]);
+  assert.equal(verdict.skip, true);
+  if (verdict.skip) assert.match(verdict.notice, /already ran/);
+});
+
+test("CallGuard permits verification again after a workspace edit", () => {
+  const guard = new ToolCallGuard(CWD);
+  guard.record("bash", { command: "node --test tests/pricing.test.js" }, 1, "c1", "4 passed, 1 failed", true);
+  guard.record("edit_file", { filePath: "src/pricing.js" }, 2, "c2", "updated", false);
+
+  assert.equal(guard.check("bash", { command: "node --test tests/pricing.test.js" }, 3, [toolMsg("c1", "4 passed, 1 failed")]).skip, false);
+});
+
 test("CallGuard never skips a failed bash command, leaving that to the error guard", () => {
   const guard = new ToolCallGuard(CWD);
-  guard.record("bash", { command: "npm test" }, 1, "c1", "Error: exit 1", true);
+  guard.record("bash", { command: "node missing-script.js" }, 1, "c1", "Error: script not found", true);
 
-  assert.equal(guard.check("bash", { command: "npm test" }, 2, [toolMsg("c1", "Error: exit 1")]).skip, false);
+  assert.equal(guard.check("bash", { command: "node missing-script.js" }, 2, [toolMsg("c1", "Error: script not found")]).skip, false);
 });
 
 test("CallGuard flags re-run calls as repeats until the workspace changes", () => {

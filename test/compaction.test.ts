@@ -1,9 +1,14 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
 import type { CoreMessage, ToolContent } from "ai";
-import { compactHistory } from "../src/core/compaction";
+import { compactHistory, compactToolOutput } from "../src/core/compaction";
 
 describe("compactHistory (Micro-Compaction Engine)", () => {
+  it("keeps recent file reads intact instead of replacing implementation with outlines", () => {
+    const read = Array.from({ length: 120 }, (_, i) => `${i + 1}: implementation line ${i + 1}`).join("\n");
+    assert.equal(compactToolOutput("read_file", read, false), read);
+  });
+
   it("preserves short conversation histories without modification", () => {
     const history: CoreMessage[] = [
       { role: "user", content: "hello" },

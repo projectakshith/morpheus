@@ -1,6 +1,7 @@
 import test, { before, afterEach } from "node:test";
 import assert from "node:assert/strict";
 import fs from "node:fs";
+import fsp from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import type { ChatMessage } from "../src/core/types";
@@ -41,6 +42,17 @@ function toolCall(id: string, name: string, args: object, usage?: { promptTokens
     { choices: [{ delta: { tool_calls: [{ index: 0, id, function: { name, arguments: JSON.stringify(args) } }] } }] },
     { choices: [{ delta: {}, finish_reason: "tool_calls" }] },
   ], usage);
+}
+
+function multipleToolCalls(calls: Array<{ id: string; name: string; args: object }>): Response {
+  return sse([
+    { choices: [{ delta: { tool_calls: calls.map((call, index) => ({
+      index,
+      id: call.id,
+      function: { name: call.name, arguments: JSON.stringify(call.args) },
+    })) } }] },
+    { choices: [{ delta: {}, finish_reason: "tool_calls" }] },
+  ]);
 }
 
 function text(content: string, usage?: { promptTokens: number; completionTokens: number }): Response {
@@ -134,6 +146,70 @@ test("Agent counts the latest provider usage snapshot once per request", async (
   assert.equal(result.usage.completionTokens, 15, "use 10 from the first response plus 5 from the second");
   assert.equal(result.usage.totalTokens, 915);
   assert.equal(result.usage.byModel?.flash.totalTokens, 915);
+});
+
+test("Agent gives focused file reads a useful first page and explicit paging guidance", async () => {
+  const { requests } = scriptModel([
+    toolCall("focused-read", "read_file", { filePath: "big.ts" }),
+    text("I inspected the first page and can continue at the reported offset if needed."),
+  ]);
+
+  const result = await runAgent("inspect big.ts", [], {
+    cwd: workspace,
+    baseURL: "https://example.test/v1",
+    apiKey: "k",
+  });
+
+  const readResult = toolResults(result.messages).find((message) => message.tool_call_id === "focused-read");
+  assert.ok(readResult);
+  assert.match(String(readResult.content), /const v0 = 0/);
+  assert.match(String(readResult.content), /const v159 = 159/);
+  assert.doesNotMatch(String(readResult.content), /const v160 = 160/);
+  assert.match(requests[0].messages[0].content, /read the relevant implementation and tests in focused line ranges/);
+  assert.match(JSON.stringify(requests[0].tools), /Defaults to 160 lines/);
+});
+
+test("Agent runs independent read-only calls concurrently and preserves transcript order", async () => {
+  fs.writeFileSync(path.join(workspace, "parallel-a.ts"), "export const a = 1;\n");
+  fs.writeFileSync(path.join(workspace, "parallel-b.ts"), "export const b = 2;\n");
+  scriptModel([
+    multipleToolCalls([
+      { id: "parallel-a", name: "read_file", args: { filePath: "parallel-a.ts" } },
+      { id: "parallel-b", name: "read_file", args: { filePath: "parallel-b.ts" } },
+    ]),
+    text("Both files inspected."),
+  ]);
+
+  const originalReadFile = fsp.readFile;
+  let activeReads = 0;
+  let peakReads = 0;
+  (fsp as any).readFile = async (...args: Parameters<typeof fsp.readFile>) => {
+    const filePath = String(args[0]);
+    if (filePath.endsWith("parallel-a.ts") || filePath.endsWith("parallel-b.ts")) {
+      activeReads++;
+      peakReads = Math.max(peakReads, activeReads);
+      await new Promise((resolve) => setTimeout(resolve, 25));
+      try { return await originalReadFile(...args); }
+      finally { activeReads--; }
+    }
+    return originalReadFile(...args);
+  };
+
+  try {
+    const result = await runAgent("inspect both files", [], {
+      cwd: workspace,
+      baseURL: "https://example.test/v1",
+      apiKey: "k",
+    });
+    const results = toolResults(result.messages);
+    assert.equal(result.text, "Both files inspected.");
+    assert.ok(peakReads >= 2, "independent file reads overlap");
+    assert.deepEqual(results.slice(0, 2).map((message) => message.tool_call_id), ["parallel-a", "parallel-b"]);
+    assert.match(String(results[0].content), /export const a = 1/);
+    assert.match(String(results[1].content), /export const b = 2/);
+  } finally {
+    (fsp as any).readFile = originalReadFile;
+  }
 });
 
 test("Agent marks provider usage unavailable instead of reporting zero as measured", async () => {
@@ -230,6 +306,32 @@ test("Agent reruns a command after bash changed the workspace", async () => {
   assert.ok(rerun);
   assert.doesNotMatch(String(rerun.content), /already run|just run/);
   assert.match(String(rerun.content), /a\s+b/);
+});
+
+test("Agent treats failed verification output as progress and retries it after editing", async () => {
+  const filePath = path.join(workspace, "verify-me.ts");
+  fs.writeFileSync(filePath, "export const answer = 1;\n");
+  scriptModel([
+    toolCall("verify-fail", "bash", { command: "node --test missing.test.js" }),
+    toolCall("apply-fix", "edit_file", {
+      filePath: "verify-me.ts",
+      oldString: "export const answer = 1;",
+      newString: "export const answer = 2;",
+    }),
+    toolCall("verify-again", "bash", { command: "node --test missing.test.js" }),
+    text("The targeted verification completed after the edit."),
+  ]);
+
+  const result = await runAgent("fix the verification issue", [], {
+    cwd: workspace,
+    baseURL: "https://example.test/v1",
+    apiKey: "k",
+  });
+
+  assert.equal(result.text, "The targeted verification completed after the edit.");
+  assert.match(String(toolResults(result.messages).find((m) => m.tool_call_id === "verify-fail")?.content), /Could not find/);
+  assert.match(String(toolResults(result.messages).find((m) => m.tool_call_id === "verify-again")?.content), /Could not find/);
+  assert.equal(fs.readFileSync(filePath, "utf-8"), "export const answer = 2;\n");
 });
 
 test("Agent stops exploration at its token budget and reserves a final answer", async () => {

@@ -1,7 +1,4 @@
 import { execSync } from "node:child_process";
-import fs from "node:fs";
-import path from "node:path";
-import os from "node:os";
 import type { AgentContext } from "./types";
 import { generateRepoMap } from "./repomap";
 import {
@@ -56,41 +53,6 @@ export function gatherContext(cwd: string = process.cwd()): AgentContext {
   const skills = loadSkills(cwd);
   const rules = loadRules(cwd);
 
-  let siblings: string[] | undefined;
-  try {
-    const parentDir = path.dirname(cwd);
-    const home = os.homedir();
-    if (parentDir !== home && parentDir !== path.parse(parentDir).root) {
-      const currentName = path.basename(cwd);
-      const entries = fs.readdirSync(parentDir, { withFileTypes: true });
-      const siblingDetails: string[] = [];
-
-      for (const e of entries) {
-        if (e.isDirectory() && !e.name.startsWith(".") && e.name !== currentName) {
-          try {
-            const sub = fs.readdirSync(path.join(parentDir, e.name), { withFileTypes: true });
-            const topDirs = sub
-              .filter((se) => se.isDirectory() && !se.name.startsWith(".") && se.name !== "node_modules")
-              .map((se) => se.name + "/");
-            const topFiles = sub
-              .filter((se) => se.isFile() && !se.name.startsWith("."))
-              .map((se) => se.name)
-              .slice(0, 5);
-            const summary = [...topDirs, ...topFiles].slice(0, 10).join(", ");
-            siblingDetails.push(`${e.name}: accessible at ../${e.name} (contains: ${summary})`);
-          } catch {
-            siblingDetails.push(`${e.name}: accessible at ../${e.name}`);
-          }
-        }
-      }
-
-      if (siblingDetails.length > 0 && siblingDetails.length <= 20) {
-        siblings = siblingDetails;
-      }
-    }
-  } catch {
-  }
-
   return {
     cwd,
     isGit,
@@ -99,7 +61,6 @@ export function gatherContext(cwd: string = process.cwd()): AgentContext {
     platform: process.platform,
     date: new Date().toDateString(),
     repoMap,
-    siblings,
     skills,
     rules,
   };
@@ -111,11 +72,6 @@ export function buildSystemPrompt(ctx: AgentContext): string {
     `cwd: ${ctx.cwd}`,
     `platform: ${ctx.platform}`,
     ...(ctx.branch ? [`git: ${ctx.branch} (${ctx.gitStatus || "clean"})`] : []),
-    ...(ctx.siblings && ctx.siblings.length > 0
-      ? [
-          `siblings: ${ctx.siblings.map((s) => s.replace(/ \(contains:.*\)/, "")).join(" | ")}`,
-        ]
-      : []),
     ...(ctx.findings && ctx.findings.length > 0
       ? [`findings:\n${ctx.findings.map((f) => `- [${f.topic}] ${f.takeaway}`).join("\n")}`]
       : []),
@@ -129,6 +85,8 @@ export function buildSystemPrompt(ctx: AgentContext): string {
     ctx.activeSkills && ctx.activeSkills.length > 0 ? formatActiveSkills(ctx.activeSkills) : "";
 
   return [
+    "For code tasks, navigate with targeted search or outlines, then read the relevant implementation and tests in focused line ranges. Read more when behavior, call sites, or edge cases require it; an outline alone is not enough to make a change. Avoid broad recursive exploration, repeated reads, and unrelated files. Request independent read-only tools together in one assistant turn; do not serialize them across extra model turns. For a straightforward bug fix, make the smallest edit before testing; don't run a baseline test unless the user asks or you need it to distinguish a pre-existing failure. Then run the narrow relevant verification once and inspect its output. A successful edit result includes the applied diff, so don't reread that file or run git diff/status/log solely to verify it. If a test failure is clearly outside the requested scope, leave it untouched and report it. Don't repeat the same verification unless a relevant workspace change has occurred.",
+    "",
     ...(rulesBlock ? [rulesBlock] : []),
     ...(skillsManifest
       ? [

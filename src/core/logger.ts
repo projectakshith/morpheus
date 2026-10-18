@@ -5,6 +5,15 @@ import type { TokenUsage } from "./types";
 
 export const LOGS_DIR = path.join(os.homedir(), ".morpheus", "logs");
 
+function redactError(error: string): string {
+  return error
+    .replace(/(Bearer\s+)[^\s"',}]+/gi, "$1[REDACTED]")
+    .replace(/([?&](?:api[_-]?key|access[_-]?token|refresh[_-]?token|key|token)=)[^&\s]+/gi, "$1[REDACTED]")
+    .replace(/((?:api[_-]?key|access[_-]?token|refresh[_-]?token|password|secret)\s*["']?\s*[:=]\s*["']?)[^"',\s}]+/gi, "$1[REDACTED]")
+    .replace(/\b(?:sk-(?:ant-)?|AIza)[A-Za-z0-9_-]{12,}\b/g, "[REDACTED]")
+    .slice(0, 2000);
+}
+
 export class SessionLogger {
   private logPath: string = "";
   private latestPath: string = "";
@@ -84,8 +93,9 @@ export class SessionLogger {
     await this.flush();
   }
 
-  async logStopReason(reason: string) {
+  async logStopReason(reason: string, error?: string) {
     this.buffer.push(`[TURN OUTCOME] ${reason}`);
+    if (error) this.buffer.push(`[ERROR] ${redactError(error)}`);
     await this.flush();
   }
 
@@ -103,7 +113,10 @@ export class SessionLogger {
       `Token Usage: ${usage.promptTokens.toLocaleString()} in | ${usage.completionTokens.toLocaleString()} out | ${usage.totalTokens.toLocaleString()} total` +
         (usage.peakContextTokens
           ? ` | Peak Context: ${usage.peakContextTokens.toLocaleString()}/${usage.contextLimit ? usage.contextLimit.toLocaleString() : "?"}`
-          : ""),
+          : "") +
+        (usage.cachedInputTokens ? ` | Cached input: ${usage.cachedInputTokens.toLocaleString()}` : "") +
+        (usage.cacheCreationInputTokens ? ` | Cache writes: ${usage.cacheCreationInputTokens.toLocaleString()}` : "") +
+        (usage.reported === false ? " | Provider usage unavailable" : ""),
       "============================================================",
       "",
     ].join("\n");

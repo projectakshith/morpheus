@@ -38,11 +38,16 @@ export function createTools(
   onRecordFinding?: (finding: { topic: string; takeaway: string }) => void,
   skills?: Skill[],
   onActivateSkill?: (skill: Skill) => void,
-  options: { delegateTool?: ToolDefinition; access?: "readOnly" | "scopedWrite"; allowedWritePaths?: string[] } = {}
+  options: {
+    delegateTool?: ToolDefinition;
+    access?: "readOnly" | "scopedWrite";
+    allowedWritePaths?: string[];
+    readOutputBudgetBytes?: () => number;
+  } = {}
 ): Record<string, ToolDefinition> {
   const uplink = createUplinkTools();
   const tools: Record<string, ToolDefinition> = {
-    read_file: createReadTool(cwd),
+    read_file: createReadTool(cwd, options.readOutputBudgetBytes),
     write_file: createWriteTool(cwd, options.access !== "scopedWrite"),
     edit_file: createEditTool(cwd, options.access !== "scopedWrite"),
     bash: createBashTool(cwd),
