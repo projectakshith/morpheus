@@ -4,6 +4,8 @@
 
 a minimal, terminal-first autonomous coding harness. fast, aesthetic, and stays out of your way.
 
+<img width="1470" height="956" alt="morpheus" src="https://github.com/user-attachments/assets/8d19ebb9-520a-4ddc-9693-542004a8acc3" />
+
 ```
 M/  ●●  01    MORPHEUS
               agentic harness
