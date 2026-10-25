@@ -1,4 +1,5 @@
 import fs from "node:fs/promises";
+import { createHash } from "node:crypto";
 import { createPatch } from "diff";
 import { resolvePath, resolvePathWithFallbacks, exists, detectLineEnding, normalizeLineEndings } from "../utils/filesystem";
 import { similarity } from "../utils/levenshtein";
@@ -10,6 +11,7 @@ export interface EditFileParams {
   oldString: string;
   newString: string;
   replaceAll?: boolean;
+  expectedHash?: string;
 }
 
 /* Fallback fuzzy block finder when exact substring match fails.
@@ -66,6 +68,18 @@ export async function editFile(
   }
 
   const raw = await fs.readFile(fullPath, "utf-8");
+  const beforeHash = createHash("sha256").update(raw).digest("hex");
+
+  if (params.expectedHash) {
+    const cleanExpected = params.expectedHash.trim().toLowerCase();
+    const matches = beforeHash.toLowerCase().startsWith(cleanExpected);
+    if (!matches) {
+      throw new Error(
+        `Stale edit rejected: ${params.filePath} has changed on disk (expected ${cleanExpected}, current ${beforeHash.slice(0, cleanExpected.length)}). Re-read before editing.`
+      );
+    }
+  }
+
   const ending = detectLineEnding(raw);
   const normalized = normalizeLineEndings(raw);
   const normalizedOld = normalizeLineEndings(params.oldString);
@@ -110,14 +124,19 @@ export async function editFile(
     : updatedContent;
 
   await fs.writeFile(fullPath, finalContent, "utf-8");
+  const afterHash = createHash("sha256").update(finalContent).digest("hex");
 
   /* Generate clean unified diff */
   const patch = createPatch(params.filePath, raw, finalContent, "", "", { context: 3 });
   const patchLines = patch.split("\n").slice(4).join("\n").trim();
 
   return {
-    output: `Successfully applied edits to ${params.filePath}.\n\n${patchLines}`,
-    metadata: { changed: raw !== finalContent },
+    output: `Successfully applied edits to ${params.filePath} [${beforeHash.slice(0, 8)} -> ${afterHash.slice(0, 8)}].\n\n${patchLines}`,
+    metadata: {
+      changed: raw !== finalContent,
+      beforeHash: beforeHash.slice(0, 12),
+      afterHash: afterHash.slice(0, 12),
+    },
   };
 }
 
@@ -125,7 +144,7 @@ export function createEditTool(cwd: string = process.cwd(), allowFallback = true
   return {
     name: "edit_file",
     description:
-      "Perform exact string replacement in an existing file. Must have read the file before editing.",
+      "Perform exact string replacement in an existing file. Must have read the file before editing. Supports expectedHash for atomic concurrency checking.",
     parameters: {
       type: "object",
       properties: {
@@ -144,6 +163,10 @@ export function createEditTool(cwd: string = process.cwd(), allowFallback = true
         replaceAll: {
           type: "boolean",
           description: "Replace all occurrences (defaults to false)",
+        },
+        expectedHash: {
+          type: "string",
+          description: "Optional sha256 prefix of the file prior to editing. Rejects if file changed on disk.",
         },
       },
       required: ["filePath", "oldString", "newString"],

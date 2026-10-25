@@ -104,6 +104,20 @@ test("Tools: edit_file with exact match and fuzzy fallback", async (t) => {
     assert.match(updated, /return greeting.toUpperCase\(\);/);
   });
 
+  await t.test("atomic hash verification rejects stale target", async () => {
+    await assert.rejects(
+      async () => {
+        await editFile({
+          filePath: targetFile,
+          oldString: "const greeting = 'hello world';",
+          newString: "const greeting = 'hi';",
+          expectedHash: "deadbeef0000",
+        });
+      },
+      /Stale edit rejected/
+    );
+  });
+
   await fs.rm(tmpDir, { recursive: true, force: true });
 });
 
