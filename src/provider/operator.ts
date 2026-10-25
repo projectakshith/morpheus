@@ -322,7 +322,7 @@ export class Operator {
       stream_options: { include_usage: true },
     };
 
-    if (this.isLocal || this.baseURL.includes("localhost") || this.baseURL.includes("127.0.0.1")) {
+    if (this.isLocal) {
       payload.options = {
         num_ctx: this.numCtx,
       };
