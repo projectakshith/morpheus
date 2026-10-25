@@ -14,6 +14,12 @@ function bgHex(hex: string): string {
   return `\x1b[48;2;${r};${g};${b}m`;
 }
 
+function scaleHex(hex: string, factor: number): string {
+  const [r, g, b] = hexToRgb(hex);
+  const scale = (value: number) => Math.max(0, Math.min(255, Math.round(value * factor)));
+  return `#${[scale(r), scale(g), scale(b)].map((value) => value.toString(16).padStart(2, "0")).join("")}`;
+}
+
 const HERO_STOPS: Array<[number, [number, number, number]]> = [
   [0.00, [ 24,  28,  22]],
   [0.18, [ 36,  48,  30]],
@@ -360,30 +366,45 @@ export function buildHeroFeedLines(width: number, totalLines: number, quote?: st
 
   const accent = hexToRgb(theme.accentBright);
   const accentDeep = hexToRgb(theme.accent);
-  const feedBg = bgHex(theme.bgFeed);
+  const accentBase = hexToRgb(theme.accent);
+  const attackness = Math.max(0, Math.min(1, (accentBase[0] - accentBase[1]) / 120));
+  const tintStrength = 0.55 * attackness;
+  const themed = attackness > 0.01;
+  const feedBg = bgHex(themed ? scaleHex(theme.bgFeed, 0.55) : "#0c100d");
+  const textBg = themed ? feedBg : bgHex("#0e120f");
+  const emptyFg = fgHex(themed ? scaleHex(theme.bgFeed, 0.8) : "#161c17");
+  const titleColor = themed ? theme.text : "#ffeed2";
+  const accentColor = themed ? theme.accentBright : "#a5f087";
+  const numberColor = themed ? theme.secondary : "#dacca7";
+  const quoteColor = themed ? theme.muted : "#dacca7";
   const tintPixel = (r: number, g: number, b: number): [number, number, number] => {
     const lum = (0.299 * r + 0.587 * g + 0.114 * b) / 255;
-    const t = Math.max(0.12, Math.min(1, lum * 1.25));
+    const t = Math.max(0, Math.min(1, lum * 1.15));
+    const target: [number, number, number] = [
+      accentDeep[0] + (accent[0] - accentDeep[0]) * t,
+      accentDeep[1] + (accent[1] - accentDeep[1]) * t,
+      accentDeep[2] + (accent[2] - accentDeep[2]) * t,
+    ];
     return [
-      Math.round(accentDeep[0] + (accent[0] - accentDeep[0]) * t),
-      Math.round(accentDeep[1] + (accent[1] - accentDeep[1]) * t),
-      Math.round(accentDeep[2] + (accent[2] - accentDeep[2]) * t),
+      Math.round(r * (1 - tintStrength) + target[0] * tintStrength),
+      Math.round(g * (1 - tintStrength) + target[1] * tintStrength),
+      Math.round(b * (1 - tintStrength) + target[2] * tintStrength),
     ];
   };
 
   textRows[topPad + 0] = [
-    { text: "M/ ", color: fgHex(theme.text, false, true) },
-    { text: "●● ", color: fgHex(theme.accentBright, false, true) },
-    { text: "01", color: fgHex(theme.secondary, false, true) },
+    { text: "M/ ", color: fgHex(titleColor, false, true) },
+    { text: "●● ", color: fgHex(accentColor, false, true) },
+    { text: "01", color: fgHex(numberColor, false, true) },
   ];
   textRows[topPad + 1] = [
-    { text: "▰ ", color: fgHex(theme.accentBright, false, true) },
-    { text: "morpheus", color: fgHex(theme.text, false, true) },
+    { text: "▰ ", color: fgHex(accentColor, false, true) },
+    { text: "morpheus", color: fgHex(titleColor, false, true) },
   ];
   if (topPad + 3 < H) {
     const maxQuoteLen = Math.max(15, Math.floor(W * 0.45));
     const dispQuote = rawQuote.length > maxQuoteLen ? rawQuote.slice(0, maxQuoteLen - 3) + "..." : rawQuote;
-    textRows[topPad + 3] = [{ text: `"${dispQuote}"`, color: fgHex(theme.muted, true) }];
+    textRows[topPad + 3] = [{ text: `"${dispQuote}"`, color: fgHex(quoteColor, true) }];
   }
 
   for (let y = 0; y < H; y++) {
@@ -403,17 +424,17 @@ export function buildHeroFeedLines(width: number, totalLines: number, quote?: st
         let [r, g, b] = tintPixel(pixel.r, pixel.g, pixel.b);
 
         if (srcX < 48) {
-          const dim = 0.45 + 0.35 * Math.max(0, (srcX - 15) / 33);
+          const dim = 0.16 + 0.22 * Math.max(0, (srcX - 15) / 33);
           r = Math.floor(r * dim);
           g = Math.floor(g * dim);
           b = Math.floor(b * dim);
         } else if (srcX <= 82 && [":", "-", "+", ".", "*", "\\", "/", "=", "`"].includes(pixel.char)) {
           const lum = 0.299 * r + 0.587 * g + 0.114 * b;
           if (lum > 25) {
-            const boost = Math.min(1.2, 160 / Math.max(1, lum));
-            r = Math.min(255, Math.floor(r * boost));
+            const boost = Math.min(1.35, 180 / Math.max(1, lum));
+            r = Math.min(240, Math.floor(r * boost));
             g = Math.min(255, Math.floor(g * boost));
-            b = Math.min(255, Math.floor(b * boost));
+            b = Math.min(240, Math.floor(b * boost));
           }
         }
 
@@ -425,7 +446,7 @@ export function buildHeroFeedLines(width: number, totalLines: number, quote?: st
       } else {
         rowCells.push({
           ch: " ",
-          fg: fgHex(theme.bg),
+          fg: emptyFg,
           bg: feedBg,
         });
       }
@@ -439,7 +460,7 @@ export function buildHeroFeedLines(width: number, totalLines: number, quote?: st
 
       for (let px = startX; px < endX; px++) {
         rowCells[px].ch = " ";
-        rowCells[px].bg = feedBg;
+        rowCells[px].bg = textBg;
       }
 
       let curX = startX + 1;
@@ -448,7 +469,7 @@ export function buildHeroFeedLines(width: number, totalLines: number, quote?: st
           if (curX < W) {
             rowCells[curX].ch = seg.text[i];
             rowCells[curX].fg = seg.color;
-            rowCells[curX].bg = feedBg;
+            rowCells[curX].bg = textBg;
             curX++;
           }
         }
