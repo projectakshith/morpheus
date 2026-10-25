@@ -191,6 +191,7 @@ export class SessionHost {
       },
       setThreads: (action) => target.writeThreads(action),
       setPromptHistory: () => {},
+      cwd: this.state.cwd,
       threadsCount: this.state.threads.length,
       sessionId: this.id,
       sessionTitle: this.state.title,
@@ -348,9 +349,8 @@ export class SessionHost {
     };
 
     let outcome: "completed" | "aborted" | "error" = "completed";
-    const securityScope = getSecuritySession().active
-      ? await loadEngagement(this.state.cwd)
-      : null;
+    const securityActive = getSecuritySession().active;
+    const securityScope = securityActive ? await loadEngagement(this.state.cwd) : null;
     try {
       const result = await this.deps.runAgent(prompt, this.history, {
         cwd: this.state.cwd,
@@ -366,7 +366,7 @@ export class SessionHost {
         persistentMcp: true,
         sessionId: this.state.id,
         findings: this.state.findings,
-        security: securityScope ? { engagement: securityScope } : undefined,
+        security: securityActive ? { engagement: securityScope } : undefined,
         onPermissionRequest: (request) => new Promise((resolve) => {
           this.permissionWaiters.set(request.id, resolve);
           this.permissionCancels.set(request.id, request.cancel);

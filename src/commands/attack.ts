@@ -7,7 +7,11 @@ import {
   loadEngagement,
   saveEngagement,
 } from "../core/engagement";
-import { activateSecuritySession, deactivateSecuritySession } from "../core/securitySession";
+import {
+  activateSecuritySession,
+  beginSecuritySession,
+  deactivateSecuritySession,
+} from "../core/securitySession";
 import { formatError } from "../utils/errors";
 
 const USAGE = [
@@ -74,12 +78,17 @@ export class AttackCommand implements CommandHandler {
   }
 
   public async execute(trimmed: string, ctx: CommandContext): Promise<boolean> {
+    const cwd = ctx.cwd ?? process.cwd();
     const args = parseArgs(trimmed.trim().split(/\s+/).slice(1));
 
     if (args.status) {
-      const engagement = await loadEngagement(process.cwd());
+      const engagement = await loadEngagement(cwd);
       if (!engagement) {
-        addThread(ctx, "No engagement scope in this workspace. Run `/attack <host> --auth <reference>`.");
+        beginSecuritySession();
+        addThread(
+          ctx,
+          `attack mode active, but no scope is published. Run \`/attack <host> --auth <reference>\` before any network action.`
+        );
         return true;
       }
       activateSecuritySession(engagement);
@@ -91,14 +100,36 @@ export class AttackCommand implements CommandHandler {
           `hosts: ${engagement.allowedHosts.join(", ")}`,
           `methods: ${engagement.allowedMethods.join(", ")} · ${engagement.maxRequestsPerSecond} rps`,
           `expires: ${engagement.expiresAt.slice(0, 10)}`,
-          `file: ${path.relative(process.cwd(), engagementPath(process.cwd()))}`,
+          `file: ${path.relative(cwd, engagementPath(cwd))}`,
         ].join("\n")
       );
       return true;
     }
 
     if (!args.target || !args.auth) {
-      addThread(ctx, USAGE);
+      const existing = args.target ? null : await loadEngagement(cwd);
+      if (existing) {
+        activateSecuritySession(existing);
+        addThread(
+          ctx,
+          [
+            `attack mode resumed for **${existing.target}**`,
+            `authorized by: ${existing.authorizedBy}`,
+            `methods: ${existing.allowedMethods.join(", ")} · ${existing.maxRequestsPerSecond} rps`,
+            `expires: ${existing.expiresAt.slice(0, 10)}`,
+            "",
+            USAGE,
+          ].join("\n")
+        );
+        return true;
+      }
+      beginSecuritySession(args.target || undefined);
+      addThread(
+        ctx,
+        args.target
+          ? `attack mode active for **${args.target}**, but no authorization reference was given, so no scope was written.\n\n${USAGE}`
+          : `attack mode active. No scope yet, so network actions stay blocked.\n\n${USAGE}`
+      );
       return true;
     }
 
@@ -110,7 +141,7 @@ export class AttackCommand implements CommandHandler {
         maxRequestsPerSecond: args.rps,
         days: args.days,
       });
-      await saveEngagement(engagement, process.cwd());
+      await saveEngagement(engagement, cwd);
       activateSecuritySession(engagement);
       addThread(
         ctx,
@@ -119,7 +150,7 @@ export class AttackCommand implements CommandHandler {
           `authorized by: ${engagement.authorizedBy}`,
           `methods: ${engagement.allowedMethods.join(", ")} · ${engagement.maxRequestsPerSecond} rps`,
           `expires: ${engagement.expiresAt.slice(0, 10)}`,
-          `scope file: ${path.relative(process.cwd(), engagementPath(process.cwd()))}`,
+          `scope file: ${path.relative(cwd, engagementPath(cwd))}`,
           "",
           "The coordinator loads `security-engagement`. Recon runs through `security_recon`; raw responses stay in the evidence folder.",
           `Next: describe the target, for example \"map ${engagement.target} and report access-control gaps\".`,
@@ -142,10 +173,11 @@ export class NormalCommand implements CommandHandler {
   }
 
   public async execute(trimmed: string, ctx: CommandContext): Promise<boolean> {
+    const cwd = ctx.cwd ?? process.cwd();
     deactivateSecuritySession();
     addThread(
       ctx,
-      `returned to coding mode. The engagement scope is still at \`${path.relative(process.cwd(), engagementPath(process.cwd()))}\` for the audit trail.`
+      `returned to coding mode. The engagement scope is still at \`${path.relative(cwd, engagementPath(cwd))}\` for the audit trail.`
     );
     return true;
   }

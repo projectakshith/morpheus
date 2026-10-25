@@ -2,6 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import {
   activateSecuritySession,
+  beginSecuritySession,
   deactivateSecuritySession,
   getSecuritySession,
   setSecuritySession,
@@ -26,6 +27,17 @@ test("security session activates and deactivates", () => {
     target: undefined,
     engagementId: undefined,
   });
+});
+
+test("attack mode can begin before a scope exists", () => {
+  deactivateSecuritySession();
+  beginSecuritySession("example.edu");
+  assert.deepEqual(getSecuritySession(), {
+    active: true,
+    target: "example.edu",
+    engagementId: undefined,
+  });
+  deactivateSecuritySession();
 });
 
 test("subscribers receive updates", () => {

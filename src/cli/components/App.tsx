@@ -575,6 +575,7 @@ export function App({
                   threads={threads}
                   findings={findings}
                   engagement={engagement}
+                  target={security.target}
                 />
               ) : (
                 <DiffColumn
@@ -634,7 +635,9 @@ export function App({
               ? ` [${queuedCount} queued] type prompt to queue or run /command...`
               : " agent working · type prompt to queue or run /command..."
             : security.active
-            ? ` attack · describe the next step against ${security.target ?? "the target"}...`
+            ? security.target
+              ? ` attack · describe the next step against ${security.target}...`
+              : " attack · /attack <host> --auth <reference> to declare a scope..."
             : undefined
         }
         history={promptHistory}

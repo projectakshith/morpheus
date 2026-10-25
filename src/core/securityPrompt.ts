@@ -15,6 +15,15 @@ export function formatEngagementBlock(engagement: Engagement): string {
   ].join("\n");
 }
 
+export function formatPendingScopeBlock(): string {
+  return [
+    '<engagement mode="attack">',
+    "No engagement scope is published for this workspace.",
+    "Do not probe, scan, or send traffic to any host. Tell the operator to run `/attack <host> --auth <reference>` before any network action.",
+    "</engagement>",
+  ].join("\n");
+}
+
 export function withSecurityRouter(
   available: Skill[],
   matched: Skill[],

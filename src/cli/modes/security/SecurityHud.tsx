@@ -19,6 +19,7 @@ export interface SecurityHudProps {
   threads: Thread[];
   findings: Finding[];
   engagement: Engagement | null;
+  target?: string;
 }
 
 function sectionLabel(text: string, width: number): React.ReactNode {
@@ -38,7 +39,7 @@ function padded(text: string, width: number, color: string, bold = false): React
   );
 }
 
-export function SecurityHud({ width, height, threads, findings, engagement }: SecurityHudProps) {
+export function SecurityHud({ width, height, threads, findings, engagement, target }: SecurityHudProps) {
   const inner = Math.max(18, width - 1);
   const phase = securityPhase(threads);
   const counts = severityCounts(findings);
@@ -48,7 +49,7 @@ export function SecurityHud({ width, height, threads, findings, engagement }: Se
 
   lines.push(padded("SECURITY", inner, theme.accentBright, true));
   lines.push(sectionLabel("TARGET", inner));
-  lines.push(padded(scope?.target ?? "no scope", inner, theme.text));
+  lines.push(padded(scope?.target ?? target ?? "no scope", inner, theme.text));
   if (scope) {
     lines.push(
       padded(

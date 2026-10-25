@@ -8,6 +8,7 @@ import type { ChatMessage, Finding, TokenUsage } from "../core/types";
 
 export interface CommandContext {
   taskText: string;
+  cwd?: string;
   baseURL: string;
   currentModel: string;
   setCurrentModel: (model: string) => void;

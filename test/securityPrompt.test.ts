@@ -3,7 +3,11 @@ import assert from "node:assert/strict";
 import type { Skill } from "../src/core/types";
 import { createEngagement } from "../src/core/engagement";
 import { buildSystemPrompt } from "../src/core/context";
-import { formatEngagementBlock, withSecurityRouter } from "../src/core/securityPrompt";
+import {
+  formatEngagementBlock,
+  formatPendingScopeBlock,
+  withSecurityRouter,
+} from "../src/core/securityPrompt";
 
 const engagement = createEngagement(
   {
@@ -28,6 +32,13 @@ test("the engagement block carries scope and a sticky directive", () => {
   assert.match(block, /allowed methods: GET, HEAD/);
   assert.match(block, /max requests per second: 4/);
   assert.match(block, /Every user message in this session is a task/);
+});
+
+test("pending attack mode blocks network work", () => {
+  const block = formatPendingScopeBlock();
+  assert.match(block, /No engagement scope is published/);
+  assert.match(block, /Do not probe, scan, or send traffic/);
+  assert.match(block, /\/attack <host> --auth <reference>/);
 });
 
 test("security mode replaces the coding prompt", () => {

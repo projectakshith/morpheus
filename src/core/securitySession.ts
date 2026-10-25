@@ -35,6 +35,10 @@ export function activateSecuritySession(engagement: Engagement): void {
   });
 }
 
+export function beginSecuritySession(target?: string): void {
+  setSecuritySession({ active: true, target, engagementId: undefined });
+}
+
 export function deactivateSecuritySession(): void {
   setSecuritySession({ active: false, target: undefined, engagementId: undefined });
 }

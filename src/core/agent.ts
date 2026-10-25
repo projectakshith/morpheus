@@ -5,7 +5,7 @@ import { createMcpTools } from "../tools/mcp";
 import { Operator } from "../provider/operator";
 import { gatherContext, buildSystemPrompt, securitySkillsEnabled } from "./context";
 import { classifyRefusal, shouldRecover } from "./refusal";
-import { formatEngagementBlock, withSecurityRouter } from "./securityPrompt";
+import { formatEngagementBlock, formatPendingScopeBlock, withSecurityRouter } from "./securityPrompt";
 import { compactHistory, dropOldToolVisuals } from "./compaction";
 import { SessionLogger } from "./logger";
 import { isToolError, formatError } from "../utils/errors";
@@ -153,13 +153,14 @@ export async function runAgent(
     if (findings.length > MAX_FINDINGS) findings.splice(0, findings.length - MAX_FINDINGS);
   };
   for (const finding of options.findings ?? []) rememberFinding(finding);
-  const securityEngagement = options.security?.engagement;
+  const securityMode = Boolean(options.security);
+  const securityEngagement = options.security?.engagement ?? null;
   const baseContext = gatherContext(cwd);
   const matchedSkills = matchSkills(prompt, baseContext.skills ?? []);
   const activeSkills: Skill[] = withSecurityRouter(
     baseContext.skills ?? [],
     matchedSkills,
-    Boolean(securityEngagement)
+    securityMode
   );
   let promptTokens = 0;
   let completionTokens = 0;
@@ -281,13 +282,17 @@ export async function runAgent(
   const buildRunSystemPrompt = () => {
     const systemPrompt = buildSystemPrompt({
       ...baseContext,
-      mode: securityEngagement ? "security" : "coding",
+      mode: securityMode ? "security" : "coding",
       findings: [...findings],
       activeSkills: [...activeSkills],
     });
     const notes: string[] = [];
-    if (securityEngagement) {
-      notes.push(formatEngagementBlock(securityEngagement));
+    if (securityMode) {
+      notes.push(
+        securityEngagement
+          ? formatEngagementBlock(securityEngagement)
+          : formatPendingScopeBlock()
+      );
     }
     if (Object.keys(mcp.tools).length > 0) {
       notes.push("For every MCP call, follow that tool's input schema: provide every required field using the user's request, schema defaults, or prior tool results. Make one MCP call at a time so later calls can use earlier results. Do not guess fields that lack evidence; skip that tool when a required value cannot be grounded.");

@@ -165,7 +165,7 @@ export interface AgentOptions {
   verbose?: boolean;
   /** Full access bypasses all action approval prompts. */
   permissionMode?: PermissionMode;
-  security?: { engagement: Engagement };
+  security?: { engagement: Engagement | null };
 }
 
 export type SubagentRole = "explore" | "review" | "implement";
