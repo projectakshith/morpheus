@@ -2,7 +2,9 @@ export async function checkProviderAuth(model: string, baseURL?: string): Promis
   try {
     const neoBase = baseURL || "http://127.0.0.1:8787/v1";
     let providerId = "antigravity";
-    if (
+    if (model.startsWith("opencode/") || model.startsWith("opencode-go/")) {
+      providerId = "opencode";
+    } else if (
       model.startsWith("cloud/") ||
       model.startsWith("openrouter/") ||
       model.includes("space-bunny") ||
@@ -29,6 +31,8 @@ export async function checkProviderAuth(model: string, baseURL?: string): Promis
       fixHint = "Run `/login antigravity` to authenticate via Google OAuth.";
     } else if (providerId === "local") {
       fixHint = "Ensure Ollama is running (`ollama serve`) or run `/login local`.";
+    } else if (providerId === "opencode") {
+      fixHint = "Create an OpenCode Console API key and run `/login opencode <api-key>`. Console OAuth is for MCP, not inference.";
     }
     return `## Authentication Required for ${authData.name || providerId}\n\n${authData.error || "Provider is not authenticated."}\n\n*${fixHint}*`;
   } catch {

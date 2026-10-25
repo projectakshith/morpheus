@@ -22,7 +22,7 @@ export interface ModelOption {
   id: string;
   name: string;
   description: string;
-  category: "claude" | "codex" | "antigravity" | "local" | "cloud";
+  category: "claude" | "codex" | "antigravity" | "local" | "cloud" | "opencode";
   providerName: string;
   contextLimit: string;
   costTier: string;
@@ -32,6 +32,30 @@ export interface ModelOption {
 }
 
 export const AVAILABLE_MODELS: ModelOption[] = [
+  {
+    id: "opencode/deepseek-v4.1-flash",
+    name: "opencode/deepseek-v4.1-flash",
+    description: "DeepSeek V4.1 Flash through OpenCode Console pay-as-you-go",
+    category: "opencode",
+    providerName: "OpenCode Console",
+    contextLimit: "provider catalog",
+    costTier: "API key and workspace balance required",
+    rateLimit: "account limits apply",
+    badge: "console · deepseek flash",
+    speed: "fast",
+  },
+  {
+    id: "opencode-go/deepseek-v4.1-flash",
+    name: "opencode-go/deepseek-v4.1-flash",
+    description: "DeepSeek V4.1 Flash through the OpenCode Go subscription API",
+    category: "opencode",
+    providerName: "OpenCode Go",
+    contextLimit: "provider catalog",
+    costTier: "Go subscription and Console API key required",
+    rateLimit: "account limits apply",
+    badge: "go · deepseek flash",
+    speed: "fast",
+  },
   /* Claude (Anthropic Pro Direct Inference) */
   {
     id: "claude/claude-opus-5-5",
@@ -393,7 +417,7 @@ export interface ModelSelectorProps {
   usage?: TokenUsage;
 }
 
-export type CategoryKey = "claude" | "codex" | "antigravity" | "local" | "cloud";
+export type CategoryKey = "claude" | "codex" | "antigravity" | "local" | "cloud" | "opencode";
 
 const CATEGORY_TABS: Array<{ key: CategoryKey; label: string; num: string }> = [
   { key: "claude", label: "claude pro", num: "1" },
@@ -401,6 +425,7 @@ const CATEGORY_TABS: Array<{ key: CategoryKey; label: string; num: string }> = [
   { key: "antigravity", label: "antigravity", num: "3" },
   { key: "local", label: "local (free)", num: "4" },
   { key: "cloud", label: "cloud (free)", num: "5" },
+  { key: "opencode", label: "opencode", num: "6" },
 ];
 
 function getInitialCategory(modelId: string, modelList: ModelOption[]): CategoryKey {
@@ -412,6 +437,7 @@ function getInitialCategory(modelId: string, modelList: ModelOption[]): Category
   if (modelId.startsWith("codex/")) return "codex";
   if (modelId.startsWith("local/")) return "local";
   if (modelId.startsWith("cloud/")) return "cloud";
+  if (modelId.startsWith("opencode/") || modelId.startsWith("opencode-go/")) return "opencode";
   return "antigravity";
 }
 
@@ -488,6 +514,7 @@ export function ModelSelector({
     if (input === "3") { switchTab("antigravity"); return; }
     if (input === "4") { switchTab("local"); return; }
     if (input === "5") { switchTab("cloud"); return; }
+    if (input === "6") { switchTab("opencode"); return; }
     if (input === "0" && onInherit) { onInherit(); return; }
 
     /* Cycle tabs with Tab, Right Arrow, Left Arrow */

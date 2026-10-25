@@ -12,6 +12,7 @@ const VALID_SUBCOMMANDS = [
   "google",
   "openrouter",
   "or",
+  "opencode",
   "local",
   "ollama",
 ];
@@ -19,7 +20,7 @@ const VALID_SUBCOMMANDS = [
 export class LoginCommand implements CommandHandler {
   public readonly name = "login";
   public readonly description =
-    "authenticate provider credentials (claude, codex, antigravity, openrouter, local)";
+    "authenticate provider credentials (claude, codex, antigravity, openrouter, opencode, local)";
   public readonly aliases = ["/login"];
 
   public matches(trimmed: string): boolean {
@@ -41,6 +42,7 @@ export class LoginCommand implements CommandHandler {
         "  /login codex [token]         chatgpt plus / pro / team session",
         "  /login antigravity           google cloud code browser oauth",
         "  /login openrouter <api-key>  openrouter api key",
+        "  /login opencode <api-key>  OpenCode Console inference key (Zen/Go)",
         "  /login local [base-url]      local ollama server (default: http://127.0.0.1:11434)",
         "  /auth                        view real-time status across all providers",
       ].join("\n");
@@ -106,6 +108,12 @@ export class LoginCommand implements CommandHandler {
       }
       requestBody = { provider: "openrouter", apiKey: arg };
       initialMessage = "validating openrouter api key...";
+    } else if (subCommand === "opencode") {
+      targetProvider = "opencode";
+      requestBody = { provider: "opencode", apiKey: arg || undefined };
+      initialMessage = arg
+        ? "saving OpenCode Console inference API key..."
+        : "checking OpenCode Console inference API-key status...";
     } else if (subCommand === "local" || subCommand === "ollama") {
       targetProvider = "local";
       requestBody = { provider: "local", baseUrl: arg || undefined };
@@ -178,6 +186,8 @@ export class LoginCommand implements CommandHandler {
         } else if (targetProvider === "openrouter") {
           const maskedKey = identity || "sk-or-v1-***";
           successMessage = `openrouter api key validated: \`${maskedKey}\`\ncredentials saved to macos keychain.`;
+        } else if (targetProvider === "opencode") {
+          successMessage = `OpenCode inference API key saved: \`${identity}\`. The provider will validate access on your next request.`;
         } else if (targetProvider === "local") {
           const count = (details?.count as number) || 0;
           successMessage = `local runtime connected at \`${identity}\`: ${count} models discovered.`;

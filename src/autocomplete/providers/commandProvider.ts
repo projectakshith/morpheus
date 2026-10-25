@@ -22,7 +22,7 @@ const BUILTIN_COMMANDS: CommandDef[] = [
   { name: "/settings", description: "Open runtime configuration settings" },
   { name: "/session", description: "Show current session or start /session new", hasArgs: true },
   { name: "/sessions", description: "Browse and resume past sessions" },
-  { name: "/login", description: "Authenticate provider (antigravity, openrouter)", hasArgs: true },
+  { name: "/login", description: "Authenticate provider (antigravity, openrouter, opencode)", hasArgs: true },
   { name: "/auth", description: "Check authentication status of providers" },
   { name: "/neo", description: "Open Neo proxy router inspector and status window", aliases: ["/neo-status", "/status"] },
   { name: "/usage", description: "Open token usage, quotas, and model pricing dashboard", aliases: ["/tokens", "/cost", "/quota"] },
@@ -44,6 +44,8 @@ const DEFAULT_MODELS = [
   "local/deepseek-r1:8b",
   "cloud/anthropic/claude-3.5-sonnet",
   "cloud/openai/gpt-4o",
+  "opencode/deepseek-v4.1-flash",
+  "opencode-go/deepseek-v4.1-flash",
 ];
 
 export function getCommandSuggestions(ctx: AutocompleteContext): SuggestionItem[] {
@@ -77,6 +79,7 @@ export function getCommandSuggestions(ctx: AutocompleteContext): SuggestionItem[
     const providers = [
       { name: "antigravity", desc: "Google Cloud Code Keychain/OAuth" },
       { name: "openrouter", desc: "OpenRouter API Key authentication" },
+      { name: "opencode", desc: "OpenCode Console inference API key" },
     ];
 
     return providers

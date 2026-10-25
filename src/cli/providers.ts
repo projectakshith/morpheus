@@ -1,4 +1,4 @@
-export type ProviderKey = "claude" | "codex" | "antigravity" | "local" | "cloud";
+export type ProviderKey = "claude" | "codex" | "antigravity" | "local" | "cloud" | "opencode";
 
 export const PROVIDERS: Array<{ key: ProviderKey; label: string }> = [
   { key: "claude", label: "claude" },
@@ -6,6 +6,7 @@ export const PROVIDERS: Array<{ key: ProviderKey; label: string }> = [
   { key: "antigravity", label: "antigravity" },
   { key: "local", label: "local" },
   { key: "cloud", label: "openrouter" },
+  { key: "opencode", label: "opencode" },
 ];
 
 export function providerLabel(key: ProviderKey): string {
@@ -19,5 +20,6 @@ export function providerOf(modelId: string, catalog?: Array<{ id: string; catego
   if (modelId.startsWith("codex/")) return "codex";
   if (modelId.startsWith("local/")) return "local";
   if (modelId.startsWith("cloud/")) return "cloud";
+  if (modelId.startsWith("opencode/") || modelId.startsWith("opencode-go/")) return "opencode";
   return "antigravity";
 }

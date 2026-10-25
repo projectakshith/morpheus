@@ -68,6 +68,8 @@ export class AuthCommand implements CommandHandler {
                 hint = "run `/login antigravity`";
               } else if (p.provider === "openrouter") {
                 hint = "run `/login openrouter <api-key>`";
+              } else if (p.provider === "opencode") {
+                hint = "create an OpenCode Console API key, then run `/login opencode <api-key>`";
               } else if (p.provider === "local") {
                 hint = "start ollama (`ollama serve`) or `/login local [url]`";
               }
