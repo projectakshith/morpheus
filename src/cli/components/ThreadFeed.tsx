@@ -132,6 +132,11 @@ export function getCoolActionLabel(step?: ThreadStep, cwd: string = process.cwd(
         : `probing link${timeSuffix}`;
     }
 
+    case "security_state": {
+      const action = typeof args.action === "string" ? args.action.replace(/_/g, " ") : "ledger";
+      return `ledger: ${action}${timeSuffix}`;
+    }
+
     case "uplink_search": {
       const query = typeof args.query === "string" ? args.query : "";
       const cleanQuery = query.length > 24 ? `${query.slice(0, 22)}…` : query;

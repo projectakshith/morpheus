@@ -319,6 +319,8 @@ export function getToolBadge(name?: string): ToolBadgeInfo {
       return { label: "FINDING", color: t.accentBright };
     case "security_recon":
       return { label: "RECON", color: t.warning };
+    case "security_state":
+      return { label: "STATE", color: t.accentBright };
     default:
       return { label: (name || "TOOL").toUpperCase().slice(0, 7), color: t.muted };
   }

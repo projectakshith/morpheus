@@ -35,6 +35,7 @@ function getToolIcon(toolName: string): string {
     case "uplink_browse":
       return glyphs.network;
     case "record_finding":
+    case "security_state":
       return glyphs.brain;
     case "load_skill":
       return glyphs.skill;

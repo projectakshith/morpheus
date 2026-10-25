@@ -103,6 +103,17 @@ function rowFor(step: ThreadStep): ProbeRow | null {
       isError: Boolean(step.isError),
     };
   }
+  if (step.name === "security_state") {
+    const action = String(step.args?.action ?? "ledger").replace(/_/g, " ");
+    return {
+      id: step.id,
+      label: `ledger ${action}`,
+      status: statusOf(step),
+      note: firstLine(step.output ?? step.outputSummary),
+      isRunning: Boolean(step.isRunning),
+      isError: Boolean(step.isError),
+    };
+  }
   if (step.name === "record_finding") {
     const severity = String(step.args?.severity ?? "finding").toUpperCase();
     const endpoint = String(step.args?.endpoint ?? step.args?.topic ?? "");
