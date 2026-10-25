@@ -20,6 +20,15 @@ function scaleHex(hex: string, factor: number): string {
   return `#${[scale(r), scale(g), scale(b)].map((value) => value.toString(16).padStart(2, "0")).join("")}`;
 }
 
+function mixHex(from: string, to: string, t: number): string {
+  const a = hexToRgb(from);
+  const b = hexToRgb(to);
+  const mix = (left: number, right: number) => Math.max(0, Math.min(255, Math.round(left + (right - left) * t)));
+  return `#${[mix(a[0], b[0]), mix(a[1], b[1]), mix(a[2], b[2])]
+    .map((value) => value.toString(16).padStart(2, "0"))
+    .join("")}`;
+}
+
 const HERO_STOPS: Array<[number, [number, number, number]]> = [
   [0.00, [ 24,  28,  22]],
   [0.18, [ 36,  48,  30]],
@@ -358,37 +367,30 @@ export function buildHeroFeedLines(width: number, totalLines: number, quote?: st
   const rawQuote = quote || MATRIX_QUOTES[0];
 
   const lines: FeedLine[] = [];
-  const midY = Math.floor(H / 2);
   const artAnchorX = W >= 70 ? Math.floor(W * 0.62) : Math.floor(W / 2);
 
   const textRows: Record<number, Array<{ text: string; color: string }>> = {};
   const topPad = Math.max(0, Math.floor((H - 4) / 2));
 
-  const accent = hexToRgb(theme.accentBright);
-  const accentDeep = hexToRgb(theme.accent);
   const accentBase = hexToRgb(theme.accent);
   const attackness = Math.max(0, Math.min(1, (accentBase[0] - accentBase[1]) / 120));
-  const tintStrength = 0.55 * attackness;
-  const themed = attackness > 0.01;
-  const feedBg = bgHex(themed ? scaleHex(theme.bgFeed, 0.55) : "#0c100d");
-  const textBg = themed ? feedBg : bgHex("#0e120f");
-  const emptyFg = fgHex(themed ? scaleHex(theme.bgFeed, 0.8) : "#161c17");
-  const titleColor = themed ? theme.text : "#ffeed2";
-  const accentColor = themed ? theme.accentBright : "#a5f087";
-  const numberColor = themed ? theme.secondary : "#dacca7";
-  const quoteColor = themed ? theme.muted : "#dacca7";
-  const tintPixel = (r: number, g: number, b: number): [number, number, number] => {
-    const lum = (0.299 * r + 0.587 * g + 0.114 * b) / 255;
-    const t = Math.max(0, Math.min(1, lum * 1.15));
-    const target: [number, number, number] = [
-      accentDeep[0] + (accent[0] - accentDeep[0]) * t,
-      accentDeep[1] + (accent[1] - accentDeep[1]) * t,
-      accentDeep[2] + (accent[2] - accentDeep[2]) * t,
-    ];
+  const heroBg = scaleHex(theme.bgFeed, 0.55);
+  const feedBg = bgHex(mixHex("#0c100d", heroBg, attackness));
+  const textBg = bgHex(mixHex("#0e120f", heroBg, attackness));
+  const emptyFg = fgHex(mixHex("#161c17", scaleHex(theme.bgFeed, 0.8), attackness));
+  const titleColor = mixHex("#ffeed2", theme.text, attackness);
+  const accentColor = mixHex("#a5f087", theme.accentBright, attackness);
+  const numberColor = mixHex("#dacca7", theme.secondary, attackness);
+  const quoteColor = mixHex("#dacca7", theme.muted, attackness);
+  const warmPixel = (r: number, g: number, b: number): [number, number, number] => {
+    if (attackness <= 0) return [r, g, b];
+    const redBoost = 52 * attackness;
+    const greenCut = 0.32 * attackness;
+    const blueCut = 0.42 * attackness;
     return [
-      Math.round(r * (1 - tintStrength) + target[0] * tintStrength),
-      Math.round(g * (1 - tintStrength) + target[1] * tintStrength),
-      Math.round(b * (1 - tintStrength) + target[2] * tintStrength),
+      Math.min(255, Math.round(r + redBoost)),
+      Math.round(g * (1 - greenCut)),
+      Math.round(b * (1 - blueCut)),
     ];
   };
 
@@ -408,7 +410,7 @@ export function buildHeroFeedLines(width: number, totalLines: number, quote?: st
   }
 
   for (let y = 0; y < H; y++) {
-    const srcY = 25 + (y - midY);
+    const srcY = y;
 
     interface Cell {
       ch: string;
@@ -421,7 +423,7 @@ export function buildHeroFeedLines(width: number, totalLines: number, quote?: st
       const srcX = 60 + (x - artAnchorX);
       const pixel = getMorpheusPixel(srcX, srcY);
       if (pixel && pixel.char !== " ") {
-        let [r, g, b] = tintPixel(pixel.r, pixel.g, pixel.b);
+        let [r, g, b] = warmPixel(pixel.r, pixel.g, pixel.b);
 
         if (srcX < 48) {
           const dim = 0.16 + 0.22 * Math.max(0, (srcX - 15) / 33);

@@ -216,7 +216,7 @@ export function buildThreadFeedLines({
 }: BuildFeedOptions): FeedLine[] {
   const lines: FeedLine[] = [];
 
-  const heroHeight = Math.min(14, feedHeight);
+  const heroHeight = Math.min(20, feedHeight);
   lines.push(...buildHeroFeedLines(leftWidth, heroHeight, matrixQuote));
 
   if (threads.length > 0) {
