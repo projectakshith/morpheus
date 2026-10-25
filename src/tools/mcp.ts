@@ -1,6 +1,7 @@
 import os from "node:os";
 import path from "node:path";
 import fs from "node:fs/promises";
+import { spawnSync } from "node:child_process";
 import { Client } from "@modelcontextprotocol/client";
 import { StdioClientTransport } from "@modelcontextprotocol/client/stdio";
 import type { ToolDefinition, ToolParameterSchema } from "../core/types";
@@ -53,9 +54,17 @@ const CUA_HIDDEN_PARAMS = new Set([
 const MAX_TOOL_DESCRIPTION_CHARS = 900;
 const MAX_PARAM_DESCRIPTION_CHARS = 260;
 const MAX_STRUCTURED_SUFFIX_CHARS = 2000;
+const SERAPH_RESULT_PREVIEW_COUNT = 5;
+const SERAPH_RESULT_TEXT_CHARS = 1400;
+const SERAPH_OUTPUT_FALLBACK_CHARS = 16000;
 const MAX_WINDOW_ELEMENTS = 150;
 const ACTIONABLE_ROLES = /^AX(TextField|TextArea|SearchField|ComboBox|Button|Link|CheckBox|RadioButton|PopUpButton|MenuButton|MenuItem|Slider|Tab|Cell|Row|DisclosureTriangle|Incrementor)$/;
 const MEANINGFUL_ACTIONS = /^AX(Press|Confirm|Pick|Open|Increment|Decrement|Raise)$/;
+
+function gitRoot(cwd: string): string | undefined {
+  const result = spawnSync("git", ["rev-parse", "--show-toplevel"], { cwd, encoding: "utf8" });
+  return result.status === 0 ? result.stdout.trim() : undefined;
+}
 
 const CUA_GUIDANCE: Record<string, string> = {
   get_window_state: "Morpheus: returns a screenshot plus a compact list of actionable elements. Pass `query` to filter elements by text. Prefer acting on an element_token from the latest call; tokens go stale after the next snapshot of the same window.",
@@ -121,6 +130,24 @@ function toolDescription(isCua: boolean, name: string, description?: string): st
   const trimmed = trimDescription(base, MAX_TOOL_DESCRIPTION_CHARS);
   const guidance = CUA_GUIDANCE[name];
   return guidance ? `${trimmed}\n\n${guidance}` : trimmed;
+}
+
+function schemaWithResolvedRepo(schema: ToolDefinition["parameters"]): ToolDefinition["parameters"] {
+  const repo = schema.properties.repo;
+  const properties = repo
+    ? {
+        ...schema.properties,
+        repo: {
+          ...repo,
+          description: `${repo.description ? `${repo.description} ` : ""}Optional in Morpheus: defaults to the active Git repository. Pass an absolute path when the requested repository differs from the active checkout.`,
+        },
+      }
+    : schema.properties;
+  return {
+    ...schema,
+    properties,
+    required: (schema.required ?? []).filter((key) => key !== "repo"),
+  };
 }
 
 function isMenuBarElement(element: any, byIndex: Map<number, any>): boolean {
@@ -225,6 +252,41 @@ function formatCuaWindows(structured: Record<string, any>): string {
   return [`Windows (${lines.length} shown${hidden > 0 ? `, ${hidden} untitled/tiny/extra omitted` : ""}):`, ...lines].join("\n");
 }
 
+function compactSeraphText(rawText: string): string {
+  const start = rawText.indexOf("{");
+  if (start < 0) return rawText.length > SERAPH_OUTPUT_FALLBACK_CHARS
+    ? `${rawText.slice(0, SERAPH_OUTPUT_FALLBACK_CHARS)}\n[Seraph output truncated]`
+    : rawText;
+
+  const prefix = rawText.slice(0, start).trimEnd();
+  try {
+    const data = JSON.parse(rawText.slice(start)) as Record<string, any>;
+    if (Array.isArray(data.results)) {
+      const total = data.results.length;
+      data.results = data.results.slice(0, SERAPH_RESULT_PREVIEW_COUNT).map((result: Record<string, any>) => {
+        const text = typeof result.text === "string" ? result.text : "";
+        return {
+          ...result,
+          ...(text.length > SERAPH_RESULT_TEXT_CHARS
+            ? { text: `${text.slice(0, SERAPH_RESULT_TEXT_CHARS)}…[snippet truncated]` }
+            : {}),
+        };
+      });
+      if (total > SERAPH_RESULT_PREVIEW_COUNT) {
+        data.results_truncated = true;
+        data.total_results = total;
+      }
+    }
+
+    const serialized = JSON.stringify(data, null, 2);
+    return `${prefix ? `${prefix}\n` : ""}${serialized}`;
+  } catch {
+    return rawText.length > SERAPH_OUTPUT_FALLBACK_CHARS
+      ? `${rawText.slice(0, SERAPH_OUTPUT_FALLBACK_CHARS)}\n[Seraph output truncated]`
+      : rawText;
+  }
+}
+
 function formatResult(result: any, remoteName?: string, isCua = false): { text: string; images: McpImage[] } {
   const content = Array.isArray(result?.content) ? result.content : [];
   const images: McpImage[] = [];
@@ -245,7 +307,10 @@ function formatResult(result: any, remoteName?: string, isCua = false): { text: 
   const structured = result?.structuredContent && typeof result.structuredContent === "object" && !Array.isArray(result.structuredContent)
     ? result.structuredContent as Record<string, any>
     : undefined;
-  const rawText = parts.join("\n");
+  const joinedText = parts.join("\n");
+  const rawText = remoteName && /^(search_code|search_worktree|search_history|search_at_version|find_symbol)$/i.test(remoteName)
+    ? compactSeraphText(joinedText)
+    : joinedText;
   let text = rawText || (structured ? JSON.stringify(structured, null, 2) : "(MCP tool returned no content)");
   if (!isCua || !structured) return { text, images };
 
@@ -453,17 +518,37 @@ async function buildRegistry(config: McpConfig, key: string): Promise<McpRegistr
         }
         const remoteProperties = (remote.inputSchema as { properties?: Record<string, unknown> } | undefined)?.properties ?? {};
         const supportsTarget = "target" in remoteProperties;
+        const supportsRepo = "repo" in remoteProperties;
         tools[name] = {
           name,
           description: `[MCP ${serverName}] ${toolDescription(isCua, remote.name, remote.description)}`,
-          parameters: asSchema(remote.inputSchema, isCua),
-          execute: async (args, _cwd, signal) => {
+          parameters: supportsRepo
+            ? schemaWithResolvedRepo(asSchema(remote.inputSchema, isCua))
+            : asSchema(remote.inputSchema, isCua),
+          execute: async (args, cwd, signal) => {
             if (signal?.aborted) return { output: "[MCP tool cancelled before execution.]", metadata: { cancelled: true } };
+            let callArgs = args;
+            if (supportsRepo) {
+              const requestedRepo = typeof args.repo === "string" && args.repo.trim() ? args.repo.trim() : undefined;
+              let repo = requestedRepo ? path.resolve(cwd ?? process.cwd(), requestedRepo) : gitRoot(cwd ?? process.cwd());
+              if (!repo) {
+                return {
+                  output: "This MCP tool needs a Git repository. Pass `repo` as the absolute path when the requested repository differs from the active checkout.",
+                  metadata: { isError: true },
+                };
+              }
+              try {
+                repo = await fs.realpath(repo);
+              } catch {
+              }
+              callArgs = { ...args, repo };
+            }
             const { result, notes } = isCua
-              ? await callCua(connection, remote.name, normalizeCuaArgs(args, supportsTarget))
-              : { result: await connection.call(remote.name, args), notes: [] as string[] };
+              ? await callCua(connection, remote.name, normalizeCuaArgs(callArgs, supportsTarget))
+              : { result: await connection.call(remote.name, callArgs), notes: [] as string[] };
             const formatted = formatResult(result, remote.name, isCua);
-            const output = notes.length > 0 ? `${notes.join("\n")}\n${formatted.text}` : formatted.text;
+            const repoNote = supportsRepo && typeof callArgs.repo === "string" ? `[MCP repo: ${callArgs.repo}]\n` : "";
+            const output = `${repoNote}${notes.length > 0 ? `${notes.join("\n")}\n` : ""}${formatted.text}`;
             return { output, metadata: { isError: Boolean(result?.isError), mcpImages: formatted.images } };
           },
         };
