@@ -21,7 +21,10 @@ import { DiffModal } from "./DiffModal";
 import { ToolOutputModal } from "./ToolOutputModal";
 import { gatherContext } from "../../core/context";
 import { MORPHEUS_VERSION } from "../../index";
-import { theme } from "../theme";
+import { getActiveThemeName, setTheme, theme } from "../theme";
+import { SecurityHud } from "../modes/security/SecurityHud";
+import { useSecuritySession } from "../modes/security/useSecuritySession";
+import { loadEngagement, type Engagement } from "../../core/engagement";
 import type { Thread, ThreadStep, AppProps, FeedLine, RightLine } from "../types";
 import { MATRIX_QUOTES, buildFullScreenIntro } from "./MatrixIntro";
 import { buildThreadFeedLines } from "./ThreadFeed";
@@ -45,6 +48,9 @@ export function App({
 }: AppProps) {
   const [currentModel, setCurrentModel] = useState(model);
   const [subagentModels, setSubagentModels] = useState(() => loadSubagentModels());
+  const security = useSecuritySession();
+  const [engagement, setEngagement] = useState<Engagement | null>(null);
+  const previousThemeRef = useRef(getActiveThemeName());
   const [permissionMode, setPermissionMode] = useState<PermissionMode>(() => loadPermissionMode());
   const [permissionModeSaveError, setPermissionModeSaveError] = useState(false);
   const [workerModelSaveError, setWorkerModelSaveError] = useState(false);
@@ -90,6 +96,19 @@ export function App({
     setActiveModal("diff");
   };
   const baseContext = useRef(gatherContext(process.cwd()));
+
+  useEffect(() => {
+    if (security.active) {
+      if (getActiveThemeName() !== "attack") {
+        previousThemeRef.current = getActiveThemeName();
+        setTheme("attack");
+      }
+      void loadEngagement(process.cwd()).then(setEngagement);
+      return;
+    }
+    if (getActiveThemeName() === "attack") setTheme(previousThemeRef.current);
+    setEngagement(null);
+  }, [security.active, security.target]);
   const initialTaskFired = useRef(false);
   const isUserScrolledRef = useRef(false);
   const maxScrollRef = useRef(0);
@@ -387,6 +406,8 @@ export function App({
         model={currentModel}
         branch={baseContext.current.branch}
         gitStatus={baseContext.current.gitStatus}
+        mode={security.active ? "security" : "coding"}
+        target={security.target}
         width={terminalWidth}
       />
 
@@ -547,19 +568,29 @@ export function App({
             </Box>
 
             {isSplitLayout && (
-              <DiffColumn
-                width={rightWidth}
-                height={effectiveWorkspaceHeight}
-                lines={visibleRightLines}
-                statusInfo={{
-                  status,
-                  stepCount,
-                  maxSteps: stepBudget,
-                  usage,
-                  elapsedSeconds,
-                  queueCount: queuedCount,
-                }}
-              />
+              security.active ? (
+                <SecurityHud
+                  width={rightWidth}
+                  height={effectiveWorkspaceHeight}
+                  threads={threads}
+                  findings={findings}
+                  engagement={engagement}
+                />
+              ) : (
+                <DiffColumn
+                  width={rightWidth}
+                  height={effectiveWorkspaceHeight}
+                  lines={visibleRightLines}
+                  statusInfo={{
+                    status,
+                    stepCount,
+                    maxSteps: stepBudget,
+                    usage,
+                    elapsedSeconds,
+                    queueCount: queuedCount,
+                  }}
+                />
+              )
             )}
           </>
         )}
@@ -575,6 +606,7 @@ export function App({
           width={terminalWidth}
           scrollOffset={scrollOffset}
           queueCount={queuedCount}
+          mode={security.active ? "security" : "coding"}
         />
       )}
 
@@ -601,6 +633,8 @@ export function App({
             ? queuedCount > 0
               ? ` [${queuedCount} queued] type prompt to queue or run /command...`
               : " agent working · type prompt to queue or run /command..."
+            : security.active
+            ? ` attack · describe the next step against ${security.target ?? "the target"}...`
             : undefined
         }
         history={promptHistory}

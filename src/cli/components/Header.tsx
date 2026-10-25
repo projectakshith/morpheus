@@ -8,15 +8,27 @@ export interface HeaderProps {
   model: string;
   branch?: string;
   gitStatus?: string;
+  mode?: "coding" | "security";
+  target?: string;
   cwd?: string;
   width?: number;
 }
 
-export function Header({ version, model, branch, gitStatus, width: customWidth }: HeaderProps) {
+export function Header({
+  version,
+  model,
+  branch,
+  gitStatus,
+  mode = "coding",
+  target,
+  width: customWidth,
+}: HeaderProps) {
   const width = customWidth ?? Math.max(40, process.stdout.columns ? process.stdout.columns - 2 : 76);
 
-  const brand = `▰ morpheus v${version}`;
-  const gitInfo = branch ? ` │ ◈ ${branch}${gitStatus ? ` [${gitStatus}]` : ""}` : "";
+  const brand = `▰ morpheus v${version}${mode === "security" ? " // attack" : ""}`;
+  const contextLabel = mode === "security" ? target : branch;
+  const contextStatus = mode === "security" ? undefined : gitStatus;
+  const gitInfo = contextLabel ? ` │ ◈ ${contextLabel}${contextStatus ? ` [${contextStatus}]` : ""}` : "";
   const modelTag = `[ ${glyphs.chip} ${model} ]`;
 
   const leftLen = brand.length + gitInfo.length;
@@ -27,17 +39,22 @@ export function Header({ version, model, branch, gitStatus, width: customWidth }
     <Box flexDirection="column" width={width} height={2} overflow="hidden">
       <Box height={1} overflow="hidden">
         <Text backgroundColor={theme.bg} wrap="truncate-end">
-          <Text color={theme.accentBright} bold>
+          <Text color={mode === "security" ? theme.diffRemove : theme.accentBright} bold>
             ▰ morpheus
           </Text>
           <Text color={theme.muted}> v{version}</Text>
-          {branch ? (
+          {mode === "security" ? (
+            <Text color={theme.diffRemove} bold>
+              {" // attack"}
+            </Text>
+          ) : null}
+          {contextLabel ? (
             <Text>
               <Text color={theme.border}> │ </Text>
-              <Text color={theme.secondary}>◈ {branch}</Text>
-              {gitStatus ? (
-                <Text color={gitStatus !== "clean" ? theme.accentBright : theme.muted}>
-                  {` [${gitStatus}]`}
+              <Text color={theme.secondary}>◈ {contextLabel}</Text>
+              {contextStatus ? (
+                <Text color={contextStatus !== "clean" ? theme.accentBright : theme.muted}>
+                  {` [${contextStatus}]`}
                 </Text>
               ) : null}
             </Text>

@@ -15,6 +15,7 @@ export interface StatusBarProps {
   width?: number;
   scrollOffset?: number;
   queueCount?: number;
+  mode?: "coding" | "security";
 }
 
 export function StatusBar({
@@ -26,6 +27,7 @@ export function StatusBar({
   width: customWidth,
   scrollOffset = 0,
   queueCount = 0,
+  mode = "coding",
 }: StatusBarProps) {
   const width = customWidth ?? Math.max(40, process.stdout.columns ? process.stdout.columns - 2 : 76);
 
@@ -55,13 +57,16 @@ export function StatusBar({
       : "idle";
 
   const queueStr = queueCount > 0 ? ` · +${queueCount}q` : "";
-  const metricsStr = ` · ${glyphs.clock} ${timeStr} · step ${stepCount}/${maxSteps} · ctx ${peakCtx}/${limitCtx} · api ${totalTokens}${queueStr}`;
+  const modeStr = mode === "security" ? " · attack" : "";
+  const metricsStr = `${modeStr} · ${glyphs.clock} ${timeStr} · step ${stepCount}/${maxSteps} · ctx ${peakCtx}/${limitCtx} · api ${totalTokens}${queueStr}`;
   const scrollStr = scrollOffset > 0 ? ` · ${glyphs.arrowUp} +${scrollOffset}` : "";
   const hintStr =
     scrollOffset > 0
       ? "[end] bottom · [esc] stop"
       : status === "running"
       ? "/command · type prompt to queue · [esc] stop"
+      : mode === "security"
+      ? "/normal return · [esc] stop · [ctrl+c] exit"
       : "/model switch · [esc] stop · [ctrl+c] exit";
 
   const leftLen =
