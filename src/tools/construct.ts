@@ -11,6 +11,7 @@ const TOOL_OUTPUT_LIMITS: Record<string, { maxLines: number; maxBytes: number }>
   grep_code: { maxLines: 800, maxBytes: 16 * 1024 },
   list_dir: { maxLines: 240, maxBytes: 10 * 1024 },
   http_request: { maxLines: 1200, maxBytes: 24 * 1024 },
+  http_probe: { maxLines: 1200, maxBytes: 24 * 1024 },
   read_file: { maxLines: 800, maxBytes: 16 * 1024 },
   uplink_search: { maxLines: 600, maxBytes: 16 * 1024 },
   uplink_browse: { maxLines: 1000, maxBytes: 24 * 1024 },

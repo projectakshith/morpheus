@@ -28,6 +28,7 @@ function getToolIcon(toolName: string): string {
     case "outline_code":
       return glyphs.outline;
     case "http_request":
+    case "http_probe":
       return glyphs.network;
     case "uplink_search":
       return glyphs.search;

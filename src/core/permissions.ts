@@ -48,8 +48,9 @@ export async function permissionReason(
     }
   }
 
-  if (tool === "http_request") {
-    return String(args.method ?? "GET").toUpperCase() === "GET"
+  if (tool === "http_request" || tool === "http_probe") {
+    const method = String(args.method ?? "GET").toUpperCase();
+    return method === "GET" || method === "HEAD"
       ? null
       : "This request can change data on an external service.";
   }

@@ -121,10 +121,16 @@ test("the recon tool appears only in attack mode", async () => {
       "utf8"
     );
     assert.equal(createTools(dir).security_recon, undefined);
+    assert.ok(createTools(dir).http_request);
     activateSecuritySession(engagement);
     assert.ok(createTools(dir).security_recon);
+    assert.ok(createTools(dir).http_probe);
+    assert.equal(createTools(dir).http_request, undefined);
+    assert.equal(createTools(dir).bash, undefined);
     deactivateSecuritySession();
     assert.equal(createTools(dir).security_recon, undefined);
+    assert.equal(createTools(dir).http_probe, undefined);
+    assert.ok(createTools(dir).http_request);
   } finally {
     deactivateSecuritySession();
     await fs.rm(dir, { recursive: true, force: true });

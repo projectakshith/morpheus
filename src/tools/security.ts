@@ -173,6 +173,30 @@ async function mapLimited<T, R>(items: T[], limit: number, run: (item: T) => Pro
   return results;
 }
 
+export function defaultEvidenceRoot(): string {
+  return path.join(os.homedir(), ".morpheus", "engagements");
+}
+
+function evidenceHost(host: string): string {
+  const safe = String(host || "")
+    .toLowerCase()
+    .replace(/[^a-z0-9.:-]+/g, "_")
+    .replace(/^[._-]+|[._-]+$/g, "");
+  return safe || "unknown";
+}
+
+export async function writeEvidenceFile(
+  host: string,
+  payload: unknown,
+  root: string = defaultEvidenceRoot()
+): Promise<string> {
+  const dir = path.join(root, evidenceHost(host), "evidence");
+  await fs.mkdir(dir, { recursive: true });
+  const filePath = path.join(dir, `${Date.now()}-${Math.random().toString(36).slice(2, 8)}.json`);
+  await fs.writeFile(filePath, `${JSON.stringify(payload, null, 2)}\n`, { encoding: "utf8", mode: 0o600 });
+  return filePath;
+}
+
 function defaultDeps(now: number): ReconDeps {
   return {
     fetchUrl: async (url) => {
@@ -204,17 +228,13 @@ function defaultDeps(now: number): ReconDeps {
         return [];
       }
     },
-    evidenceRoot: path.join(os.homedir(), ".morpheus", "engagements"),
+    evidenceRoot: defaultEvidenceRoot(),
     now: () => now,
   };
 }
 
 async function writeEvidence(deps: ReconDeps, host: string, payload: unknown): Promise<string> {
-  const dir = path.join(deps.evidenceRoot, host, "evidence");
-  await fs.mkdir(dir, { recursive: true });
-  const filePath = path.join(dir, `${deps.now()}-${Math.random().toString(36).slice(2, 8)}.json`);
-  await fs.writeFile(filePath, `${JSON.stringify(payload, null, 2)}\n`, "utf8");
-  return filePath;
+  return writeEvidenceFile(host, payload, deps.evidenceRoot);
 }
 
 export async function runRecon(

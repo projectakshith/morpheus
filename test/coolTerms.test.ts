@@ -124,6 +124,19 @@ describe("Cool Action Labels (Chill Friend / Gen-Z Aesthetic)", () => {
     assert.ok(label.includes("pinging: https://api.github.com"));
   });
 
+  it("formats http_probe as 'probing:'", () => {
+    const step: ThreadStep = {
+      id: "tool_8b",
+      type: "tool",
+      name: "http_probe",
+      args: { url: "https://example.edu" },
+      isRunning: true,
+      startTime: Date.now() - 600,
+    };
+    const label = getCoolActionLabel(step);
+    assert.ok(label.includes("probing: https://example.edu"));
+  });
+
   it("formats load_skill as 'loading:'", () => {
     const step: ThreadStep = {
       id: "tool_9",

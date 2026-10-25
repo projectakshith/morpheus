@@ -124,6 +124,14 @@ export function getCoolActionLabel(step?: ThreadStep, cwd: string = process.cwd(
         : `pinging link${timeSuffix}`;
     }
 
+    case "http_probe": {
+      const url = typeof args.url === "string" ? args.url : "";
+      const cleanUrl = url.length > 24 ? `${url.slice(0, 22)}…` : url;
+      return cleanUrl
+        ? `probing: ${cleanUrl}${timeSuffix}`
+        : `probing link${timeSuffix}`;
+    }
+
     case "uplink_search": {
       const query = typeof args.query === "string" ? args.query : "";
       const cleanQuery = query.length > 24 ? `${query.slice(0, 22)}…` : query;

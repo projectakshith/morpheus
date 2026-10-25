@@ -309,6 +309,8 @@ export function getToolBadge(name?: string): ToolBadgeInfo {
       return { label: "SYMBOLS", color: t.diffHunk };
     case "http_request":
       return { label: "HTTP", color: t.accent };
+    case "http_probe":
+      return { label: "PROBE", color: t.warning };
     case "uplink_search":
       return { label: "SEARCH", color: t.secondary };
     case "uplink_browse":

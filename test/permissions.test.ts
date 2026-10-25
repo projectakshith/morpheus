@@ -18,5 +18,7 @@ describe("permissionReason", () => {
   it("allows read-only HTTP requests and gates mutations", async () => {
     assert.equal(await permissionReason("http_request", { method: "GET" }, process.cwd()), null);
     assert.ok(await permissionReason("http_request", { method: "DELETE" }, process.cwd()));
+    assert.equal(await permissionReason("http_probe", { method: "HEAD" }, process.cwd()), null);
+    assert.ok(await permissionReason("http_probe", { method: "POST" }, process.cwd()));
   });
 });

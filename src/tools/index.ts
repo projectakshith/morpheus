@@ -8,7 +8,7 @@ import { createBashTool } from "./bash";
 import { createListTool } from "./list";
 import { createGrepTool } from "./grep";
 import { createOutlineTool } from "./outline";
-import { createHttpTool } from "./http";
+import { createHttpTool, createSecurityHttpTool } from "./http";
 import { createFindingTool } from "./finding";
 import { createSkillTool } from "./skill";
 import { createSecurityReconTool } from "./security";
@@ -28,6 +28,7 @@ export {
   createGrepTool,
   createOutlineTool,
   createHttpTool,
+  createSecurityHttpTool,
   createFindingTool,
   createSkillTool,
   createSecurityReconTool,
@@ -68,6 +69,10 @@ export function createTools(
   }
 
   if (getSecuritySession().active) {
+    delete tools.bash;
+    delete tools.http_request;
+    delete tools.uplink_browse;
+    tools.http_probe = createSecurityHttpTool();
     tools.security_recon = createSecurityReconTool();
   }
 
