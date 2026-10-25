@@ -142,7 +142,12 @@ export async function runAgent(
       (item) => item.topic.toLowerCase() === topic.toLowerCase()
     );
     if (existingIndex !== -1) findings.splice(existingIndex, 1);
-    findings.push({ topic, takeaway });
+    findings.push({
+      topic,
+      takeaway,
+      ...(finding.severity ? { severity: finding.severity } : {}),
+      ...(finding.endpoint ? { endpoint: finding.endpoint } : {}),
+    });
     if (findings.length > MAX_FINDINGS) findings.splice(0, findings.length - MAX_FINDINGS);
   };
   for (const finding of options.findings ?? []) rememberFinding(finding);

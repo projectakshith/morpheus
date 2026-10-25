@@ -185,7 +185,7 @@ test("Tools: grepCode search", async (t) => {
 });
 
 test("Tools: record_finding", async (t) => {
-  const findings: { topic: string; takeaway: string }[] = [];
+  const findings: { topic: string; takeaway: string; severity?: string; endpoint?: string }[] = [];
   const tool = createFindingTool((f) => findings.push(f));
 
   await t.test("records valid finding", async () => {
@@ -194,6 +194,18 @@ test("Tools: record_finding", async (t) => {
     assert.equal(findings.length, 1);
     assert.equal(findings[0].topic, "auth");
     assert.equal(findings[0].takeaway, "uses JWT tokens in Authorization header");
+  });
+
+  await t.test("records severity and endpoint", async () => {
+    const res = await tool.execute({
+      topic: "idor-invoices",
+      takeaway: "one record reachable across accounts",
+      severity: "HIGH",
+      endpoint: "/api/invoices/101",
+    });
+    assert.match(String(res), /HIGH · \/api\/invoices\/101/);
+    assert.equal(findings[1].severity, "high");
+    assert.equal(findings[1].endpoint, "/api/invoices/101");
   });
 
   await t.test("rejects missing topic or takeaway", async () => {

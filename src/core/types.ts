@@ -84,9 +84,13 @@ export type AgentStopReason =
 
 export type PermissionMode = "guarded" | "fullAccess";
 
+export type FindingSeverity = "critical" | "high" | "medium" | "low";
+
 export interface Finding {
   topic: string;
   takeaway: string;
+  severity?: FindingSeverity;
+  endpoint?: string;
 }
 
 export interface Skill {

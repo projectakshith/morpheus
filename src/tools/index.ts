@@ -1,7 +1,7 @@
 import path from "node:path";
 import fs from "node:fs/promises";
 import { existsSync } from "node:fs";
-import type { ToolDefinition, Skill } from "../core/types";
+import type { ToolDefinition, Skill, Finding } from "../core/types";
 import { createReadTool } from "./read";
 import { createWriteTool } from "./write";
 import { createEditTool } from "./edit";
@@ -38,7 +38,7 @@ export {
 
 export function createTools(
   cwd: string = process.cwd(),
-  onRecordFinding?: (finding: { topic: string; takeaway: string }) => void,
+  onRecordFinding?: (finding: Finding) => void,
   skills?: Skill[],
   onActivateSkill?: (skill: Skill) => void,
   options: {
