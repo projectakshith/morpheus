@@ -37,9 +37,12 @@ test("the engagement block carries scope and a sticky directive", () => {
 
 test("pending attack mode blocks network work", () => {
   const block = formatPendingScopeBlock();
-  assert.match(block, /No engagement scope is published/);
+  assert.match(block, /no network scope is published/);
   assert.match(block, /Do not probe, scan, or send traffic/);
+  assert.match(block, /Local static review/);
+  assert.match(block, /ask once/);
   assert.match(block, /\/attack <host> --auth <reference>/);
+  assert.match(block, /Do not repeat that command every turn/);
   assert.match(block, /untrusted data/);
 });
 
