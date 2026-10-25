@@ -62,6 +62,7 @@ export class SessionHost {
   private permissionCancels = new Map<string, () => void>();
   private permissionHistoryUpdates: ChatMessage[] = [];
   private persistQueue: Promise<void> = Promise.resolve();
+  private steeringQueue: string[] = [];
 
   constructor(
     private deps: SessionHostDeps,
@@ -150,6 +151,12 @@ export class SessionHost {
     }
   }
 
+  steer(instruction: string): boolean {
+    if (!this.running) return false;
+    this.steeringQueue.push(instruction);
+    return true;
+  }
+
   rename(title: string): void {
     this.titleSource = "manual";
     this.emit({ type: "session.updated", title });
@@ -211,6 +218,7 @@ export class SessionHost {
       getQueue: () => target.queue.map((q) => q.prompt),
       clearQueue: () => target.clearQueue(),
       isAgentRunning: this.running,
+      steer: (instruction: string) => target.steer(instruction),
       ...ui,
     };
     const handled = await commandRegistry.dispatch(text, ctx);
@@ -367,6 +375,7 @@ export class SessionHost {
         sessionId: this.state.id,
         findings: this.state.findings,
         security: securityActive ? { engagement: securityScope } : undefined,
+        getSteeringMessages: () => this.steeringQueue.splice(0, this.steeringQueue.length),
         onPermissionRequest: (request) => new Promise((resolve) => {
           this.permissionWaiters.set(request.id, resolve);
           this.permissionCancels.set(request.id, request.cancel);

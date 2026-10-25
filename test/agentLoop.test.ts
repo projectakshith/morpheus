@@ -464,3 +464,28 @@ test("security refusals are recorded and retried once", async () => {
   assert.deepEqual(refusals.map((item) => item.retrying), [true, false]);
   assert.match(result.text, /declined this step after one scoped retry/);
 });
+
+test("Agent drains steering messages between steps and incorporates guidance", async () => {
+  const steeringQueue = ["Actually, inspect big.ts instead"];
+  const applied: string[] = [];
+  const script = scriptModel([
+    toolCall("call_1", "listDir", { path: "." }),
+    text("Adjusted plan based on user steering."),
+  ]);
+
+  const result = await runAgent("explore the codebase", [], {
+    cwd: workspace,
+    baseURL: "https://example.test/v1",
+    apiKey: "k",
+    getSteeringMessages: () => steeringQueue.splice(0, steeringQueue.length),
+    onSteeringApplied: (msg) => applied.push(msg),
+  });
+
+  assert.equal(result.text, "Adjusted plan based on user steering.");
+  assert.deepEqual(applied, ["Actually, inspect big.ts instead"]);
+  const req2Messages = script.requests[1].messages;
+  const steeringMsg = req2Messages.find((m: any) =>
+    typeof m.content === "string" && m.content.includes("Actually, inspect big.ts instead")
+  );
+  assert.ok(steeringMsg, "Second model turn must include the injected steering message");
+});

@@ -178,6 +178,9 @@ export interface AgentOptions {
   /** Full access bypasses all action approval prompts. */
   permissionMode?: PermissionMode;
   security?: { engagement: Engagement | null };
+  /** Steering inbox: fetches mid-run instructions from operator between step boundaries. */
+  getSteeringMessages?: () => string[];
+  onSteeringApplied?: (note: string) => void;
 }
 
 export type SubagentRole = "explore" | "review" | "implement";

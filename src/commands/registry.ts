@@ -17,6 +17,7 @@ import { cuaCommand } from "./cua";
 import { attackCommand, normalCommand } from "./attack";
 import { programsCommand } from "./programs";
 import { rewindCommand } from "./rewind";
+import { steerCommand } from "./steer";
 
 export class CommandRegistry {
   private handlers: CommandHandler[] = [];
@@ -41,6 +42,7 @@ export class CommandRegistry {
     this.register(normalCommand);
     this.register(programsCommand);
     this.register(rewindCommand);
+    this.register(steerCommand);
   }
 
   public register(handler: CommandHandler): void {

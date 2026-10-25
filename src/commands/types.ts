@@ -32,6 +32,7 @@ export interface CommandContext {
   getQueue?: () => string[];
   clearQueue?: () => void;
   isAgentRunning?: boolean;
+  steer?: (instruction: string) => boolean;
 }
 
 export interface CommandHandler {

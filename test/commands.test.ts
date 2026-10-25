@@ -409,6 +409,58 @@ describe("CommandRegistry", () => {
     assert.ok(threads[1].response.includes("Rewound 1 turn"));
     assert.equal(chatHistory.length, 2); // 4 - 2 = 2 messages
   });
+
+  it("dispatches /steer and injects instruction when agent is running", async () => {
+    let threadCreated: Thread | null = null;
+    let steeredText = "";
+    const ctx: CommandContext = {
+      taskText: "/steer use pnpm instead of npm",
+      baseURL: "http://127.0.0.1:8787/v1",
+      currentModel: "flash",
+      setCurrentModel: () => {},
+      setIsModelSelectorOpen: () => {},
+      setThreads: (updater) => {
+        const next = typeof updater === "function" ? updater([]) : updater;
+        threadCreated = next[0] || null;
+      },
+      setPromptHistory: () => {},
+      threadsCount: 0,
+      isAgentRunning: true,
+      steer: (instruction) => {
+        steeredText = instruction;
+        return true;
+      },
+    };
+
+    const handled = await commandRegistry.dispatch("/steer use pnpm instead of npm", ctx);
+    assert.equal(handled, true);
+    assert.equal(steeredText, "use pnpm instead of npm");
+    assert.ok(threadCreated);
+    assert.ok((threadCreated as Thread).response.includes("Steering Note Injected"));
+  });
+
+  it("dispatches /steer and reports idle state when agent is not running", async () => {
+    let threadCreated: Thread | null = null;
+    const ctx: CommandContext = {
+      taskText: "/steer do something",
+      baseURL: "http://127.0.0.1:8787/v1",
+      currentModel: "flash",
+      setCurrentModel: () => {},
+      setIsModelSelectorOpen: () => {},
+      setThreads: (updater) => {
+        const next = typeof updater === "function" ? updater([]) : updater;
+        threadCreated = next[0] || null;
+      },
+      setPromptHistory: () => {},
+      threadsCount: 0,
+      isAgentRunning: false,
+    };
+
+    const handled = await commandRegistry.dispatch("/steer do something", ctx);
+    assert.equal(handled, true);
+    assert.ok(threadCreated);
+    assert.ok((threadCreated as Thread).response.includes("No Active Run to Steer"));
+  });
 });
 
 

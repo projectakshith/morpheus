@@ -394,6 +394,15 @@ export async function runAgent(
     while (approvalUpdates.length > 0) {
       workingMessages.push({ role: "assistant", content: approvalUpdates.shift()! });
     }
+    const steeringNotes = options.getSteeringMessages?.() ?? [];
+    for (const note of steeringNotes) {
+      workingMessages.push({
+        role: "user",
+        content: `[User Steering Note]: ${note}\nAdjust your next actions immediately to comply with this instruction.`,
+      });
+      options.onSteeringApplied?.(note);
+      options.onNarration?.(`[steering applied] ${note}`);
+    }
 
     /* Cached input is billed at a fraction of fresh input, so it counts at 10% toward the budget. */
     const tokensUsed = Math.round(
