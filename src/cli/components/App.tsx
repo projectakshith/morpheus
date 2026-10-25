@@ -21,7 +21,8 @@ import { DiffModal } from "./DiffModal";
 import { ToolOutputModal } from "./ToolOutputModal";
 import { gatherContext } from "../../core/context";
 import { MORPHEUS_VERSION } from "../../index";
-import { getActiveThemeName, setTheme, theme } from "../theme";
+import { cancelThemeTransition, getActiveThemeName, theme, transitionTheme } from "../theme";
+import { useThemeTick } from "../hooks/useThemeTick";
 import { SecurityHud } from "../modes/security/SecurityHud";
 import { useSecuritySession } from "../modes/security/useSecuritySession";
 import { loadEngagement, type Engagement } from "../../core/engagement";
@@ -49,6 +50,7 @@ export function App({
   const [currentModel, setCurrentModel] = useState(model);
   const [subagentModels, setSubagentModels] = useState(() => loadSubagentModels());
   const security = useSecuritySession();
+  const themeVersion = useThemeTick();
   const [engagement, setEngagement] = useState<Engagement | null>(null);
   const previousThemeRef = useRef(getActiveThemeName());
   const [permissionMode, setPermissionMode] = useState<PermissionMode>(() => loadPermissionMode());
@@ -101,14 +103,18 @@ export function App({
     if (security.active) {
       if (getActiveThemeName() !== "attack") {
         previousThemeRef.current = getActiveThemeName();
-        setTheme("attack");
+        transitionTheme("attack", 420);
       }
       void loadEngagement(process.cwd()).then(setEngagement);
       return;
     }
-    if (getActiveThemeName() === "attack") setTheme(previousThemeRef.current);
+    if (getActiveThemeName() === "attack") {
+      transitionTheme(previousThemeRef.current, 320);
+    }
     setEngagement(null);
   }, [security.active, security.target]);
+
+  useEffect(() => () => cancelThemeTransition(), []);
   const initialTaskFired = useRef(false);
   const isUserScrolledRef = useRef(false);
   const maxScrollRef = useRef(0);
@@ -326,7 +332,7 @@ export function App({
         ? { threadId: revealThread.id, text: reveal.text, glow: reveal.glow }
         : undefined,
     });
-  }, [threads, leftWidth, maxLineWidth, feedHeight, expandedThinkingIds, matrixQuote, elapsedSeconds, revealThread, reveal.text, reveal.glow]);
+  }, [threads, leftWidth, maxLineWidth, feedHeight, expandedThinkingIds, matrixQuote, elapsedSeconds, revealThread, reveal.text, reveal.glow, themeVersion]);
 
   const maxScroll = Math.max(0, allFeedLines.length - effectiveFeedHeight);
   maxScrollRef.current = maxScroll;
@@ -355,7 +361,7 @@ export function App({
       toggledIds: expandedToolIds,
       openedTurnIds: collapsedThreadIds,
     });
-  }, [threads, fileEdits, expandedToolIds, collapsedThreadIds, rightContentWidth, elapsedSeconds]);
+  }, [threads, fileEdits, expandedToolIds, collapsedThreadIds, rightContentWidth, elapsedSeconds, themeVersion]);
 
   const maxRightScroll = Math.max(0, allRightLines.length - rightColumnScrollableHeight);
   maxRightScrollRef.current = maxRightScroll;

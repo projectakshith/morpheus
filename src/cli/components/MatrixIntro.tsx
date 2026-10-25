@@ -2,6 +2,17 @@ import React from "react";
 import { Text } from "ink";
 import type { FeedLine } from "../types";
 import { getMorpheusPixel } from "../../display/morpheusArt";
+import { hexToRgb, theme } from "../theme";
+
+function fgHex(hex: string, italic = false, bold = false): string {
+  const [r, g, b] = hexToRgb(hex);
+  return `\x1b[38;2;${r};${g};${b}${bold ? ";1" : ""}${italic ? ";3" : ""}m`;
+}
+
+function bgHex(hex: string): string {
+  const [r, g, b] = hexToRgb(hex);
+  return `\x1b[48;2;${r};${g};${b}m`;
+}
 
 const HERO_STOPS: Array<[number, [number, number, number]]> = [
   [0.00, [ 24,  28,  22]],
@@ -347,19 +358,32 @@ export function buildHeroFeedLines(width: number, totalLines: number, quote?: st
   const textRows: Record<number, Array<{ text: string; color: string }>> = {};
   const topPad = Math.max(0, Math.floor((H - 4) / 2));
 
+  const accent = hexToRgb(theme.accentBright);
+  const accentDeep = hexToRgb(theme.accent);
+  const feedBg = bgHex(theme.bgFeed);
+  const tintPixel = (r: number, g: number, b: number): [number, number, number] => {
+    const lum = (0.299 * r + 0.587 * g + 0.114 * b) / 255;
+    const t = Math.max(0.12, Math.min(1, lum * 1.25));
+    return [
+      Math.round(accentDeep[0] + (accent[0] - accentDeep[0]) * t),
+      Math.round(accentDeep[1] + (accent[1] - accentDeep[1]) * t),
+      Math.round(accentDeep[2] + (accent[2] - accentDeep[2]) * t),
+    ];
+  };
+
   textRows[topPad + 0] = [
-    { text: "M/ ", color: "\x1b[38;2;255;238;210;1m" },
-    { text: "●● ", color: "\x1b[38;2;165;240;135;1m" },
-    { text: "01", color: "\x1b[38;2;218;204;167;1m" },
+    { text: "M/ ", color: fgHex(theme.text, false, true) },
+    { text: "●● ", color: fgHex(theme.accentBright, false, true) },
+    { text: "01", color: fgHex(theme.secondary, false, true) },
   ];
   textRows[topPad + 1] = [
-    { text: "▰ ", color: "\x1b[38;2;165;240;135;1m" },
-    { text: "morpheus", color: "\x1b[38;2;255;238;210;1m" },
+    { text: "▰ ", color: fgHex(theme.accentBright, false, true) },
+    { text: "morpheus", color: fgHex(theme.text, false, true) },
   ];
   if (topPad + 3 < H) {
     const maxQuoteLen = Math.max(15, Math.floor(W * 0.45));
     const dispQuote = rawQuote.length > maxQuoteLen ? rawQuote.slice(0, maxQuoteLen - 3) + "..." : rawQuote;
-    textRows[topPad + 3] = [{ text: `"${dispQuote}"`, color: "\x1b[38;2;218;204;167;3m" }];
+    textRows[topPad + 3] = [{ text: `"${dispQuote}"`, color: fgHex(theme.muted, true) }];
   }
 
   for (let y = 0; y < H; y++) {
@@ -376,35 +400,33 @@ export function buildHeroFeedLines(width: number, totalLines: number, quote?: st
       const srcX = 60 + (x - artAnchorX);
       const pixel = getMorpheusPixel(srcX, srcY);
       if (pixel && pixel.char !== " ") {
-        let r = pixel.r;
-        let g = pixel.g;
-        let b = pixel.b;
+        let [r, g, b] = tintPixel(pixel.r, pixel.g, pixel.b);
 
         if (srcX < 48) {
-          const dim = 0.16 + 0.22 * Math.max(0, (srcX - 15) / 33);
+          const dim = 0.45 + 0.35 * Math.max(0, (srcX - 15) / 33);
           r = Math.floor(r * dim);
           g = Math.floor(g * dim);
           b = Math.floor(b * dim);
         } else if (srcX <= 82 && [":", "-", "+", ".", "*", "\\", "/", "=", "`"].includes(pixel.char)) {
           const lum = 0.299 * r + 0.587 * g + 0.114 * b;
           if (lum > 25) {
-            const boost = Math.min(1.35, 180 / Math.max(1, lum));
-            r = Math.min(240, Math.floor(r * boost));
+            const boost = Math.min(1.2, 160 / Math.max(1, lum));
+            r = Math.min(255, Math.floor(r * boost));
             g = Math.min(255, Math.floor(g * boost));
-            b = Math.min(240, Math.floor(b * boost));
+            b = Math.min(255, Math.floor(b * boost));
           }
         }
 
         rowCells.push({
           ch: pixel.char,
           fg: `\x1b[38;2;${r};${g};${b}m`,
-          bg: "\x1b[48;2;12;16;13m",
+          bg: feedBg,
         });
       } else {
         rowCells.push({
           ch: " ",
-          fg: "\x1b[38;2;22;28;23m",
-          bg: "\x1b[48;2;12;16;13m",
+          fg: fgHex(theme.bg),
+          bg: feedBg,
         });
       }
     }
@@ -417,7 +439,7 @@ export function buildHeroFeedLines(width: number, totalLines: number, quote?: st
 
       for (let px = startX; px < endX; px++) {
         rowCells[px].ch = " ";
-        rowCells[px].bg = "\x1b[48;2;14;18;15m";
+        rowCells[px].bg = feedBg;
       }
 
       let curX = startX + 1;
@@ -426,7 +448,7 @@ export function buildHeroFeedLines(width: number, totalLines: number, quote?: st
           if (curX < W) {
             rowCells[curX].ch = seg.text[i];
             rowCells[curX].fg = seg.color;
-            rowCells[curX].bg = "\x1b[48;2;14;18;15m";
+            rowCells[curX].bg = feedBg;
             curX++;
           }
         }

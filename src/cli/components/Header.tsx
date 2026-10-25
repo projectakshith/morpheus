@@ -39,12 +39,12 @@ export function Header({
     <Box flexDirection="column" width={width} height={2} overflow="hidden">
       <Box height={1} overflow="hidden">
         <Text backgroundColor={theme.bg} wrap="truncate-end">
-          <Text color={mode === "security" ? theme.diffRemove : theme.accentBright} bold>
+          <Text color={theme.accentBright} bold>
             ▰ morpheus
           </Text>
           <Text color={theme.muted}> v{version}</Text>
           {mode === "security" ? (
-            <Text color={theme.diffRemove} bold>
+            <Text color={theme.accent} bold>
               {" // attack"}
             </Text>
           ) : null}

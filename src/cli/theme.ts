@@ -114,26 +114,26 @@ export const BUILTIN_THEMES: Record<string, ThemeColors> = {
     warning: "#ffe600",
   },
   attack: {
-    bg: "#0a0708",
-    bgFeed: "#0a0708",
-    bgColumn: "#0a0708",
-    bgUser: "#1c0f10",
-    bgCode: "#080506",
-    bgDiffAdd: "#102416",
-    bgDiffRemove: "#2a0f10",
-    text: "#f2dede",
-    secondary: "#e8b44a",
-    accent: "#d63b3b",
-    accentBright: "#ff5c4d",
-    border: "#3a2224",
-    borderSubtle: "#241417",
-    muted: "#7c5a58",
-    success: "#6fcf97",
-    diffAdd: "#6fcf97",
-    diffRemove: "#ff5c4d",
-    diffHunk: "#e8b44a",
-    error: "#ff5c4d",
-    warning: "#e8b44a",
+    bg: "#0b0b0d",
+    bgFeed: "#0b0b0d",
+    bgColumn: "#0b0b0d",
+    bgUser: "#161417",
+    bgCode: "#08080a",
+    bgDiffAdd: "#0f1f16",
+    bgDiffRemove: "#241012",
+    text: "#e8e3da",
+    secondary: "#ffb454",
+    accent: "#e5484d",
+    accentBright: "#ff6369",
+    border: "#2b2b30",
+    borderSubtle: "#1c1c21",
+    muted: "#7d7d85",
+    success: "#5bb98c",
+    diffAdd: "#5bb98c",
+    diffRemove: "#e5484d",
+    diffHunk: "#ffb454",
+    error: "#e5484d",
+    warning: "#ffb454",
   },
   dracula: {
     bg: "#282a36",
@@ -161,6 +161,26 @@ export const BUILTIN_THEMES: Record<string, ThemeColors> = {
 
 const THEMES: Record<string, ThemeColors> = { ...BUILTIN_THEMES };
 let activeThemeName = "morpheus";
+let currentColors: ThemeColors = THEMES[activeThemeName];
+let themeVersion = 0;
+let transitionTimer: NodeJS.Timeout | null = null;
+const themeListeners = new Set<() => void>();
+
+function notifyTheme(): void {
+  themeVersion++;
+  for (const listener of themeListeners) listener();
+}
+
+export function subscribeTheme(listener: () => void): () => void {
+  themeListeners.add(listener);
+  return () => {
+    themeListeners.delete(listener);
+  };
+}
+
+export function getThemeVersion(): number {
+  return themeVersion;
+}
 
 export function getActiveThemeName(): string {
   return activeThemeName;
@@ -170,26 +190,91 @@ export function getAvailableThemes(): string[] {
   return Object.keys(THEMES);
 }
 
-export function setTheme(name: string): boolean {
-  if (THEMES[name]) {
-    activeThemeName = name;
-    return true;
+export function cancelThemeTransition(): void {
+  if (transitionTimer) {
+    clearInterval(transitionTimer);
+    transitionTimer = null;
   }
-  return false;
+}
+
+export function setTheme(name: string): boolean {
+  const target = THEMES[name];
+  if (!target) return false;
+  cancelThemeTransition();
+  activeThemeName = name;
+  currentColors = target;
+  notifyTheme();
+  return true;
+}
+
+export function transitionTheme(name: string, durationMs = 360): boolean {
+  const target = THEMES[name];
+  if (!target) return false;
+  cancelThemeTransition();
+  const from = { ...currentColors };
+  const startedAt = Date.now();
+  let done = false;
+  activeThemeName = name;
+  const frame = () => {
+    const progress = durationMs <= 0 ? 1 : Math.min(1, (Date.now() - startedAt) / durationMs);
+    if (progress >= 1) {
+      done = true;
+      currentColors = target;
+      cancelThemeTransition();
+      notifyTheme();
+      return;
+    }
+    const eased = 1 - Math.pow(1 - progress, 3);
+    currentColors = lerpTheme(from, target, eased);
+    notifyTheme();
+  };
+  frame();
+  if (!done) {
+    transitionTimer = setInterval(frame, 32);
+    transitionTimer.unref?.();
+  }
+  return true;
 }
 
 export function registerTheme(name: string, customColors: Partial<ThemeColors>): void {
   const base = THEMES[activeThemeName] || BUILTIN_THEMES.morpheus;
   THEMES[name] = { ...base, ...customColors };
+  if (name === activeThemeName) {
+    currentColors = THEMES[name];
+    notifyTheme();
+  }
 }
 
-function hexToRgb(hex: string): [number, number, number] {
-  const clean = hex.replace("#", "");
+function parseHex(hex: string): [number, number, number] | null {
+  const match = /^#?([0-9a-f]{6})$/i.exec(String(hex || "").trim());
+  if (!match) return null;
+  const clean = match[1];
   return [
     parseInt(clean.slice(0, 2), 16),
     parseInt(clean.slice(2, 4), 16),
     parseInt(clean.slice(4, 6), 16),
   ];
+}
+
+export function hexToRgb(hex: string): [number, number, number] {
+  return parseHex(hex) ?? [0, 0, 0];
+}
+
+function lerpHex(from: string, to: string, t: number): string {
+  const a = parseHex(from);
+  const b = parseHex(to);
+  if (!a || !b) return t < 0.5 ? from : to;
+  const mix = (left: number, right: number) => Math.round(left + (right - left) * t);
+  const [r, g, bl] = [mix(a[0], b[0]), mix(a[1], b[1]), mix(a[2], b[2])];
+  return `#${[r, g, bl].map((value) => value.toString(16).padStart(2, "0")).join("")}`;
+}
+
+function lerpTheme(from: ThemeColors, to: ThemeColors, t: number): ThemeColors {
+  const next = {} as ThemeColors;
+  for (const key of Object.keys(from) as Array<keyof ThemeColors>) {
+    next[key] = lerpHex(from[key], to[key], t);
+  }
+  return next;
 }
 
 function ansiFg(hex: string, text: string): string {
@@ -203,7 +288,7 @@ function ansiBg(hex: string, text: string): string {
 }
 
 export function getToolBadge(name?: string): ToolBadgeInfo {
-  const t = THEMES[activeThemeName] || BUILTIN_THEMES.morpheus;
+  const t = currentColors;
   switch (name) {
     case "bash":
       return { label: "BASH", color: t.warning };
@@ -239,64 +324,64 @@ export function getToolBadge(name?: string): ToolBadgeInfo {
 
 export const theme = {
   get bg() {
-    return (THEMES[activeThemeName] || BUILTIN_THEMES.morpheus).bg;
+    return currentColors.bg;
   },
   get bgFeed() {
-    return (THEMES[activeThemeName] || BUILTIN_THEMES.morpheus).bgFeed;
+    return currentColors.bgFeed;
   },
   get bgColumn() {
-    return (THEMES[activeThemeName] || BUILTIN_THEMES.morpheus).bgColumn;
+    return currentColors.bgColumn;
   },
   get bgUser() {
-    return (THEMES[activeThemeName] || BUILTIN_THEMES.morpheus).bgUser;
+    return currentColors.bgUser;
   },
   get bgCode() {
-    return (THEMES[activeThemeName] || BUILTIN_THEMES.morpheus).bgCode;
+    return currentColors.bgCode;
   },
   get bgDiffAdd() {
-    return (THEMES[activeThemeName] || BUILTIN_THEMES.morpheus).bgDiffAdd;
+    return currentColors.bgDiffAdd;
   },
   get bgDiffRemove() {
-    return (THEMES[activeThemeName] || BUILTIN_THEMES.morpheus).bgDiffRemove;
+    return currentColors.bgDiffRemove;
   },
   get text() {
-    return (THEMES[activeThemeName] || BUILTIN_THEMES.morpheus).text;
+    return currentColors.text;
   },
   get secondary() {
-    return (THEMES[activeThemeName] || BUILTIN_THEMES.morpheus).secondary;
+    return currentColors.secondary;
   },
   get accent() {
-    return (THEMES[activeThemeName] || BUILTIN_THEMES.morpheus).accent;
+    return currentColors.accent;
   },
   get accentBright() {
-    return (THEMES[activeThemeName] || BUILTIN_THEMES.morpheus).accentBright;
+    return currentColors.accentBright;
   },
   get border() {
-    return (THEMES[activeThemeName] || BUILTIN_THEMES.morpheus).border;
+    return currentColors.border;
   },
   get borderSubtle() {
-    return (THEMES[activeThemeName] || BUILTIN_THEMES.morpheus).borderSubtle;
+    return currentColors.borderSubtle;
   },
   get muted() {
-    return (THEMES[activeThemeName] || BUILTIN_THEMES.morpheus).muted;
+    return currentColors.muted;
   },
   get success() {
-    return (THEMES[activeThemeName] || BUILTIN_THEMES.morpheus).success;
+    return currentColors.success;
   },
   get diffAdd() {
-    return (THEMES[activeThemeName] || BUILTIN_THEMES.morpheus).diffAdd;
+    return currentColors.diffAdd;
   },
   get diffRemove() {
-    return (THEMES[activeThemeName] || BUILTIN_THEMES.morpheus).diffRemove;
+    return currentColors.diffRemove;
   },
   get diffHunk() {
-    return (THEMES[activeThemeName] || BUILTIN_THEMES.morpheus).diffHunk;
+    return currentColors.diffHunk;
   },
   get error() {
-    return (THEMES[activeThemeName] || BUILTIN_THEMES.morpheus).error;
+    return currentColors.error;
   },
   get warning() {
-    return (THEMES[activeThemeName] || BUILTIN_THEMES.morpheus).warning;
+    return currentColors.warning;
   },
   hexToRgb,
   ansiFg,
