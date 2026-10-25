@@ -15,7 +15,7 @@ import {
 import { formatError } from "../utils/errors";
 
 const USAGE = [
-  "usage: `/attack <host|url> --auth <reference> [--methods GET,HEAD] [--rps 5] [--days 30]`",
+  "usage: `/attack <host|url> --auth <reference> [--methods GET,HEAD] [--rps 5] [--days 30] [--allow-private]`",
   "",
   "Only name hosts you own or are authorized to test. The scope is written to `.morpheus/engagement.json` and every recon call checks it.",
 ].join("\n");
@@ -44,11 +44,12 @@ interface AttackArgs {
   methods: string[];
   rps: number;
   days: number;
+  allowPrivate: boolean;
   status: boolean;
 }
 
 function parseArgs(tokens: string[]): AttackArgs {
-  const parsed: AttackArgs = { target: "", auth: "", methods: ["GET", "HEAD"], rps: 5, days: 30, status: false };
+  const parsed: AttackArgs = { target: "", auth: "", methods: ["GET", "HEAD"], rps: 5, days: 30, allowPrivate: false, status: false };
   for (let index = 0; index < tokens.length; index++) {
     const token = tokens[index];
     if (token === "status") {
@@ -61,6 +62,8 @@ function parseArgs(tokens: string[]): AttackArgs {
       parsed.rps = Number(tokens[++index]);
     } else if (token === "--days") {
       parsed.days = Number(tokens[++index]);
+    } else if (token === "--allow-private") {
+      parsed.allowPrivate = true;
     } else if (!parsed.target && !token.startsWith("-")) {
       parsed.target = token;
     }
@@ -99,6 +102,7 @@ export class AttackCommand implements CommandHandler {
           `authorized by: ${engagement.authorizedBy}`,
           `hosts: ${engagement.allowedHosts.join(", ")}`,
           `methods: ${engagement.allowedMethods.join(", ")} · ${engagement.maxRequestsPerSecond} rps`,
+          `private targets: ${engagement.allowPrivateTargets ? "allowed" : "blocked"}`,
           `expires: ${engagement.expiresAt.slice(0, 10)}`,
           `file: ${path.relative(cwd, engagementPath(cwd))}`,
         ].join("\n")
@@ -116,6 +120,7 @@ export class AttackCommand implements CommandHandler {
             `attack mode resumed for **${existing.target}**`,
             `authorized by: ${existing.authorizedBy}`,
             `methods: ${existing.allowedMethods.join(", ")} · ${existing.maxRequestsPerSecond} rps`,
+            `private targets: ${existing.allowPrivateTargets ? "allowed" : "blocked"}`,
             `expires: ${existing.expiresAt.slice(0, 10)}`,
             "",
             USAGE,
@@ -139,6 +144,7 @@ export class AttackCommand implements CommandHandler {
         authorizedBy: args.auth,
         allowedMethods: args.methods,
         maxRequestsPerSecond: args.rps,
+        allowPrivateTargets: args.allowPrivate,
         days: args.days,
       });
       await saveEngagement(engagement, cwd);
@@ -149,6 +155,7 @@ export class AttackCommand implements CommandHandler {
           `attack mode armed for **${engagement.target}**`,
           `authorized by: ${engagement.authorizedBy}`,
           `methods: ${engagement.allowedMethods.join(", ")} · ${engagement.maxRequestsPerSecond} rps`,
+          `private targets: ${engagement.allowPrivateTargets ? "allowed" : "blocked"}`,
           `expires: ${engagement.expiresAt.slice(0, 10)}`,
           `scope file: ${path.relative(cwd, engagementPath(cwd))}`,
           "",

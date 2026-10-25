@@ -20,6 +20,7 @@ export interface ScopeView {
   expired: boolean;
   methods: string;
   rps: number;
+  allowPrivateTargets: boolean;
 }
 
 export function stepPhase(step: ThreadStep): number | null {
@@ -147,5 +148,6 @@ export function scopeView(engagement: Engagement | null, now: Date = new Date())
     expired: now.getTime() > new Date(engagement.expiresAt).getTime(),
     methods: engagement.allowedMethods.join("/"),
     rps: engagement.maxRequestsPerSecond,
+    allowPrivateTargets: engagement.allowPrivateTargets,
   };
 }

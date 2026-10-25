@@ -2,6 +2,7 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import os from "node:os";
 import { checkTarget, loadEngagement, type Engagement } from "../core/engagement";
+import { assertPublicResolution } from "../core/network";
 import type { ToolDefinition } from "../core/types";
 import { formatError } from "../utils/errors";
 
@@ -223,7 +224,8 @@ function defaultDeps(now: number): ReconDeps {
     resolveHost: async (host) => {
       const dns = await import("node:dns/promises");
       try {
-        return await dns.resolve4(host);
+        const records = await dns.lookup(host, { all: true, verbatim: true });
+        return records.map((record) => record.address);
       } catch {
         return [];
       }
@@ -246,6 +248,9 @@ export async function runRecon(
   const host = hostOf(params.target);
   const scope = checkTarget(engagement, base, "GET", new Date(deps.now()));
   if (!scope.allowed) return `Error: ${scope.reason}`;
+  if (params.mode !== "subdomains") {
+    await assertPublicResolution(host, engagement, { resolveHost: deps.resolveHost });
+  }
 
   if (params.mode === "headers") {
     const snapshot = await deps.fetchUrl(base);

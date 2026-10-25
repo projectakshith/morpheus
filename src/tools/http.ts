@@ -1,4 +1,5 @@
 import { truncateOutput } from "./construct";
+import { assertPublicResolution, isPrivateAddress } from "../core/network";
 import type { ToolDefinition, ToolResult } from "../core/types";
 import { checkTarget, loadEngagement, type Engagement } from "../core/engagement";
 import { formatError } from "../utils/errors";
@@ -166,7 +167,10 @@ export interface ScopedHttpDeps {
   fetchImpl?: typeof fetch;
   now?: () => Date;
   evidenceRoot?: string;
+  resolveHost?: (host: string) => Promise<string[]>;
 }
+
+export { isPrivateAddress };
 
 function parseScopedUrl(value: unknown): URL {
   const raw = String(value ?? "").trim();
@@ -376,6 +380,7 @@ export async function executeScopedHttpRequest(
       if (!decision.allowed) {
         throw new Error(`Scope denied for ${parsed.hostname}: ${decision.reason}`);
       }
+      await assertPublicResolution(parsed.hostname, engagement, deps);
       await throttle(`${engagement.id}:${parsed.hostname}`, engagement.maxRequestsPerSecond);
       const response = await fetchImpl(parsed.toString(), {
         method: currentMethod,

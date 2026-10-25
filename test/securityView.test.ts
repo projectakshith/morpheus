@@ -105,6 +105,7 @@ test("scope view reports expiry", () => {
   assert.equal(active?.expired, false);
   assert.equal(active?.target, "example.edu");
   assert.equal(active?.methods, "GET/HEAD");
+  assert.equal(active?.allowPrivateTargets, false);
   const expired = scopeView(engagement, new Date("2026-03-01T00:00:00.000Z"));
   assert.equal(expired?.expired, true);
 });

@@ -89,7 +89,7 @@ export function SecurityHud({ width, height, threads, findings, engagement, targ
     lines.push(padded(scope.target, inner, theme.text, true));
     lines.push(
       padded(
-        `${scope.expired ? "expired" : "expires"} ${scope.expiresAt} · ${scope.methods} · ${scope.rps} rps`,
+        `${scope.expired ? "expired" : "expires"} ${scope.expiresAt} · ${scope.methods} · ${scope.rps} rps${scope.allowPrivateTargets ? " · private" : ""}`,
         inner,
         scope.expired ? theme.error : theme.muted
       )

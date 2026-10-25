@@ -72,13 +72,14 @@ test("/attack with a target but no authorization stays unarmed", async () => {
 test("/attack with a target and authorization writes the scope", async () => {
   await withDir(async (dir) => {
     const { ctx } = makeCtx(dir);
-    await attackCommand.execute("/attack http://localhost:3000 --auth ENG-1 --rps 3", ctx);
+    await attackCommand.execute("/attack http://localhost:3000 --auth ENG-1 --rps 3 --allow-private", ctx);
     assert.equal(getSecuritySession().active, true);
     assert.equal(getSecuritySession().target, "localhost");
     const scope = await loadEngagement(dir);
     assert.deepEqual(scope?.allowedHosts, ["localhost"]);
     assert.deepEqual(scope?.allowedMethods, ["GET", "HEAD"]);
     assert.equal(scope?.maxRequestsPerSecond, 3);
+    assert.equal(scope?.allowPrivateTargets, true);
   });
 });
 

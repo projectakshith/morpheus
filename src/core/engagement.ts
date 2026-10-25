@@ -13,6 +13,7 @@ export interface Engagement {
   allowedHosts: string[];
   allowedMethods: EngagementMethod[];
   maxRequestsPerSecond: number;
+  allowPrivateTargets: boolean;
   createdAt: string;
   expiresAt: string;
 }
@@ -28,6 +29,7 @@ export interface EngagementInput {
   allowedHosts?: string[];
   allowedMethods?: string[];
   maxRequestsPerSecond?: number;
+  allowPrivateTargets?: boolean;
   days?: number;
 }
 
@@ -98,6 +100,7 @@ export function createEngagement(input: EngagementInput, now: Date = new Date())
     allowedHosts: [...new Set(allowedHosts)],
     allowedMethods,
     maxRequestsPerSecond,
+    allowPrivateTargets: Boolean(input.allowPrivateTargets),
     createdAt,
     expiresAt,
   };
@@ -133,6 +136,7 @@ export function validateEngagement(value: unknown): Engagement | null {
     allowedHosts: [...new Set(allowedHosts)],
     allowedMethods,
     maxRequestsPerSecond: Math.min(MAX_REQUESTS_PER_SECOND, Math.floor(maxRequestsPerSecond)),
+    allowPrivateTargets: record.allowPrivateTargets === true,
     createdAt,
     expiresAt,
   };

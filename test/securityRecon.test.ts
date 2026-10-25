@@ -31,7 +31,7 @@ async function withDeps(run: (deps: ReconDeps, root: string) => Promise<void>) {
       body: url.endsWith("/admin") ? "<title>Admin</title>panel" : "missing",
     }),
     fetchCertificates: async () => ["example.edu", "api.example.edu", "dev.example.edu"],
-    resolveHost: async (host) => (host === "dev.example.edu" ? [] : ["203.0.113.10"]),
+    resolveHost: async (host) => (host === "dev.example.edu" ? [] : ["8.8.8.8"]),
     evidenceRoot: root,
     now: () => NOW.getTime(),
   };
@@ -99,6 +99,19 @@ test("headers mode returns a summary and writes evidence", async () => {
     assert.match(result, /missing headers: content-security-policy/);
     const files = await fs.readdir(path.join(root, "example.edu", "evidence"));
     assert.equal(files.length, 1);
+  });
+});
+
+test("recon blocks hostnames resolving private unless the scope allows it", async () => {
+  await withDeps(async (deps) => {
+    deps.resolveHost = async () => ["10.0.0.7"];
+    await assert.rejects(
+      () => runRecon({ mode: "headers", target: "example.edu" }, engagement, deps),
+      /private or link-local/
+    );
+    const allowed = createEngagement({ target: "example.edu", authorizedBy: "ENG-1", allowPrivateTargets: true }, NOW);
+    const result = await runRecon({ mode: "headers", target: "example.edu" }, allowed, deps);
+    assert.match(result, /nginx/);
   });
 });
 

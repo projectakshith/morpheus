@@ -229,3 +229,41 @@ test("scoped HTTP strips credentials when a redirect changes origin", async () =
     await new Promise<void>((resolve) => finalServer.close(() => resolve()));
   }
 });
+
+test("scoped HTTP blocks hostnames resolving private unless the scope allows it", async () => {
+  const fs = await import("node:fs/promises");
+  const os = await import("node:os");
+  const path = await import("node:path");
+  const { createEngagement } = await import("../src/core/engagement");
+  const { executeScopedHttpRequest, isPrivateAddress } = await import("../src/tools/http");
+  assert.equal(isPrivateAddress("127.0.0.1"), true);
+  assert.equal(isPrivateAddress("::1"), true);
+  assert.equal(isPrivateAddress("::ffff:127.0.0.1"), true);
+  assert.equal(isPrivateAddress("169.254.169.254"), true);
+  assert.equal(isPrivateAddress("8.8.8.8"), false);
+  const blocked = createEngagement({ target: "example.edu", authorizedBy: "TEST-8" });
+  await assert.rejects(
+    () => executeScopedHttpRequest(
+      { url: "https://example.edu/", method: "GET" },
+      blocked,
+      { resolveHost: async () => ["10.0.0.7"] }
+    ),
+    /private or link-local/
+  );
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), "morpheus-scoped-http-private-"));
+  try {
+    const allowed = createEngagement({ target: "example.edu", authorizedBy: "TEST-8", allowPrivateTargets: true });
+    const result = await executeScopedHttpRequest(
+      { url: "https://example.edu/", method: "GET" },
+      allowed,
+      {
+        fetchImpl: async () => new Response("ok", { status: 200, headers: { "Content-Type": "text/plain" } }),
+        resolveHost: async () => ["10.0.0.7"],
+        evidenceRoot: root,
+      }
+    );
+    assert.match(result.output, /status: HTTP\/200/);
+  } finally {
+    await fs.rm(root, { recursive: true, force: true });
+  }
+});

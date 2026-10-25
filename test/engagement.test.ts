@@ -31,6 +31,7 @@ test("engagement creation applies safe defaults", () => {
   assert.equal(engagement.maxRequestsPerSecond, 5);
   assert.equal(engagement.expiresAt, "2026-01-31T00:00:00.000Z");
   assert.deepEqual(engagement.allowedHosts, ["example.edu"]);
+  assert.equal(engagement.allowPrivateTargets, false);
 });
 
 test("creation requires authorization and a valid target", () => {
@@ -72,12 +73,13 @@ test("invalid records are rejected", () => {
 test("engagements save and load from the workspace", async () => {
   const dir = await fs.mkdtemp(path.join(os.tmpdir(), "morpheus-engagement-"));
   try {
-    const engagement = createEngagement({ target: "example.edu", authorizedBy: "ENG-1" }, NOW);
+    const engagement = createEngagement({ target: "example.edu", authorizedBy: "ENG-1", allowPrivateTargets: true }, NOW);
     const filePath = await saveEngagement(engagement, dir);
     assert.equal(filePath, engagementPath(dir));
     const loaded = await loadEngagement(dir);
     assert.equal(loaded?.id, engagement.id);
     assert.equal(loaded?.target, "example.edu");
+    assert.equal(loaded?.allowPrivateTargets, true);
     const mode = (await fs.stat(filePath)).mode & 0o777;
     assert.equal(mode, 0o600);
   } finally {
