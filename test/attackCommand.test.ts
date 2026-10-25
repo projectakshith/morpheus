@@ -15,12 +15,17 @@ import {
 function makeCtx(cwd: string) {
   const threads: Thread[] = [];
   let history: string[] = [];
+  let currentModel = "test";
   const ctx = {
     taskText: "/attack",
     cwd,
     baseURL: "",
-    currentModel: "test",
-    setCurrentModel: () => {},
+    get currentModel() {
+      return currentModel;
+    },
+    setCurrentModel: (model: string) => {
+      currentModel = model;
+    },
     setIsModelSelectorOpen: () => {},
     setThreads: (action: Thread[] | ((prev: Thread[]) => Thread[])) => {
       const next = typeof action === "function" ? action(threads) : action;
@@ -32,7 +37,7 @@ function makeCtx(cwd: string) {
     },
     threadsCount: 0,
   } as unknown as CommandContext;
-  return { ctx, threads };
+  return { ctx, threads, currentModel: () => currentModel };
 }
 
 async function withDir(run: (dir: string) => Promise<void>) {
@@ -80,6 +85,30 @@ test("/attack with a target and authorization writes the scope", async () => {
     assert.deepEqual(scope?.allowedMethods, ["GET", "HEAD"]);
     assert.equal(scope?.maxRequestsPerSecond, 3);
     assert.equal(scope?.allowPrivateTargets, true);
+  });
+});
+
+test("/attack routes to a dedicated model and /normal restores the previous one", async () => {
+  await withDir(async (dir) => {
+    const { ctx, currentModel } = makeCtx(dir);
+    await attackCommand.execute("/attack example.edu --auth ENG-1 --model attack-model", ctx);
+    assert.equal(currentModel(), "attack-model");
+    assert.equal(getSecuritySession().model, "attack-model");
+    assert.equal(getSecuritySession().previousModel, "test");
+    await normalCommand.execute("/normal", ctx);
+    assert.equal(currentModel(), "test");
+    assert.equal(getSecuritySession().model, undefined);
+    assert.equal(getSecuritySession().previousModel, undefined);
+  });
+});
+
+test("/normal leaves a manual model switch alone", async () => {
+  await withDir(async (dir) => {
+    const { ctx, currentModel } = makeCtx(dir);
+    await attackCommand.execute("/attack example.edu --auth ENG-1 --model attack-model", ctx);
+    ctx.setCurrentModel("manual-model");
+    await normalCommand.execute("/normal", ctx);
+    assert.equal(currentModel(), "manual-model");
   });
 });
 

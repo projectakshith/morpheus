@@ -11,11 +11,13 @@ import {
   activateSecuritySession,
   beginSecuritySession,
   deactivateSecuritySession,
+  getSecuritySession,
+  setSecuritySession,
 } from "../core/securitySession";
 import { formatError } from "../utils/errors";
 
 const USAGE = [
-  "usage: `/attack <host|url> --auth <reference> [--methods GET,HEAD] [--rps 5] [--days 30] [--allow-private]`",
+  "usage: `/attack <host|url> --auth <reference> [--methods GET,HEAD] [--rps 5] [--days 30] [--allow-private] [--model <id>]`",
   "",
   "Only name hosts you own or are authorized to test. The scope is written to `.morpheus/engagement.json` and every recon call checks it.",
 ].join("\n");
@@ -45,11 +47,12 @@ interface AttackArgs {
   rps: number;
   days: number;
   allowPrivate: boolean;
+  model: string;
   status: boolean;
 }
 
 function parseArgs(tokens: string[]): AttackArgs {
-  const parsed: AttackArgs = { target: "", auth: "", methods: ["GET", "HEAD"], rps: 5, days: 30, allowPrivate: false, status: false };
+  const parsed: AttackArgs = { target: "", auth: "", methods: ["GET", "HEAD"], rps: 5, days: 30, allowPrivate: false, model: "", status: false };
   for (let index = 0; index < tokens.length; index++) {
     const token = tokens[index];
     if (token === "status") {
@@ -64,6 +67,8 @@ function parseArgs(tokens: string[]): AttackArgs {
       parsed.days = Number(tokens[++index]);
     } else if (token === "--allow-private") {
       parsed.allowPrivate = true;
+    } else if (token === "--model") {
+      parsed.model = tokens[++index] ?? "";
     } else if (!parsed.target && !token.startsWith("-")) {
       parsed.target = token;
     }
@@ -83,6 +88,13 @@ export class AttackCommand implements CommandHandler {
   public async execute(trimmed: string, ctx: CommandContext): Promise<boolean> {
     const cwd = ctx.cwd ?? process.cwd();
     const args = parseArgs(trimmed.trim().split(/\s+/).slice(1));
+    const before = getSecuritySession();
+    const previousModel = before.active ? before.previousModel : ctx.currentModel;
+    if (!before.active) setSecuritySession({ previousModel });
+    if (args.model) {
+      ctx.setCurrentModel(args.model);
+      setSecuritySession({ model: args.model, previousModel });
+    }
 
     if (args.status) {
       const engagement = await loadEngagement(cwd);
@@ -103,6 +115,7 @@ export class AttackCommand implements CommandHandler {
           `hosts: ${engagement.allowedHosts.join(", ")}`,
           `methods: ${engagement.allowedMethods.join(", ")} · ${engagement.maxRequestsPerSecond} rps`,
           `private targets: ${engagement.allowPrivateTargets ? "allowed" : "blocked"}`,
+          ...(getSecuritySession().model ? [`model route: ${getSecuritySession().model}`] : []),
           `expires: ${engagement.expiresAt.slice(0, 10)}`,
           `file: ${path.relative(cwd, engagementPath(cwd))}`,
         ].join("\n")
@@ -121,6 +134,7 @@ export class AttackCommand implements CommandHandler {
             `authorized by: ${existing.authorizedBy}`,
             `methods: ${existing.allowedMethods.join(", ")} · ${existing.maxRequestsPerSecond} rps`,
             `private targets: ${existing.allowPrivateTargets ? "allowed" : "blocked"}`,
+            ...(getSecuritySession().model ? [`model route: ${getSecuritySession().model}`] : []),
             `expires: ${existing.expiresAt.slice(0, 10)}`,
             "",
             USAGE,
@@ -156,6 +170,7 @@ export class AttackCommand implements CommandHandler {
           `authorized by: ${engagement.authorizedBy}`,
           `methods: ${engagement.allowedMethods.join(", ")} · ${engagement.maxRequestsPerSecond} rps`,
           `private targets: ${engagement.allowPrivateTargets ? "allowed" : "blocked"}`,
+          ...(getSecuritySession().model ? [`model route: ${getSecuritySession().model}`] : []),
           `expires: ${engagement.expiresAt.slice(0, 10)}`,
           `scope file: ${path.relative(cwd, engagementPath(cwd))}`,
           "",
@@ -181,6 +196,10 @@ export class NormalCommand implements CommandHandler {
 
   public async execute(trimmed: string, ctx: CommandContext): Promise<boolean> {
     const cwd = ctx.cwd ?? process.cwd();
+    const state = getSecuritySession();
+    if (state.model && state.previousModel && ctx.currentModel === state.model) {
+      ctx.setCurrentModel(state.previousModel);
+    }
     deactivateSecuritySession();
     addThread(
       ctx,

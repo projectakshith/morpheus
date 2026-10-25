@@ -4,6 +4,8 @@ export interface SecuritySessionState {
   active: boolean;
   target?: string;
   engagementId?: string;
+  model?: string;
+  previousModel?: string;
 }
 
 type Listener = () => void;
@@ -40,5 +42,6 @@ export function beginSecuritySession(target?: string): void {
 }
 
 export function deactivateSecuritySession(): void {
-  setSecuritySession({ active: false, target: undefined, engagementId: undefined });
+  state = { active: false };
+  for (const listener of listeners) listener();
 }
