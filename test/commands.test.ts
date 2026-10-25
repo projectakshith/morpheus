@@ -379,6 +379,36 @@ describe("CommandRegistry", () => {
     assert.ok((threadCreated as Thread).response.includes("⚿ Keymaker"));
     assert.ok((threadCreated as Thread).response.includes("✦ Sati"));
   });
+
+  it("dispatches /rewind and pops turns from thread history", async () => {
+    let threads: Thread[] = [
+      { id: "1", index: 1, prompt: "p1", response: "r1", isStreaming: false, steps: [], isExpanded: false, status: "completed", stepCount: 0, startTime: 0, durationMs: 0 },
+      { id: "2", index: 2, prompt: "p2", response: "r2", isStreaming: false, steps: [], isExpanded: false, status: "completed", stepCount: 0, startTime: 0, durationMs: 0 },
+    ];
+    let chatHistory = [{ role: "user", content: "p1" }, { role: "assistant", content: "r1" }, { role: "user", content: "p2" }, { role: "assistant", content: "r2" }] as any[];
+
+    const ctx: CommandContext = {
+      taskText: "/rewind 1",
+      baseURL: "http://127.0.0.1:8787/v1",
+      currentModel: "flash",
+      setCurrentModel: () => {},
+      setIsModelSelectorOpen: () => {},
+      setThreads: (updater) => {
+        threads = typeof updater === "function" ? updater(threads) : updater;
+      },
+      setHistory: (updater) => {
+        chatHistory = typeof updater === "function" ? updater(chatHistory) : updater;
+      },
+      setPromptHistory: () => {},
+      threadsCount: threads.length,
+    };
+
+    const handled = await commandRegistry.dispatch("/rewind 1", ctx);
+    assert.equal(handled, true);
+    assert.equal(threads.length, 2); // 1 preserved original turn + 1 rewind notice turn
+    assert.ok(threads[1].response.includes("Rewound 1 turn"));
+    assert.equal(chatHistory.length, 2); // 4 - 2 = 2 messages
+  });
 });
 
 
