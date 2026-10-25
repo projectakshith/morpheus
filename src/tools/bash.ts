@@ -9,12 +9,162 @@ export interface BashParams {
   timeoutMs?: number;
 }
 
-interface PathNode {
-  children: Map<string, PathNode>;
+export interface LineMatch {
+  lineNum: number;
+  content: string;
 }
 
-function compactAbsolutePathListing(text: string): string {
+interface PathNode {
+  children: Map<string, PathNode>;
+  matches?: LineMatch[];
+}
+
+interface ParsedGrepItem {
+  filePath: string;
+  lineNum: number;
+  content: string;
+}
+
+function parseGrepLine(line: string): ParsedGrepItem | null {
+  if (!line) return null;
+  let searchLine = line;
+  let drivePrefix = "";
+  if (/^[a-zA-Z]:[\\/]/.test(line)) {
+    drivePrefix = line.slice(0, 2);
+    searchLine = line.slice(2);
+  }
+  const match = searchLine.match(/^([^:\r\n]+):(\d+)(?::\d+)?:?(.*)$/);
+  if (!match) return null;
+  const rawPath = drivePrefix + match[1].trim();
+  const lineNum = parseInt(match[2], 10);
+  const content = match[3] ?? "";
+
+  if (rawPath.length === 0 || rawPath.startsWith(" ") || rawPath.endsWith(" ")) return null;
+  if (!rawPath.includes("/") && !rawPath.includes("\\") && !/\.[a-zA-Z0-9_-]+$/.test(rawPath)) {
+    return null;
+  }
+  return { filePath: rawPath, lineNum, content };
+}
+
+export function compactAbsolutePathListing(text: string): string {
   const lines = text.split(/\r?\n/).map((line) => line.trim()).filter(Boolean);
+  if (lines.length < 5) return text;
+
+  // Check if all lines match grep output format
+  const parsedGrep = lines.map(parseGrepLine);
+  const isAllGrep = parsedGrep.every((item): item is ParsedGrepItem => item !== null);
+
+  if (isAllGrep) {
+    const matchesByFile = new Map<string, LineMatch[]>();
+    for (const item of parsedGrep) {
+      const normPath = path.normalize(item.filePath);
+      if (!matchesByFile.has(normPath)) {
+        matchesByFile.set(normPath, []);
+      }
+      matchesByFile.get(normPath)!.push({
+        lineNum: item.lineNum,
+        content: item.content,
+      });
+    }
+
+    const uniqueFiles = [...matchesByFile.keys()];
+    const allAbsolute = uniqueFiles.every((p) => path.isAbsolute(p));
+
+    let root = "";
+    if (allAbsolute) {
+      const parentParts = uniqueFiles.map((entry) => path.dirname(entry).split(path.sep).filter(Boolean));
+      const commonParts: string[] = [];
+      const maxCommonLength = Math.min(...parentParts.map((parts) => parts.length));
+      for (let index = 0; index < maxCommonLength; index++) {
+        const part = parentParts[0][index];
+        if (parentParts.every((parts) => parts[index] === part)) commonParts.push(part);
+        else break;
+      }
+      root = path.join(path.parse(uniqueFiles[0]).root, ...commonParts);
+    } else {
+      const parentParts = uniqueFiles.map((entry) => {
+        const dir = path.dirname(entry);
+        return dir === "." ? [] : dir.split(path.sep).filter(Boolean);
+      });
+      const commonParts: string[] = [];
+      const minLength = Math.min(...parentParts.map((parts) => parts.length));
+      for (let index = 0; index < minLength; index++) {
+        const part = parentParts[0][index];
+        if (parentParts.every((parts) => parts[index] === part)) commonParts.push(part);
+        else break;
+      }
+      root = commonParts.length > 0 ? path.join(...commonParts) : ".";
+    }
+
+    const tree: PathNode = { children: new Map() };
+    for (const [entry, matches] of matchesByFile.entries()) {
+      const relative = allAbsolute ? path.relative(root, entry) : (root === "." ? entry : path.relative(root, entry));
+      if (!relative || relative.startsWith("..") || (allAbsolute && path.isAbsolute(relative))) return text;
+
+      // Deduplicate identical matches within the file and sort numerically by line number
+      const seen = new Set<string>();
+      const deduped: LineMatch[] = [];
+      for (const m of matches) {
+        const key = `${m.lineNum}:${m.content}`;
+        if (!seen.has(key)) {
+          seen.add(key);
+          deduped.push(m);
+        }
+      }
+      deduped.sort((a, b) => a.lineNum - b.lineNum);
+
+      const parts = relative.split(path.sep).filter(Boolean);
+      let node = tree;
+      for (let i = 0; i < parts.length; i++) {
+        const part = parts[i];
+        let child = node.children.get(part);
+        if (!child) {
+          child = { children: new Map() };
+          node.children.set(part, child);
+        }
+        if (i === parts.length - 1) {
+          child.matches = deduped;
+        }
+        node = child;
+      }
+    }
+
+    const rendered: string[] = [];
+    const visit = (node: PathNode, prefix: string) => {
+      const entries = [...node.children.entries()].sort(([a], [b]) => a.localeCompare(b));
+      entries.forEach(([name, child], index) => {
+        const last = index === entries.length - 1;
+        const directory = child.children.size > 0;
+        if (directory) {
+          rendered.push(`${prefix}${last ? "└── " : "├── "}${name}/`);
+          visit(child, `${prefix}${last ? "    " : "│   "}`);
+        } else if (child.matches && child.matches.length > 0) {
+          if (child.matches.length === 1) {
+            const m = child.matches[0];
+            const content = m.content.length > 240 ? `${m.content.slice(0, 240)}…` : m.content;
+            rendered.push(`${prefix}${last ? "└── " : "├── "}${name}:${m.lineNum}: ${content.trim()}`);
+          } else {
+            rendered.push(`${prefix}${last ? "└── " : "├── "}${name}`);
+            const matchPrefix = `${prefix}${last ? "    " : "│   "}`;
+            child.matches.forEach((m, mIdx) => {
+              const isLastMatch = mIdx === child.matches!.length - 1;
+              const content = m.content.length > 240 ? `${m.content.slice(0, 240)}…` : m.content;
+              rendered.push(`${matchPrefix}${isLastMatch ? "└── " : "├── "}:${m.lineNum}: ${content.trim()}`);
+            });
+          }
+        } else {
+          rendered.push(`${prefix}${last ? "└── " : "├── "}${name}`);
+        }
+      });
+    };
+    visit(tree, "");
+
+    const totalMatches = parsedGrep.length;
+    const fileCount = uniqueFiles.length;
+    return `${totalMatches} match${totalMatches === 1 ? "" : "es"} across ${fileCount} file${fileCount === 1 ? "" : "s"} under ${root}:\n${rendered.join("\n")}`;
+  }
+
+  // Pure path listing (find output)
   if (lines.length < 8 || !lines.every((line) => path.isAbsolute(line))) return text;
 
   const uniquePaths = [...new Set(lines.map((line) => path.normalize(line)))];
