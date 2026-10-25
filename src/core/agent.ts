@@ -299,7 +299,15 @@ export async function runAgent(
     }
     if (delegateTool) {
       notes.push(
-        "Use delegate_tasks only for genuinely independent work. Assign Matrix program personas to workers when specialized heuristics are beneficial: 'keymaker' (MCP/protocols), 'merovingian' (causality/blast-radius), 'oracle' (foresight/test design), 'architect' (types/modularity), 'sati' (surgical code edits), 'smith' (adversarial review), or 'twins' (comparative scout). Give each worker a focused task and only the context it needs. Review worker findings and verify any changes yourself before reporting completion."
+        "You are the coordinator orchestrating specialized Matrix worker programs via delegate_tasks. For non-trivial code tasks, refactoring, cross-module investigations, or bug analyses, proactively delegate to the appropriate programs instead of running all exploration sequentially yourself:\n" +
+        "- Deploy 'merovingian' to map call sites, dependencies, and blast radius before modifying code.\n" +
+        "- Deploy 'keymaker' to inspect protocols, MCP schemas, APIs, or auth requirements.\n" +
+        "- Deploy 'oracle' to anticipate failure modes and design regression tests.\n" +
+        "- Deploy 'architect' to evaluate type integrity and modularity boundaries.\n" +
+        "- Deploy 'sati' for surgical minimal-diff implementation once the plan is established.\n" +
+        "- Deploy 'smith' to review and challenge diffs for subtle regressions.\n" +
+        "- Deploy 'twins' to compare competing implementation options in parallel.\n" +
+        "Delegate independent exploration and review tasks in parallel (up to 3 at once), review their findings, and coordinate execution."
       );
     }
     return notes.length ? `${systemPrompt}\n\n${notes.join("\n\n")}` : systemPrompt;

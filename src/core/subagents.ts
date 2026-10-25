@@ -125,7 +125,7 @@ export function createDelegateTasksTool(
 
   return {
     name: "delegate_tasks",
-    description: "Run up to three independent, bounded worker tasks in parallel. Each worker gets only its task and supplied context. Roles: explore/review are read-only; implement may edit only its required files list and cannot run shell commands or commit. Matrix programs (keymaker, merovingian, oracle, architect, sati, smith, twins) provide specialized personas and operational directives. Results and token usage return to you. Use when tasks are genuinely independent.",
+    description: "Deploy up to three specialized Matrix worker programs in parallel (or standard role workers). Proactively delegate research, dependency analysis, edge-case review, and scoped edits to these programs rather than serializing all exploration yourself. Programs: 'merovingian' (causality/blast-radius), 'keymaker' (MCP/protocols), 'oracle' (foresight/test design), 'architect' (types/modularity), 'sati' (surgical code edits), 'smith' (adversarial review), 'twins' (comparative scout).",
     parameters: {
       type: "object",
       properties: {
