@@ -334,6 +334,51 @@ describe("CommandRegistry", () => {
     assert.equal(handled, true);
     assert.equal(openedModal, "usage");
   });
+
+  it("dispatches /programs and opens programs modal when openModal is provided", async () => {
+    let openedModal: string | null = null;
+    const ctx: CommandContext = {
+      taskText: "/programs",
+      baseURL: "http://127.0.0.1:8787/v1",
+      currentModel: "flash",
+      setCurrentModel: () => {},
+      setIsModelSelectorOpen: () => {},
+      setThreads: () => {},
+      setPromptHistory: () => {},
+      threadsCount: 0,
+      openModal: (modal) => {
+        openedModal = modal;
+      },
+    };
+
+    const handled = await commandRegistry.dispatch("/programs", ctx);
+    assert.equal(handled, true);
+    assert.equal(openedModal, "programs");
+  });
+
+  it("dispatches /programs and outputs manifest when openModal is absent", async () => {
+    let threadCreated: Thread | null = null;
+    const ctx: CommandContext = {
+      taskText: "/programs",
+      baseURL: "http://127.0.0.1:8787/v1",
+      currentModel: "flash",
+      setCurrentModel: () => {},
+      setIsModelSelectorOpen: () => {},
+      setThreads: (updater) => {
+        const next = typeof updater === "function" ? updater([]) : updater;
+        threadCreated = next[0] || null;
+      },
+      setPromptHistory: () => {},
+      threadsCount: 0,
+    };
+
+    const handled = await commandRegistry.dispatch("/programs", ctx);
+    assert.equal(handled, true);
+    assert.ok(threadCreated);
+    assert.ok((threadCreated as Thread).response.includes("Matrix Operative Programs"));
+    assert.ok((threadCreated as Thread).response.includes("⚿ Keymaker"));
+    assert.ok((threadCreated as Thread).response.includes("✦ Sati"));
+  });
 });
 
 

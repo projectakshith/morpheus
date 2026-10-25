@@ -19,6 +19,7 @@ import { UsageModal } from "./UsageModal";
 import { PermissionApproval } from "./PermissionApproval";
 import { DiffModal } from "./DiffModal";
 import { ToolOutputModal } from "./ToolOutputModal";
+import { ProgramsModal } from "./ProgramsModal";
 import { gatherContext } from "../../core/context";
 import { MORPHEUS_VERSION } from "../../index";
 import { cancelThemeTransition, getActiveThemeName, theme, transitionTheme } from "../theme";
@@ -57,7 +58,7 @@ export function App({
   const [permissionModeSaveError, setPermissionModeSaveError] = useState(false);
   const [workerModelSaveError, setWorkerModelSaveError] = useState(false);
   const [workerModelRole, setWorkerModelRole] = useState<SubagentRole | null>(null);
-  const [activeModal, setActiveModal] = useState<"none" | "model" | "session" | "settings" | "diff" | "neo" | "usage" | "tool-output">("none");
+  const [activeModal, setActiveModal] = useState<"none" | "model" | "session" | "settings" | "diff" | "neo" | "usage" | "programs" | "tool-output">("none");
   const [selectedToolOutputId, setSelectedToolOutputId] = useState<string | null>(null);
   const [selectedDiffFile, setSelectedDiffFile] = useState<string | null>(null);
   const [scrollOffset, setScrollOffset] = useState(0);
@@ -88,7 +89,7 @@ export function App({
 
   const isModelSelectorOpen = activeModal === "model";
   const setIsModelSelectorOpen = (open: boolean) => setActiveModal(open ? "model" : "none");
-  const openModal = (m: "model" | "session" | "settings" | "diff" | "neo" | "usage") => setActiveModal(m);
+  const openModal = (m: "model" | "session" | "settings" | "diff" | "neo" | "usage" | "programs") => setActiveModal(m);
   const closeModal = () => {
     setActiveModal("none");
     setSelectedDiffFile(null);
@@ -533,6 +534,13 @@ export function App({
             onClose={closeModal}
             threads={threads}
             fileEdits={fileEdits}
+          />
+        ) : activeModal === "programs" ? (
+          <ProgramsModal
+            currentModel={currentModel}
+            width={terminalWidth}
+            height={effectiveWorkspaceHeight}
+            onClose={closeModal}
           />
         ) : activeModal === "diff" ? (
           <DiffModal

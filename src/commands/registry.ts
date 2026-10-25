@@ -15,6 +15,7 @@ import { neoCommand } from "./neo";
 import { usageCommand } from "./usage";
 import { cuaCommand } from "./cua";
 import { attackCommand, normalCommand } from "./attack";
+import { programsCommand } from "./programs";
 
 export class CommandRegistry {
   private handlers: CommandHandler[] = [];
@@ -37,6 +38,7 @@ export class CommandRegistry {
     this.register(cuaCommand);
     this.register(attackCommand);
     this.register(normalCommand);
+    this.register(programsCommand);
   }
 
   public register(handler: CommandHandler): void {
