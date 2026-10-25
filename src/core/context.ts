@@ -72,23 +72,22 @@ export function gatherContext(cwd: string = process.cwd()): AgentContext {
   };
 }
 
-export function buildSystemPrompt(ctx: AgentContext): string {
-  const envLines = [
+import { createHash } from "node:crypto";
+import { formatToolsForPayload } from "../provider/operator";
+import type { ToolDefinition } from "./types";
+
+export function buildCanonicalSystemPrompt(ctx: AgentContext): string {
+  const staticEnvLines = [
     "<env>",
     `cwd: ${ctx.cwd}`,
     `platform: ${ctx.platform}`,
-    ...(ctx.branch ? [`git: ${ctx.branch} (${ctx.gitStatus || "clean"})`] : []),
-    ...(ctx.findings && ctx.findings.length > 0
-      ? [`findings:\n${ctx.findings.map((f) => `- [${f.topic}] ${f.takeaway}`).join("\n")}`]
-      : []),
+    ...(ctx.branch ? [`git branch: ${ctx.branch}`] : []),
     ...(ctx.repoMap ? [`repo map:\n${ctx.repoMap}`] : []),
     "</env>",
   ];
 
   const rulesBlock = ctx.rules && ctx.rules.length > 0 ? formatRules(ctx.rules) : "";
   const skillsManifest = ctx.skills && ctx.skills.length > 0 ? formatSkillsManifest(ctx.skills) : "";
-  const activeSkillsBlock =
-    ctx.activeSkills && ctx.activeSkills.length > 0 ? formatActiveSkills(ctx.activeSkills) : "";
 
   const primary =
     ctx.mode === "security"
@@ -106,8 +105,40 @@ export function buildSystemPrompt(ctx: AgentContext): string {
           "use load_skill to fetch the playbook for any relevant skill before executing unfamiliar tasks.",
         ]
       : []),
-    ...(activeSkillsBlock ? ["", activeSkillsBlock] : []),
     "",
-    envLines.join("\n"),
+    staticEnvLines.join("\n"),
   ].join("\n");
+}
+
+export function computePromptCacheFingerprint(
+  systemPrompt: string,
+  tools?: Record<string, ToolDefinition> | ToolDefinition[]
+): string {
+  const toolsJson = JSON.stringify(formatToolsForPayload(tools) ?? []);
+  return createHash("sha256")
+    .update(`${systemPrompt}\0${toolsJson}`)
+    .digest("hex");
+}
+
+export function buildSystemPrompt(ctx: AgentContext): string {
+  const canonicalPrefix = buildCanonicalSystemPrompt(ctx);
+
+  /* Epilogue isolation: volatile updates (findings, modified file count, active skills)
+   * are appended strictly at the tail so the prefix remains byte-stable for prompt caching. */
+  const epilogueParts: string[] = [];
+  if (ctx.gitStatus && ctx.gitStatus !== "clean") {
+    epilogueParts.push(`<git_status>${ctx.gitStatus}</git_status>`);
+  }
+  if (ctx.findings && ctx.findings.length > 0) {
+    epilogueParts.push(
+      `<findings>\n${ctx.findings.map((f) => `- [${f.topic}] ${f.takeaway}`).join("\n")}\n</findings>`
+    );
+  }
+  if (ctx.activeSkills && ctx.activeSkills.length > 0) {
+    epilogueParts.push(formatActiveSkills(ctx.activeSkills));
+  }
+
+  return epilogueParts.length > 0
+    ? `${canonicalPrefix}\n\n<epilogue>\n${epilogueParts.join("\n\n")}\n</epilogue>`
+    : canonicalPrefix;
 }

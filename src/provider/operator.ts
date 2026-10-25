@@ -135,12 +135,14 @@ export function formatMessagesForPayload(
   return rawMessages;
 }
 
-/* Formats registered tools into OpenAI function call definition specs. */
+/* Formats registered tools into OpenAI function call definition specs with deterministic ordering for prompt cache stability. */
 export function formatToolsForPayload(
   tools?: Record<string, ToolDefinition> | ToolDefinition[]
 ): Record<string, unknown>[] | undefined {
   if (!tools) return undefined;
-  const toolList = Array.isArray(tools) ? tools : Object.values(tools);
+  const toolList = (Array.isArray(tools) ? tools : Object.values(tools))
+    .slice()
+    .sort((a, b) => a.name.localeCompare(b.name));
   if (toolList.length === 0) return undefined;
 
   return toolList.map((t) => ({
