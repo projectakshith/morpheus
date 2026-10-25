@@ -17,37 +17,37 @@ test("Matrix Programs: registry lists all programs with correct operational role
   const keymaker = getProgram("keymaker");
   assert.ok(keymaker);
   assert.equal(keymaker.role, "explore");
-  assert.equal(keymaker.icon, "🗝️");
+  assert.equal(keymaker.icon, "⚿");
 
   const merovingian = getProgram("merovingian");
   assert.ok(merovingian);
   assert.equal(merovingian.role, "explore");
-  assert.equal(merovingian.icon, "🍷");
+  assert.equal(merovingian.icon, "⬡");
 
   const oracle = getProgram("oracle");
   assert.ok(oracle);
   assert.equal(oracle.role, "review");
-  assert.equal(oracle.icon, "🔮");
+  assert.equal(oracle.icon, "◎");
 
   const architect = getProgram("architect");
   assert.ok(architect);
   assert.equal(architect.role, "review");
-  assert.equal(architect.icon, "📐");
+  assert.equal(architect.icon, "⌂");
 
   const sati = getProgram("sati");
   assert.ok(sati);
   assert.equal(sati.role, "implement");
-  assert.equal(sati.icon, "🌅");
+  assert.equal(sati.icon, "✦");
 
   const smith = getProgram("smith");
   assert.ok(smith);
   assert.equal(smith.role, "review");
-  assert.equal(smith.icon, "🕶️");
+  assert.equal(smith.icon, "§");
 
   const twins = getProgram("twins");
   assert.ok(twins);
   assert.equal(twins.role, "explore");
-  assert.equal(twins.icon, "👻");
+  assert.equal(twins.icon, "⫽");
 });
 
 test("Matrix Programs: resolveProgram handles prefixes and casing", () => {
@@ -63,9 +63,9 @@ test("Matrix Programs: resolveProgram handles prefixes and casing", () => {
 test("Matrix Programs: formatProgramsManifest renders markdown block", () => {
   const manifest = formatProgramsManifest();
   assert.ok(manifest.includes("<matrix_programs>"));
-  assert.ok(manifest.includes("🗝️ keymaker (explore)"));
-  assert.ok(manifest.includes("🍷 merovingian (explore)"));
-  assert.ok(manifest.includes("🌅 sati (implement)"));
+  assert.ok(manifest.includes("⚿ keymaker (explore)"));
+  assert.ok(manifest.includes("⬡ merovingian (explore)"));
+  assert.ok(manifest.includes("✦ sati (implement)"));
   assert.ok(manifest.includes("</matrix_programs>"));
 });
 
@@ -122,9 +122,9 @@ test("delegate_tasks tool parses tasks with Matrix program and auto-infers role"
     process.cwd()
   );
 
-  assert.ok(result.includes("🍷 Merovingian (explore) · coordinator-model"));
+  assert.ok(result.includes("⬡ Merovingian (explore) · coordinator-model"));
   assert.ok(result.includes("Causality map completed: 2 dependents identified."));
-  assert.ok(executedPrompt.includes("Matrix Program: 🍷 The Merovingian (Merovingian)"));
+  assert.ok(executedPrompt.includes("Matrix Program: ⬡ The Merovingian (Merovingian)"));
   assert.ok(executedPrompt.includes("Check downstream callers of handleStream"));
   assert.equal(executedModel, "coordinator-model");
 });
