@@ -138,11 +138,13 @@ test("the recon tool appears only in attack mode", async () => {
     activateSecuritySession(engagement);
     assert.ok(createTools(dir).security_recon);
     assert.ok(createTools(dir).http_probe);
+    assert.ok(createTools(dir).security_state);
     assert.equal(createTools(dir).http_request, undefined);
     assert.equal(createTools(dir).bash, undefined);
     deactivateSecuritySession();
     assert.equal(createTools(dir).security_recon, undefined);
     assert.equal(createTools(dir).http_probe, undefined);
+    assert.equal(createTools(dir).security_state, undefined);
     assert.ok(createTools(dir).http_request);
   } finally {
     deactivateSecuritySession();

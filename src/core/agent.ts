@@ -6,6 +6,7 @@ import { Operator } from "../provider/operator";
 import { gatherContext, buildSystemPrompt } from "./context";
 import { classifyRefusal, shouldRecover } from "./refusal";
 import { formatEngagementBlock, formatPendingScopeBlock, withSecurityRouter } from "./securityPrompt";
+import { loadSecurityState, formatSecurityStateBlock } from "./securityState";
 import { compactHistory, dropOldToolVisuals } from "./compaction";
 import { SessionLogger } from "./logger";
 import { isToolError, formatError } from "../utils/errors";
@@ -160,6 +161,9 @@ export async function runAgent(
   for (const finding of options.findings ?? []) rememberFinding(finding);
   const securityMode = Boolean(options.security);
   const securityEngagement = options.security?.engagement ?? null;
+  let currentSecurityState = securityEngagement
+    ? await loadSecurityState(securityEngagement.id, cwd).catch(() => null)
+    : null;
   const workflow = getWorkflow(classifyTaskArchetype(prompt));
   const baseContext = gatherContext(cwd);
   const matchedSkills = matchSkills(prompt, baseContext.skills ?? []);
@@ -274,6 +278,9 @@ export async function runAgent(
       access: options.toolAccess,
       allowedWritePaths: options.allowedWritePaths,
       readOutputBudgetBytes: () => activeReadOutputBudgetBytes,
+      onSecurityState: (state) => {
+        currentSecurityState = state;
+      },
     }
   );
   const mcp = options.toolAccess
@@ -316,6 +323,13 @@ export async function runAgent(
           ? formatEngagementBlock(securityEngagement)
           : formatPendingScopeBlock()
       );
+      if (securityEngagement) {
+        notes.push(
+          currentSecurityState
+            ? formatSecurityStateBlock(currentSecurityState)
+            : "<security-state>unreadable; call security_state read and repair the ledger before continuing.</security-state>"
+        );
+      }
     } else {
       notes.push(formatWorkflowPrompt(workflow));
     }

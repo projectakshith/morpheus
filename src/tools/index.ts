@@ -12,6 +12,8 @@ import { createHttpTool, createSecurityHttpTool } from "./http";
 import { createFindingTool } from "./finding";
 import { createSkillTool } from "./skill";
 import { createSecurityReconTool } from "./security";
+import { createSecurityStateTool } from "../core/securityState";
+import type { SecurityState } from "../core/securityState";
 import { getSecuritySession } from "../core/securitySession";
 import {
   createUplinkSearchTool,
@@ -32,6 +34,7 @@ export {
   createFindingTool,
   createSkillTool,
   createSecurityReconTool,
+  createSecurityStateTool,
   createUplinkSearchTool,
   createUplinkBrowseTool,
   createUplinkTools,
@@ -47,6 +50,7 @@ export function createTools(
     access?: "readOnly" | "scopedWrite";
     allowedWritePaths?: string[];
     readOutputBudgetBytes?: () => number;
+    onSecurityState?: (state: SecurityState) => void;
   } = {}
 ): Record<string, ToolDefinition> {
   const uplink = createUplinkTools();
@@ -74,6 +78,7 @@ export function createTools(
     delete tools.uplink_browse;
     tools.http_probe = createSecurityHttpTool();
     tools.security_recon = createSecurityReconTool();
+    tools.security_state = createSecurityStateTool(options.onSecurityState);
   }
 
   if (options.access === "readOnly") {
