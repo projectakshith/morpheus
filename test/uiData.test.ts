@@ -97,7 +97,7 @@ test("an open edit card folds from its header and opens the full diff from its b
     id: "t", index: 1, prompt: "fix", response: "", isExpanded: false, status: "completed", stepCount: 1, startTime: 0,
     steps: [{ id: "e1", type: "tool", name: "edit_file", args: { filePath: "src/a.ts" }, output: "ok\n\n@@ -1,1 +1,1 @@\n-a\n+b" }],
   };
-  const lines = buildActivityLines({ threads: [thread], edits: [], width: 50, cwd: "/repo" });
+  const lines = buildActivityLines({ threads: [thread], edits: [], width: 50, cwd: "/repo", openedTurnIds: new Set(["t"]) });
   const header = lines.find((l) => l.id.endsWith("_top"));
   const body = lines.filter((l) => /_b\d+$/.test(l.id));
   assert.equal(header?.toolId, "e1");

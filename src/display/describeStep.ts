@@ -19,6 +19,7 @@ export interface QuietItem {
   output: string[];
   outputMore: boolean;
   running: boolean;
+  failed: boolean;
 }
 
 export interface DiffRow {
@@ -32,7 +33,87 @@ export interface TextLine {
   error: boolean;
 }
 
+export interface SeraphHit {
+  path: string;
+  symbol: string;
+  startLine: number;
+  endLine: number;
+  commit: string;
+  score: number;
+  relevance: number;
+  lang: string;
+  preview: string[];
+  views: Record<string, number>;
+  versions: string[];
+}
+
+export interface SeraphIndexStats {
+  commit: string;
+  parsedFiles: number;
+  reusedChunks: number;
+  totalChunks: number;
+  ms?: number;
+}
+
+export interface SeraphDepChain {
+  steps: { kind: string; symbol: string }[];
+}
+
+export interface SeraphChange {
+  change: string;
+  symbol: string;
+  path: string;
+  line: number;
+}
+
+export interface SeraphCompare {
+  from: string;
+  to: string;
+  summary: Record<string, number>;
+  changes: SeraphChange[];
+  depsAdded: number;
+  depsRemoved: number;
+  commitSubjects: { sha: string; subject: string }[];
+}
+
+export interface SeraphFileEntry {
+  path: string;
+  detail: string;
+  evidence?: string;
+}
+
+export interface SeraphContextEvidence {
+  path: string;
+  symbol: string;
+  kind: string;
+  startLine: number;
+  endLine: number;
+  score: number;
+}
+
+export interface SeraphBody {
+  type: "seraph";
+  mode: "search" | "version" | "history" | "index" | "symbol" | "deps" | "compare" | "map" | "impact" | "context" | "worktree";
+  hits: SeraphHit[];
+  index?: SeraphIndexStats;
+  searchMs?: number;
+  commits: string[];
+  deps?: { root: string; direction: string; chains: SeraphDepChain[] };
+  compare?: SeraphCompare;
+  scope?: string;
+  commit?: string;
+  summary?: string[];
+  files?: SeraphFileEntry[];
+  paths?: string[];
+  evidence?: SeraphContextEvidence[];
+  subdirectories?: string[];
+  truncated?: boolean;
+  totalFiles?: number;
+  coverageNote?: string;
+}
+
 export type CardBody =
+  | SeraphBody
   | { type: "diff"; rows: DiffRow[]; lang: string }
   | { type: "code"; lines: string[]; lang: string }
   | { type: "text"; lines: TextLine[]; keep: "head" | "tail" }
@@ -191,19 +272,20 @@ function quietItem(step: ThreadStep, cwd: string): QuietItem {
         output,
         outputMore,
         running,
+        failed: Boolean(step.isError),
       };
     }
     case "list_dir": {
       const dir = relativePath(str(args.dirPath) || ".", cwd);
       const entries = (out.match(/[├└]──/g) ?? []).length;
-      return { stepId: step.id, verb: "list", target: dir.endsWith("/") ? dir : `${dir}/`, result: running ? "" : plural(entries, "entry", "entries"), output, outputMore, running };
+      return { stepId: step.id, verb: "list", target: dir.endsWith("/") ? dir : `${dir}/`, result: running ? "" : plural(entries, "entry", "entries"), output, outputMore, running, failed: Boolean(step.isError) };
     }
     case "grep_code": {
       const where = str(args.path) ? ` in ${relativePath(str(args.path), cwd)}` : "";
       const hits = (out.match(/^\s+\d+:/gm) ?? []).length;
       const files = out.split("\n").filter((l) => /^\S.*:$/.test(l)).length;
       const result = running ? "" : hits === 0 ? "no hits" : `${plural(hits, "hit")} · ${plural(files, "file")}`;
-      return { stepId: step.id, verb: "search", target: `"${str(args.pattern)}"${where}`, result, output, outputMore, running };
+      return { stepId: step.id, verb: "search", target: `"${str(args.pattern)}"${where}`, result, output, outputMore, running, failed: Boolean(step.isError) };
     }
     case "outline_code": {
       const symbols = out.match(/(\d+) symbols?\)/);
@@ -215,14 +297,15 @@ function quietItem(step: ThreadStep, cwd: string): QuietItem {
         output,
         outputMore,
         running,
+        failed: Boolean(step.isError),
       };
     }
     case "load_skill":
-      return { stepId: step.id, verb: "skill", target: str(args.name) || str(args.skill) || "skill", result: "", output, outputMore, running };
+      return { stepId: step.id, verb: "skill", target: str(args.name) || str(args.skill) || "skill", result: "", output, outputMore, running, failed: Boolean(step.isError) };
     case "record_finding":
-      return { stepId: step.id, verb: "noted", target: str(args.topic) || "finding", result: "", output, outputMore, running };
+      return { stepId: step.id, verb: "noted", target: str(args.topic) || "finding", result: "", output, outputMore, running, failed: Boolean(step.isError) };
     default:
-      return { stepId: step.id, verb: step.name ?? "tool", target: "", result: "", output, outputMore, running };
+      return { stepId: step.id, verb: step.name ?? "tool", target: "", result: "", output, outputMore, running, failed: Boolean(step.isError) };
   }
 }
 
@@ -267,6 +350,10 @@ export function describeStep(step: ThreadStep, cwd: string, now: number = Date.n
         body: { type: "text", lines: errorLines(step.output), keep: "head" },
       },
     };
+  }
+
+  if ((step.name ?? "").startsWith(SERAPH_PREFIX)) {
+    return { kind: "card", card: seraphCard(step, base, runningStatus) };
   }
 
   switch (step.name) {
@@ -397,6 +484,201 @@ export function describeStep(step: ThreadStep, cwd: string, now: number = Date.n
       };
     }
   }
+}
+
+const SERAPH_PREFIX = "mcp_seraph_";
+const SERAPH_PREVIEW_LINES = 3;
+
+function num(value: unknown): number {
+  return typeof value === "number" && Number.isFinite(value) ? value : 0;
+}
+
+function parseSeraphOutput(output: string | undefined): Record<string, any> | undefined {
+  if (!output) return undefined;
+  const start = output.indexOf("{");
+  if (start < 0) return undefined;
+  try {
+    const value = JSON.parse(output.slice(start));
+    return value && typeof value === "object" ? value : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+function seraphIndexStats(raw: any): SeraphIndexStats | undefined {
+  if (!raw || typeof raw !== "object" || typeof raw.commit !== "string") return undefined;
+  return {
+    commit: raw.commit,
+    parsedFiles: num(raw.parsed_files),
+    reusedChunks: num(raw.reused_chunks),
+    totalChunks: num(raw.total_chunks),
+    ms: typeof raw.ms === "number" ? raw.ms : undefined,
+  };
+}
+
+export function shortSymbol(id: string): string {
+  const at = id.lastIndexOf("::");
+  return at >= 0 ? id.slice(at + 2) : id.split("/").pop() || id;
+}
+
+function seraphDeps(data: Record<string, any>): SeraphBody {
+  const results: any[] = Array.isArray(data.results) ? data.results : [];
+  const chains: SeraphDepChain[] = results.flatMap((r) =>
+    (Array.isArray(r.chains) ? r.chains : []).map((c: any) => ({
+      steps: (Array.isArray(c.edges) ? c.edges : []).map((e: any) => ({ kind: str(e.kind), symbol: str(e.dst) })),
+    }))
+  );
+  const root = str(results[0]?.symbol) || str(data.query);
+  return { type: "seraph", mode: "deps", hits: [], commits: [], deps: { root, direction: str(data.direction) || "out", chains } };
+}
+
+function seraphCompare(data: Record<string, any>): SeraphBody {
+  const symbols: any[] = Array.isArray(data.symbols) ? data.symbols : [];
+  const deps = data.dependencies && typeof data.dependencies === "object" ? data.dependencies : {};
+  const commitList: any[] = Array.isArray(data.commits) ? data.commits : [];
+  return {
+    type: "seraph",
+    mode: "compare",
+    hits: [],
+    commits: [str(data.from), str(data.to)].filter(Boolean),
+    compare: {
+      from: str(data.from),
+      to: str(data.to),
+      summary: Object.fromEntries(Object.entries(data.summary ?? {}).map(([k, v]) => [k, num(v)])),
+      changes: symbols.map((c) => ({ change: str(c.change_type), symbol: str(c.symbol), path: str(c.path), line: num(c.start_line) })),
+      depsAdded: Array.isArray(deps.added) ? deps.added.length : 0,
+      depsRemoved: Array.isArray(deps.removed) ? deps.removed.length : 0,
+      commitSubjects: commitList.map((c) => ({ sha: str(c.commit), subject: str(c.subject) })),
+    },
+  };
+}
+
+export function seraphBody(tool: string, output: string | undefined): SeraphBody | undefined {
+  const data = parseSeraphOutput(output);
+  if (!data) return undefined;
+  if (tool === "get_working_tree_status") {
+    const paths = Array.isArray(data.changed_paths) ? data.changed_paths.map(str).filter(Boolean) : [];
+    return { type: "seraph", mode: "worktree", hits: [], commits: [], scope: "worktree", commit: str(data.base_commit), paths, summary: [...(Array.isArray(data.status) ? data.status.map(str).filter(Boolean) : []), str(data.snapshot), str(data.mode)].filter(Boolean), truncated: Boolean(data.truncated) };
+  }
+  if (tool === "get_repo_map") {
+    const entries = str(data.map).split("\n").filter(Boolean).map((line: string) => {
+      const split = line.indexOf(":");
+      return { path: split >= 0 ? line.slice(0, split) : line, detail: split >= 0 ? line.slice(split + 1).trim() : "" };
+    });
+    return { type: "seraph", mode: "map", hits: [], commits: [], scope: str(data.scope), commit: str(data.resolved_commit), files: entries, subdirectories: Array.isArray(data.subdirectories) ? data.subdirectories.map(str).filter(Boolean) : [], totalFiles: num(data.total_files), truncated: Boolean(data.truncated) };
+  }
+  if (tool === "change_impact") {
+    const fields: [string, string][] = [["definitions", "definition"], ["direct_dependents", "dependent"], ["related_tests", "test"], ["related_configs", "config"], ["related_docs", "doc"], ["public_surface_candidates", "public API"]];
+    const files = fields.flatMap(([key, label]) => (Array.isArray(data[key]) ? data[key] : []).map((item: any) => ({ path: str(item.path), detail: `${label}${item.symbol ? ` · ${str(item.symbol)}` : ""}${Array.isArray(item.relationships) ? ` · ${item.relationships.map(str).join(", ")}` : ""}`, evidence: str(item.evidence) || undefined })).filter((item: SeraphFileEntry) => item.path));
+    const unresolved = Array.isArray(data.unresolved_symbols) ? data.unresolved_symbols.map(str).filter(Boolean) : [];
+    return { type: "seraph", mode: "impact", hits: [], commits: [], scope: str(data.scope), commit: str(data.resolved_version), files, paths: Array.isArray(data.changed_paths) ? data.changed_paths.map(str).filter(Boolean) : [], summary: unresolved.map((symbol: string) => `unresolved: ${symbol}`), coverageNote: str(data.coverage_note) };
+  }
+  if (tool === "prepare_change_context") {
+    const impact = data.change_impact && typeof data.change_impact === "object" ? data.change_impact : {};
+    const evidence = (Array.isArray(data.search_evidence) ? data.search_evidence : []).map((item: any) => ({ path: str(item.path), symbol: str(item.symbol), kind: str(item.kind), startLine: num(item.lines?.[0]), endLine: num(item.lines?.[1]), score: num(item.score) })).filter((item: SeraphContextEvidence) => item.path);
+    const changed = Array.isArray(data.changed_paths) ? data.changed_paths.map(str).filter(Boolean) : [];
+    const files = ["direct_dependents", "related_tests", "related_configs", "related_docs"].flatMap((key) => (Array.isArray(impact[key]) ? impact[key] : []).map((item: any) => ({ path: str(item.path), detail: key.replace("related_", "").replace("direct_dependents", "dependent"), evidence: str(item.evidence) || undefined })).filter((item: SeraphFileEntry) => item.path));
+    return { type: "seraph", mode: "context", hits: [], commits: [], scope: str(data.scope), commit: str(data.base_commit), paths: changed, evidence, files, summary: [str(data.retrieval_mode), data.truncated ? "context truncated" : "context complete"].filter(Boolean), truncated: Boolean(data.truncated), coverageNote: str(data.evidence_note) };
+  }
+  if (tool === "find_dependencies") return seraphDeps(data);
+  if (tool === "compare_versions") return seraphCompare(data);
+  if (tool === "index_repository") {
+    const index = seraphIndexStats(data);
+    return index ? { type: "seraph", mode: "index", hits: [], index, commits: [index.commit] } : undefined;
+  }
+  if (!Array.isArray(data.results)) return undefined;
+  const results: any[] = data.results;
+  const top = Math.max(...results.map((r) => num(r.score)), 0);
+  const viewMax: Record<string, number> = {};
+  for (const r of results) {
+    for (const [view, value] of Object.entries(r.retrieval_scores ?? {})) {
+      viewMax[view] = Math.max(viewMax[view] ?? 0, num(value));
+    }
+  }
+  const hits: SeraphHit[] = results.map((r) => {
+    const views: Record<string, number> = {};
+    for (const [view, value] of Object.entries(r.retrieval_scores ?? {})) {
+      views[view] = viewMax[view] ? num(value) / viewMax[view] : 0;
+    }
+    const preview = str(r.text)
+      .split("\n")
+      .map(sanitizeOutputLine)
+      .filter((line) => line.trim())
+      .slice(0, SERAPH_PREVIEW_LINES);
+    return {
+      path: str(r.path),
+      symbol: str(r.symbol),
+      startLine: num(r.start_line),
+      endLine: num(r.end_line),
+      commit: str(r.commit),
+      score: num(r.score),
+      relevance: top > 0 ? num(r.score) / top : 0,
+      lang: langFor(str(r.path)),
+      preview,
+      views,
+      versions: Array.isArray(r.versions) ? r.versions.filter((v: unknown): v is string => typeof v === "string") : [],
+    };
+  });
+  const commits = [...new Set(hits.flatMap((h) => [h.commit, ...h.versions]).filter(Boolean))];
+  const mode = tool === "find_symbol" ? "symbol" : tool === "search_history" ? "history" : tool === "search_at_version" ? "version" : "search";
+  return {
+    type: "seraph",
+    mode,
+    hits,
+    index: seraphIndexStats(data.index),
+    searchMs: typeof data.search_ms === "number" ? data.search_ms : undefined,
+    commits,
+  };
+}
+
+function seraphCard(step: ThreadStep, base: { stepId: string; running: boolean; failed: boolean }, runningStatus: string): CardModel {
+  const tool = (step.name ?? "").slice(SERAPH_PREFIX.length);
+  const args = step.args ?? {};
+  const query = str(args.query);
+  const outputRepo = step.output?.match(/^\[Seraph repo: (.+)\]$/m)?.[1] ?? "";
+  const repo = str(args.repo) || outputRepo;
+  const repoName = repo ? path.basename(repo.replace(/\/$/, "")) : "";
+  const version = str(args.version);
+  const at = version && version !== "HEAD" ? ` @${version.slice(0, 10)}` : "";
+  const target = tool === "index_repository"
+    ? `index ${version || "HEAD"}`
+    : tool === "prepare_change_context"
+      ? `context ${str(args.task)}`
+      : tool === "change_impact"
+        ? `impact ${str((args.symbols as string[] | undefined)?.join(", ") || (args.paths as string[] | undefined)?.join(", ") || "worktree")}`
+        : tool === "get_repo_map"
+          ? `map ${str(args.path_prefix) || "repository"}${at}`
+          : tool === "get_working_tree_status"
+            ? "working tree"
+    : tool === "find_symbol"
+      ? `symbol ${str(args.name)}${at}`
+      : tool === "find_dependencies"
+        ? `deps ${str(args.symbol)} · ${str(args.direction) || "out"}${at}`
+        : tool === "compare_versions"
+          ? `compare ${str(args.from_version)} → ${str(args.to_version)}`
+          : `"${query}"${version ? ` @${version.slice(0, 10)}` : tool === "search_history" ? " · all versions" : ""}`;
+  const card = { ...base, verb: "seraph", target: repoName ? `${target} · ${repoName}` : target, targetIsPath: false };
+  if (base.running) return { ...card, status: runningStatus, body: { type: "none" } };
+  const body = base.failed ? undefined : seraphBody(tool, step.output);
+  if (!body) {
+    return { ...card, status: base.failed ? "failed" : "", body: { type: "text", lines: plainLines(step.output, base.failed), keep: "head" } };
+  }
+  const timing = body.mode === "index" ? body.index?.ms : body.searchMs;
+  const timeLabel = timing === undefined ? "" : timing < 1000 ? `${Math.max(1, Math.round(timing))}ms` : `${(timing / 1000).toFixed(1)}s`;
+  const count = body.mode === "index"
+    ? plural(body.index?.totalChunks ?? 0, "chunk")
+    : body.mode === "symbol"
+      ? plural(body.hits.length, "definition")
+      : body.mode === "deps"
+        ? plural(body.deps?.chains.length ?? 0, "path")
+        : body.mode === "compare"
+          ? plural(Object.values(body.compare?.summary ?? {}).reduce((a, b) => a + b, 0), "symbol") + " changed"
+          : body.mode === "map" ? `${body.files?.length ?? 0} / ${body.totalFiles ?? body.files?.length ?? 0} files`
+            : body.mode === "impact" ? plural(body.files?.length ?? 0, "affected item")
+              : body.mode === "context" ? plural(body.evidence?.length ?? 0, "evidence hit")
+                : body.mode === "worktree" ? plural(body.paths?.length ?? 0, "changed file")
+                  : plural(body.hits.length, "hit");
+  return { ...card, status: [count, timeLabel].filter(Boolean).join(" · "), body };
 }
 
 function httpStatus(output: string | undefined): string {

@@ -143,32 +143,33 @@ test("activity: every row is exactly the panel width, at every width", () => {
 test("activity: quiet calls merge into one line and cards show real content", () => {
   const steps = richSteps();
   const all = new Set(steps.slice(4, 7).map((s) => s.id));
-  const text = plain(buildActivityLines({ threads: [turn("t1", 1, "fix", steps)], edits: [], width: 62, toggledIds: all, cwd: CWD }));
-  assert.match(text[0], /^  list src\/ · search "checkToken" 2 hits\s*$/);
-  assert.match(text[1], /^  read auth\.ts, crypto\.ts\s*$/);
+  const text = plain(buildActivityLines({ threads: [turn("t1", 1, "fix", steps)], edits: [], width: 62, openedTurnIds: new Set(["t1"]), toggledIds: all, cwd: CWD }));
+  assert.ok(text.some((l) => /list src\//.test(l) && /search "checkToken" 2 hits/.test(l)));
   assert.ok(text.some((l) => /╭ edit\s+src\/auth\.ts .*\+3 −2 ╮/.test(l)));
   assert.ok(text.some((l) => /│ 4 −   if \(!token\) return false;/.test(l)));
   assert.ok(text.some((l) => /exit 1 ╮/.test(l)));
   assert.ok(text.some((l) => l.includes("tests: 14 passed")));
 });
 
-test("activity: when idle, only the newest card is open", () => {
+test("activity: when idle, the latest result stays folded with a preview", () => {
   const lines = plain(buildActivityLines({ threads: [turn("t1", 1, "fix", richSteps())], edits: [], width: 62, cwd: CWD }));
-  const headers = lines.filter((l) => /^\s*(╭|▸|✕|◌)/.test(l)).map((l) => l.trim().slice(0, 7).trimEnd());
-  assert.deepEqual(headers, ["▸ edit", "▸ run", "✕ run", "╭ write"]);
+  assert.ok(lines[0].includes("▸ turn 1"));
+  assert.ok(lines.some((l) => /└ ▸ write/.test(l)));
+  assert.ok(lines.some((l) => l.includes("import x from './auth'")));
 });
 
 test("activity: while running, the running card is open and the rest are folded", () => {
   const steps = richSteps().slice(0, 6);
   steps[5] = { ...steps[5], isRunning: true, output: "", startTime: Date.now() - 3000 };
-  const lines = plain(buildActivityLines({ threads: [turn("t1", 1, "fix", steps)], edits: [], width: 62, cwd: CWD }));
-  assert.ok(lines.some((l) => /^\s*▸ edit/.test(l)), "finished edit is folded");
-  assert.ok(lines.some((l) => /^\s*╭ run\s+npm test.*running 3\.0s ╮/.test(l)), "running command is open with a live timer");
+  const runningTurn = { ...turn("t1", 1, "fix", steps), status: "running" as const };
+  const lines = plain(buildActivityLines({ threads: [runningTurn], edits: [], width: 62, cwd: CWD }));
+  assert.ok(!lines.some((l) => /╭ edit/.test(l)), "finished edit stays folded while the task runs");
+  assert.ok(lines.some((l) => /run\s+npm test.*running 3\.0s/.test(l)), "running command is visible with a live timer");
 
   const readRunning = richSteps().slice(0, 5);
   readRunning.push(tool("read_file", { filePath: "src/router.ts" }, "", { isRunning: true }));
-  const quiet = plain(buildActivityLines({ threads: [turn("t1", 1, "fix", readRunning)], edits: [], width: 62, cwd: CWD }));
-  assert.ok(quiet.some((l) => /^\s*▸ edit/.test(l)), "a running read folds every card");
+  const quiet = plain(buildActivityLines({ threads: [{ ...turn("t1", 1, "fix", readRunning), status: "running" }], edits: [], width: 62, cwd: CWD, openedTurnIds: new Set(["t1"]) }));
+  assert.ok(!quiet.some((l) => /╭ edit/.test(l)), "a running read keeps completed cards folded");
   assert.ok(quiet.some((l) => l.includes("read router.ts …")), "the quiet line shows the read in progress");
 });
 
@@ -182,11 +183,12 @@ test("activity: clicking flips a card's default state", () => {
       edits: [],
       width: 62,
       toggledIds: new Set([editId, writeId]),
+      openedTurnIds: new Set(["t1"]),
       cwd: CWD,
     })
   );
-  assert.ok(lines.find((l) => l.includes("edit"))?.trimStart().startsWith("╭ edit"));
-  assert.ok(lines.find((l) => l.includes("write"))?.trimStart().startsWith("▸ write"));
+  assert.ok(lines.some((l) => /╭ edit/.test(l)));
+  assert.ok(lines.some((l) => /▸ write/.test(l)));
 });
 
 test("activity: earlier turns fold to a summary line until opened", () => {
@@ -218,4 +220,72 @@ test("activity: changes footer summarizes edits and opens the diff", () => {
 test("activity: empty state when nothing has run", () => {
   const text = plain(buildActivityLines({ threads: [], edits: [], width: 40, cwd: CWD }));
   assert.ok(text.some((l) => l.includes("no tool calls yet")));
+});
+
+test("seraph search renders ranked hits with code preview and timing", () => {
+  const output = JSON.stringify({
+    query: "start mcp servers",
+    resolved_commit: "abcdef1234567",
+    index: { commit: "abcdef1234567", base_commit: null, parsed_files: 2, reused_chunks: 8, total_chunks: 10, ms: 120 },
+    search_ms: 4.2,
+    results: [
+      { score: 8, path: "src/mcp.ts", symbol: "connect", start_line: 10, end_line: 20, commit: "abcdef1234567", text: "async connect() {\n  return client;\n}", retrieval_scores: { lexical: 8, semantic: 0.9 } },
+      { score: 4, path: "src/cli.ts", symbol: "runServe", start_line: 3, end_line: 9, commit: "abcdef1234567", text: "function runServe() {}", retrieval_scores: { lexical: 4, semantic: 0.5 } },
+    ],
+  }, null, 2);
+  const step = tool("mcp_seraph_search_code", { query: "start mcp servers" }, output);
+  const model = describeStep(step, CWD);
+  assert.ok(model.kind === "card" && model.card.verb === "seraph");
+  assert.equal(model.card.status, "2 hits · 4ms");
+  const text = plain(buildActivityLines({ threads: [turn("t", 1, "find", [step])], edits: [], width: 72, cwd: CWD, openedTurnIds: new Set(["t"]) })).join("\n");
+  assert.match(text, /◈ 1 connect/);
+  assert.match(text, /◇ 2 runServe/);
+  assert.match(text, /src\/mcp\.ts:10-20/);
+  assert.match(text, /async connect\(\)/);
+  assert.match(text, /reuse .* 80%/);
+});
+
+test("seraph history collapses identical versions into one hit", () => {
+  const output = JSON.stringify({
+    results: [
+      { score: 1, path: "a.py", symbol: "f", start_line: 1, end_line: 2, commit: "c2", text: "def f(): pass", versions: ["c2", "c1"] },
+    ],
+  });
+  const step = tool("mcp_seraph_search_history", { query: "f" }, output);
+  const text = plain(buildActivityLines({ threads: [turn("t", 1, "find", [step])], edits: [], width: 72, cwd: CWD, openedTurnIds: new Set(["t"]) })).join("\n");
+  assert.match(text, /all versions/);
+  assert.match(text, /@c2 \+1 version same code/);
+});
+
+test("running seraph call shows the scan lane", () => {
+  const step = tool("mcp_seraph_search_code", { query: "x" }, "", { isRunning: true, startTime: 0 });
+  const text = plain(buildActivityLines({ threads: [turn("t", 1, "find", [step])], edits: [], width: 72, cwd: CWD, now: 500, openedTurnIds: new Set(["t"]) })).join("\n");
+  assert.match(text, /◌ seraph scanning index/);
+});
+
+test("seraph dependency and compare results render as their own cards", () => {
+  const deps = JSON.stringify({
+    query: "build",
+    direction: "out",
+    results: [{ symbol: "src/a.ts::build", chains: [{ symbols: ["src/a.ts::build", "src/b.ts::connect"], score: 1, edges: [{ src: "src/a.ts::build", dst: "src/b.ts::connect", kind: "calls" }] }] }],
+  });
+  const compare = JSON.stringify({
+    from: "aaaaaaa1", to: "bbbbbbb2",
+    summary: { added: 2, modified: 1, renamed: 1, moved: 0, deleted: 0 },
+    symbols: [{ change_type: "renamed", symbol: "src/a.ts::start", path: "src/a.ts", start_line: 4, end_line: 9 }],
+    dependencies: { added: [{ src: "x", dst: "y", kind: "calls" }], removed: [] },
+    commits: [{ commit: "bbbbbbb2", subject: "rename run to start" }],
+  });
+  const steps = [
+    tool("mcp_seraph_find_dependencies", { symbol: "build", direction: "out" }, deps),
+    tool("mcp_seraph_compare_versions", { from_version: "v1", to_version: "v2" }, compare),
+  ];
+  const d = describeStep(steps[0], CWD);
+  const c = describeStep(steps[1], CWD);
+  assert.ok(d.kind === "card" && d.card.status === "1 path");
+  assert.ok(c.kind === "card" && c.card.status === "4 symbols changed");
+  const text = plain(buildActivityLines({ threads: [turn("t", 1, "x", steps)], edits: [], width: 72, cwd: CWD, openedTurnIds: new Set(["t"]), toggledIds: new Set([steps[0].id]) })).join("\n");
+  assert.match(text, /└ calls connect/);
+  assert.match(text, /↷1 renamed/);
+  assert.match(text, /rename run to start/);
 });

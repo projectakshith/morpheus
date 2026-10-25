@@ -4,9 +4,9 @@ import type { Thread, ThreadStep, FileEditRecord, RightLine } from "../../types"
 import { theme } from "../../theme";
 import { highlightCode } from "../../highlight";
 import { cellWidth, truncateCells, truncateCellsStart, wrapCells } from "../../../display/cells";
-import { describeStep, relativePath, type CardModel, type QuietItem } from "../../../display/describeStep";
+import { describeStep, relativePath, type CardModel, type QuietItem, type SeraphBody, type SeraphHit, shortSymbol } from "../../../display/describeStep";
 
-const BODY_LIMITS = { diff: 10, code: 6, text: 6 } as const;
+const BODY_LIMITS = { diff: 10, code: 6, text: 6, seraph: 24 } as const;
 const STRIP_MAX_LINES = 2;
 const VERB_WIDTH = 6;
 
@@ -16,6 +16,7 @@ export interface ActivityOptions {
   width: number;
   toggledIds?: Set<string>;
   openedTurnIds?: Set<string>;
+  expandLatestTools?: boolean;
   cwd?: string;
   now?: number;
 }
@@ -163,6 +164,284 @@ function codeBody(card: CardModel, inner: number): BodyRow[] {
   }));
 }
 
+const SCAN_TRAIL = "░▒▓█▓▒░";
+const VIEW_LABELS: Record<string, string> = {
+  lexical: "α lex",
+  semantic: "β sem",
+  structural: "γ struct",
+  graph: "δ graph",
+  evolution: "ε evo",
+};
+
+function shortCommit(commit: string): string {
+  return commit.slice(0, 7);
+}
+
+function commitColor(commit: string, commits: string[]): string {
+  const palette = [theme.diffHunk, theme.warning, theme.accentBright, theme.diffRemove];
+  return palette[Math.max(0, commits.indexOf(commit)) % palette.length];
+}
+
+function meter(fraction: number, cells: number, fill = "█", empty = "░"): Seg[] {
+  const filled = Math.max(0, Math.min(cells, Math.round(fraction * cells)));
+  return [
+    { text: fill.repeat(filled), color: theme.accentBright },
+    { text: empty.repeat(cells - filled), color: theme.border },
+  ];
+}
+
+function seraphScan(inner: number, now: number): BodyRow[] {
+  const label = "◌ seraph scanning index ";
+  const lane = Math.max(8, inner - label.length);
+  const pos = Math.floor(now / 70) % (lane + SCAN_TRAIL.length);
+  const cells = Array.from({ length: lane }, (_, i) => {
+    const offset = i - (pos - SCAN_TRAIL.length);
+    return offset >= 0 && offset < SCAN_TRAIL.length ? SCAN_TRAIL[offset] : "·";
+  }).join("");
+  return [
+    {
+      segs: [
+        { text: label, color: theme.accent, italic: true },
+        { text: cells, color: theme.accentBright },
+      ],
+    },
+  ];
+}
+
+function seraphIndexRows(card: CardModel, inner: number): BodyRow[] {
+  if (card.body.type !== "seraph" || !card.body.index) return [];
+  const { commit, parsedFiles, reusedChunks, totalChunks, ms } = card.body.index;
+  const rows: BodyRow[] = [];
+  const time = ms === undefined ? "" : ms < 1000 ? ` · ${Math.round(ms)}ms` : ` · ${(ms / 1000).toFixed(1)}s`;
+  rows.push({
+    segs: [
+      { text: "⬡ ", color: theme.accent },
+      { text: shortCommit(commit), color: theme.warning, bold: true },
+      { text: ` · ${totalChunks} chunks · parsed ${parsedFiles} file${parsedFiles === 1 ? "" : "s"}${time}`, color: theme.muted },
+    ],
+  });
+  if (totalChunks > 0) {
+    const ratio = reusedChunks / totalChunks;
+    const label = "  reuse ";
+    const pct = ` ${Math.round(ratio * 100)}%`;
+    const cells = Math.max(6, Math.min(28, inner - label.length - pct.length));
+    rows.push({ segs: [{ text: label, color: theme.muted }, ...meter(ratio, cells, "▰", "▱"), { text: pct, color: theme.accentBright, bold: true }] });
+  }
+  return rows;
+}
+
+function seraphHitRows(hit: SeraphHit, rank: number, inner: number, commits: string[], showCommit: boolean, expanded: boolean, ranked = true): BodyRow[] {
+  const glyph = rank === 1 ? "◈" : "◇";
+  const name = hit.symbol || hit.path.split("/").pop() || hit.path;
+  const scoreText = ` ${hit.relevance.toFixed(2)}`;
+  const barCells = !ranked ? 0 : inner >= 48 ? 10 : inner >= 36 ? 6 : 0;
+  const rankText = `${glyph} ${rank} `;
+  const right = barCells ? barCells + scoreText.length : 0;
+  const nameRoom = Math.max(4, inner - cellWidth(rankText) - right - 1);
+  const shownName = truncateCells(name, nameRoom);
+  const gap = Math.max(1, inner - cellWidth(rankText) - cellWidth(shownName) - right);
+  const rows: BodyRow[] = [
+    {
+      segs: [
+        { text: rankText, color: rank === 1 ? theme.accentBright : theme.accent, bold: rank === 1 },
+        { text: shownName, color: theme.text, bold: true },
+        { text: " ".repeat(gap) },
+        ...(barCells ? meter(hit.relevance, barCells) : []),
+        ...(barCells ? [{ text: scoreText, color: rank === 1 ? theme.accentBright : theme.muted }] : []),
+      ],
+    },
+  ];
+  const location = `${hit.path}:${hit.startLine}-${hit.endLine}`;
+  const tag = showCommit && hit.commit ? ` @${shortCommit(hit.commit)}` : "";
+  const others = hit.versions.length - 1;
+  const spread = others > 0 ? ` +${others} version${others === 1 ? "" : "s"} same code` : "";
+  rows.push({
+    segs: [
+      { text: "    " },
+      { text: truncateCellsStart(location, Math.max(4, inner - 4 - tag.length - spread.length)), color: theme.diffHunk },
+      ...(tag ? [{ text: tag, color: commitColor(hit.commit, commits), bold: true }] : []),
+      ...(spread ? [{ text: spread, color: theme.muted, italic: true }] : []),
+    ],
+  });
+  if (expanded) {
+    const gutter = String(hit.startLine + hit.preview.length).length;
+    hit.preview.forEach((line, i) => {
+      rows.push({
+        bg: theme.bgCode,
+        segs: [
+          { text: "    " },
+          { text: String(hit.startLine + i).padStart(gutter), color: theme.muted, bg: theme.bgCode },
+          { text: " ┃ ", color: theme.border, bg: theme.bgCode },
+          { text: truncateCells(highlightCode(line, hit.lang), Math.max(0, inner - 7 - gutter)), bg: theme.bgCode },
+        ],
+      });
+    });
+    const views = Object.entries(hit.views).filter(([, v]) => v > 0);
+    if (views.length > 1) {
+      const segs: Seg[] = [{ text: "    " }];
+      for (const [view, value] of views) {
+        segs.push({ text: `${VIEW_LABELS[view] ?? view} `, color: theme.muted }, ...meter(value, 4, "▮", "▯"), { text: "  " });
+      }
+      rows.push({ segs });
+    }
+  }
+  return rows;
+}
+
+const CHANGE_GLYPH: Record<string, string> = { added: "+", modified: "~", renamed: "↷", moved: "⇢", deleted: "−" };
+
+function changeColor(change: string): string {
+  if (change === "added") return theme.diffAdd;
+  if (change === "deleted") return theme.diffRemove;
+  if (change === "renamed" || change === "moved") return theme.warning;
+  return theme.diffHunk;
+}
+
+function seraphDepsRows(body: SeraphBody, inner: number): BodyRow[] {
+  const deps = body.deps;
+  if (!deps) return [];
+  const rows: BodyRow[] = [
+    {
+      segs: [
+        { text: "◈ ", color: theme.accentBright },
+        { text: truncateCells(shortSymbol(deps.root), Math.max(4, inner - 20)), color: theme.text, bold: true },
+        { text: `  ${deps.direction === "in" ? "callers" : deps.direction === "both" ? "both ways" : "calls out"}`, color: theme.muted },
+      ],
+    },
+  ];
+  if (deps.chains.length === 0) {
+    rows.push({ segs: [{ text: "  ◌ no dependencies found", color: theme.muted, italic: true }] });
+    return rows;
+  }
+  for (const chain of deps.chains) {
+    const segs: Seg[] = [{ text: "  " }];
+    chain.steps.forEach((step, i) => {
+      segs.push({ text: i === 0 ? "└ " : " → ", color: theme.border });
+      segs.push({ text: `${step.kind} `, color: theme.muted });
+      segs.push({ text: shortSymbol(step.symbol), color: i === chain.steps.length - 1 ? theme.diffHunk : theme.secondary });
+    });
+    const last = chain.steps[chain.steps.length - 1]?.symbol ?? "";
+    const file = last.includes("::") ? last.slice(0, last.lastIndexOf("::")) : last;
+    const used = segsWidth(segs);
+    if (file && used + file.length + 2 < inner) segs.push({ text: `  ${file}`, color: theme.border });
+    rows.push({ segs });
+  }
+  return rows;
+}
+
+function seraphCompareRows(body: SeraphBody, inner: number): BodyRow[] {
+  const cmp = body.compare;
+  if (!cmp) return [];
+  const rows: BodyRow[] = [];
+  const head: Seg[] = [
+    { text: "⬡ ", color: theme.accent },
+    { text: shortCommit(cmp.from), color: theme.warning, bold: true },
+    { text: " → ", color: theme.muted },
+    { text: shortCommit(cmp.to), color: theme.diffHunk, bold: true },
+    { text: "   " },
+  ];
+  for (const kind of ["added", "modified", "renamed", "moved", "deleted"]) {
+    const n = cmp.summary[kind] ?? 0;
+    if (n > 0) head.push({ text: `${CHANGE_GLYPH[kind]}${n} ${kind}  `, color: changeColor(kind), bold: true });
+  }
+  rows.push({ segs: head });
+  if (cmp.depsAdded || cmp.depsRemoved) {
+    rows.push({ segs: [{ text: `  dependencies  `, color: theme.muted }, { text: `+${cmp.depsAdded}`, color: theme.diffAdd, bold: true }, { text: " " }, { text: `−${cmp.depsRemoved}`, color: theme.diffRemove, bold: true }] });
+  }
+  rows.push({ segs: [] });
+  for (const c of cmp.changes.slice(0, 10)) {
+    const where = `${c.path}:${c.line}`;
+    const name = shortSymbol(c.symbol);
+    const room = Math.max(4, inner - 4 - cellWidth(name) - 2);
+    rows.push({
+      segs: [
+        { text: ` ${CHANGE_GLYPH[c.change] ?? "·"} `, color: changeColor(c.change), bold: true },
+        { text: name, color: theme.text, bold: true },
+        { text: "  " },
+        { text: truncateCellsStart(where, room), color: theme.border },
+      ],
+    });
+  }
+  if (cmp.changes.length > 10) rows.push({ segs: [{ text: `   … ${cmp.changes.length - 10} more`, color: theme.muted, italic: true }] });
+  if (cmp.commitSubjects.length) {
+    rows.push({ segs: [] });
+    for (const c of cmp.commitSubjects.slice(0, 4)) {
+      rows.push({ segs: [{ text: `  ${shortCommit(c.sha)} `, color: theme.warning }, { text: truncateCells(c.subject, Math.max(4, inner - 11)), color: theme.secondary }] });
+    }
+  }
+  return rows;
+}
+
+function seraphContextRows(body: SeraphBody, inner: number): BodyRow[] {
+  const rows: BodyRow[] = [];
+  const meta = [body.scope, body.commit ? shortCommit(body.commit) : ""].filter(Boolean).join(" · ");
+  if (meta) rows.push({ segs: [{ text: "⬡ ", color: theme.accent }, { text: meta, color: theme.muted }] });
+  if (body.mode === "worktree") {
+    rows.push({ segs: [{ text: `  ${body.paths?.length ?? 0} changed paths`, color: theme.text, bold: true }] });
+    for (const p of (body.paths ?? []).slice(0, 12)) rows.push({ segs: [{ text: "  · ", color: theme.warning }, { text: truncateCells(p, Math.max(4, inner - 4)), color: theme.secondary }] });
+    if (!(body.paths?.length)) rows.push({ segs: [{ text: "  ◌ working tree is clean", color: theme.muted, italic: true }] });
+    for (const note of body.summary ?? []) if (note !== body.scope) rows.push({ segs: [{ text: `  ${truncateCells(note, Math.max(4, inner - 2))}`, color: theme.muted }] });
+    return rows;
+  }
+  if (body.mode === "map") {
+    rows.push({ segs: [{ text: `  ${body.files?.length ?? 0} shown of ${body.totalFiles ?? body.files?.length ?? 0} files`, color: theme.text, bold: true }] });
+    for (const file of (body.files ?? []).slice(0, 12)) {
+      rows.push({ segs: [{ text: "  ▸ ", color: theme.accent }, { text: truncateCells(file.path, Math.max(4, Math.floor(inner * 0.42))), color: theme.diffHunk, bold: true }, { text: ` ${truncateCells(file.detail, Math.max(4, inner - Math.floor(inner * 0.42) - 5))}`, color: theme.secondary }] });
+    }
+    if (body.subdirectories?.length) rows.push({ segs: [{ text: `  directories: ${truncateCells(body.subdirectories.slice(0, 6).join(", "), Math.max(4, inner - 15))}`, color: theme.muted }] });
+    if (body.truncated) rows.push({ segs: [{ text: "  … map truncated; narrow the path or raise limits", color: theme.warning, italic: true }] });
+    return rows;
+  }
+  if (body.mode === "context") {
+    rows.push({ segs: [{ text: `  ${body.evidence?.length ?? 0} search hits · ${body.paths?.length ?? 0} changed paths · ${body.files?.length ?? 0} impact links`, color: theme.text, bold: true }] });
+    for (const item of (body.evidence ?? []).slice(0, 6)) {
+      const symbol = item.symbol || item.kind || "code";
+      rows.push({ segs: [{ text: "  ◈ ", color: theme.accentBright }, { text: truncateCells(symbol, Math.max(4, inner - item.path.length - 12)), color: theme.text, bold: true }, { text: `  ${truncateCells(`${item.path}:${item.startLine}-${item.endLine}`, Math.max(4, inner - symbol.length - 7))}`, color: theme.diffHunk }] });
+    }
+    for (const file of (body.files ?? []).slice(0, 5)) rows.push({ segs: [{ text: `  · ${truncateCells(file.detail, 16)} `, color: theme.muted }, { text: truncateCells(file.path, Math.max(4, inner - 20)), color: theme.secondary }] });
+    for (const note of body.summary ?? []) rows.push({ segs: [{ text: `  ${truncateCells(note, Math.max(4, inner - 2))}`, color: note.includes("truncated") ? theme.warning : theme.muted }] });
+    if (body.coverageNote) rows.push({ segs: [{ text: `  ${truncateCells(body.coverageNote, Math.max(4, inner - 2))}`, color: theme.muted, italic: true }] });
+    return rows;
+  }
+  if (body.mode === "impact") {
+    rows.push({ segs: [{ text: `  ${body.paths?.length ?? 0} changed paths · ${body.files?.length ?? 0} affected items`, color: theme.text, bold: true }] });
+    for (const p of (body.paths ?? []).slice(0, 6)) rows.push({ segs: [{ text: `  ~ ${truncateCells(p, Math.max(4, inner - 4))}`, color: theme.warning }] });
+    for (const item of (body.files ?? []).slice(0, 12)) rows.push({ segs: [{ text: `  ${truncateCells(item.detail, 20)} `, color: theme.accent }, { text: truncateCells(item.path, Math.max(4, inner - 24)), color: theme.secondary }] });
+    for (const note of body.summary ?? []) rows.push({ segs: [{ text: `  ${truncateCells(note, Math.max(4, inner - 2))}`, color: theme.warning }] });
+    if (body.coverageNote) rows.push({ segs: [{ text: `  ${truncateCells(body.coverageNote, Math.max(4, inner - 2))}`, color: theme.muted, italic: true }] });
+  }
+  return rows;
+}
+
+function seraphBodyRows(card: CardModel, inner: number): BodyRow[] {
+  if (card.body.type !== "seraph") return [];
+  const body = card.body;
+  if (body.mode === "deps") return seraphDepsRows(body, inner);
+  if (body.mode === "compare") return seraphCompareRows(body, inner);
+  if (["map", "impact", "context", "worktree"].includes(body.mode)) return seraphContextRows(body, inner);
+  const rows = seraphIndexRows(card, inner);
+  if (body.mode === "index") return rows;
+  if (body.mode === "history" && body.commits.length > 1) {
+    const segs: Seg[] = [{ text: "  across ", color: theme.muted }];
+    body.commits.forEach((commit, i) => {
+      if (i > 0) segs.push({ text: " ", color: theme.muted });
+      segs.push({ text: shortCommit(commit), color: commitColor(commit, body.commits), bold: true });
+    });
+    rows.push({ segs });
+  }
+  if (body.hits.length === 0) {
+    rows.push({ segs: [{ text: "◌ no matching code", color: theme.muted, italic: true }] });
+    return rows;
+  }
+  if (rows.length > 0) rows.push({ segs: [] });
+  const showCommit = body.mode !== "search" && body.mode !== "symbol";
+  body.hits.forEach((hit, i) => {
+    rows.push(...seraphHitRows(hit, i + 1, inner, body.commits, showCommit, i === 0 || (body.mode === "history" && i < 3), body.mode !== "symbol"));
+  });
+  return rows;
+}
+
+
 function textBody(card: CardModel, inner: number): BodyRow[] {
   if (card.body.type !== "text") return [];
   if (card.body.lines.length === 0) {
@@ -175,7 +454,7 @@ function textBody(card: CardModel, inner: number): BodyRow[] {
   );
 }
 
-function cardLines(card: CardModel, width: number, open: boolean, meta: RowMeta): RightLine[] {
+function cardLines(card: CardModel, width: number, open: boolean, meta: RowMeta, now: number = Date.now()): RightLine[] {
   const id = `card_${card.stepId}`;
   const verb = card.verb.padEnd(Math.min(VERB_WIDTH, Math.max(card.verb.length, 5)));
   const vColor = verbColor(card.verb, card.failed);
@@ -187,8 +466,7 @@ function cardLines(card: CardModel, width: number, open: boolean, meta: RowMeta)
     const targetRoom = width - 2 - cellWidth(verb) - 1 - (statusW ? statusW + 2 : 0);
     const target = fitTarget(card, targetRoom);
     const gap = Math.max(1, width - 2 - cellWidth(verb) - 1 - cellWidth(target) - statusW);
-    return [
-      row(
+    const summary = row(
         `${id}_folded`,
         [
           { text: marker, color: card.failed ? theme.error : theme.border },
@@ -200,8 +478,28 @@ function cardLines(card: CardModel, width: number, open: boolean, meta: RowMeta)
         ],
         width,
         meta
-      ),
-    ];
+      );
+    let preview: { text: string; color?: string } | undefined;
+    if (card.body.type === "text" && card.body.lines[0]) {
+      preview = { text: card.body.lines[0].text, color: card.body.lines[0].error ? theme.error : theme.text };
+    } else if (card.body.type === "code" && card.body.lines[0]) {
+      preview = { text: card.body.lines[0], color: theme.text };
+    } else if (card.body.type === "diff") {
+      const changed = card.body.rows.find((line) => line.kind === "add" || line.kind === "del");
+      if (changed) preview = { text: changed.text, color: changed.kind === "add" ? theme.diffAdd : theme.diffRemove };
+    } else if (card.body.type === "seraph" && card.body.hits[0]) {
+      const hit = card.body.hits[0];
+      preview = { text: `◈ 1 ${shortSymbol(hit.symbol || hit.path)}  ${hit.path}:${hit.startLine}-${hit.endLine}`, color: theme.accentBright };
+    }
+    return preview
+      ? [
+          summary,
+          row(`${id}_preview`, [
+            { text: "  · ", color: theme.border },
+            { text: truncateCells(preview.text, Math.max(8, width - 6)), color: preview.color },
+          ], width, meta),
+        ]
+      : [summary];
   }
 
   const border = card.failed ? theme.error : card.running ? theme.accent : theme.border;
@@ -241,8 +539,14 @@ function cardLines(card: CardModel, width: number, open: boolean, meta: RowMeta)
       body = textBody(card, inner);
       keepTail = card.body.keep === "tail";
       break;
+    case "seraph":
+      body = seraphBodyRows(card, inner);
+      limit = BODY_LIMITS.seraph;
+      break;
     case "none":
-      body = card.running ? [{ segs: [{ text: "⋯", color: theme.muted }] }] : [];
+      body = card.running
+        ? card.verb === "seraph" ? seraphScan(inner, now) : [{ segs: [{ text: "⋯", color: theme.muted }] }]
+        : [];
   }
 
   const hidden = Math.max(0, body.length - limit);
@@ -299,6 +603,8 @@ interface StripGroup {
   verb: string;
   targets: string[];
   running: boolean;
+  result: string;
+  failed: boolean;
   items: QuietItem[];
 }
 
@@ -310,8 +616,10 @@ function groupQuiet(items: QuietItem[]): StripGroup[] {
       last.targets.push(item.target);
       last.items.push(item);
       last.running ||= item.running;
+      if (item.result) last.result = item.result;
+      last.failed ||= item.failed;
     } else {
-      groups.push({ verb: item.verb, targets: [item.target], running: item.running, items: [item] });
+      groups.push({ verb: item.verb, targets: [item.target], running: item.running, result: item.result, failed: item.failed, items: [item] });
     }
   }
   return groups;
@@ -321,36 +629,39 @@ function stripLines(items: QuietItem[], width: number, open: boolean, meta: RowM
   if (open) {
     return items.flatMap((item, i) => {
       const verb = item.verb.padEnd(8);
-      const result = item.running ? "…" : item.result;
+      const result = item.running ? "running" : item.result;
       const targetRoom = width - 2 - verb.length - (result ? cellWidth(result) + 2 : 0);
       const target = truncateCells(item.target, targetRoom);
       const gap = Math.max(1, width - 2 - verb.length - cellWidth(target) - cellWidth(result));
+      const itemMeta: RowMeta = { toolId: item.stepId };
       const rows = [row(
         `${idBase}_d${i}`,
         [
           { text: "  " },
-          { text: verb, color: theme.muted },
+          { text: verb, color: item.failed ? theme.error : item.running ? theme.accentBright : theme.secondary, bold: true },
           { text: target, color: theme.secondary },
           { text: " ".repeat(gap) },
-          { text: result, color: theme.muted },
+          { text: result, color: item.failed ? theme.error : item.running ? theme.accent : theme.diffAdd },
         ],
         width,
-        meta
+        itemMeta
       )];
       const outputWidth = Math.max(8, width - 6);
-      const previews = item.output.flatMap((line, j) =>
-        wrapCells(line, outputWidth).map((part, k) => row(
-          `${idBase}_d${i}_out${j}_${k}`,
-          [{ text: "    · ", color: theme.border }, { text: part, color: theme.secondary }],
-          width,
-          meta
-        ))
-      );
+      const preview = item.output[0];
+      const previews = preview ? [row(
+        `${idBase}_d${i}_preview`,
+        [
+          { text: "    · ", color: theme.border },
+          { text: truncateCells(preview, outputWidth), color: item.failed ? theme.error : theme.text },
+        ],
+        width,
+        itemMeta
+      )] : [];
       rows.push(...previews);
-      if (item.outputMore) {
-        rows.push(row(`${idBase}_d${i}_more`, [{ text: "    · more results omitted", color: theme.muted, italic: true }], width, meta));
+      if (item.outputMore || item.output.length > 1) {
+        rows.push(row(`${idBase}_d${i}_more`, [{ text: "    · click for full output", color: theme.muted, italic: true }], width, itemMeta));
       } else if (!item.running && item.output.length === 0) {
-        rows.push(row(`${idBase}_d${i}_empty`, [{ text: "    · no output", color: theme.muted, italic: true }], width, meta));
+        rows.push(row(`${idBase}_d${i}_empty`, [{ text: "    · no output", color: theme.muted, italic: true }], width, itemMeta));
       }
       return rows;
     });
@@ -359,11 +670,15 @@ function stripLines(items: QuietItem[], width: number, open: boolean, meta: RowM
   const groups = groupQuiet(items);
   const units = groups.map((g) => {
     const search = g.verb === "search" && g.items[0]?.result ? ` ${g.items[0].result.split(" · ")[0]}` : "";
+    const verbLabel = g.items.length > 1 ? `${g.verb} ×${g.items.length}` : g.verb;
+    const targets = g.targets.length > 2
+      ? `${g.targets.slice(0, 2).join(", ")} +${g.targets.length - 2}`
+      : g.targets.join(", ");
     return [
-      { text: g.verb, color: theme.muted },
+      { text: verbLabel, color: g.failed ? theme.error : g.running ? theme.accentBright : theme.secondary, bold: true },
       { text: " " },
-      { text: g.targets.join(", ") + search, color: theme.secondary },
-      ...(g.running ? [{ text: " …", color: theme.accent }] : []),
+      { text: targets + search, color: theme.secondary },
+      ...(g.running ? [{ text: " …", color: theme.accent }] : g.result && g.verb !== "search" ? [{ text: ` · ${g.result}`, color: g.failed ? theme.error : theme.diffAdd }] : []),
     ] as Seg[];
   });
 
@@ -393,31 +708,69 @@ function stripLines(items: QuietItem[], width: number, open: boolean, meta: RowM
     lines.push([{ text: `+ ${remaining} more · click to list`, color: theme.muted, italic: true }]);
   }
 
-  return lines.map((segs, i) => row(`${idBase}_${i}`, [{ text: "  " }, ...segs], width, meta));
+  const summaryRows = lines.map((segs, i) => row(`${idBase}_${i}`, [{ text: "  " }, ...segs], width, meta));
+  if (items.length === 1 && items[0].output[0]) {
+    const item = items[0];
+    const previewWidth = Math.max(8, width - 6);
+    summaryRows.push(row(
+      `${idBase}_preview`,
+      [
+        { text: "    · ", color: theme.border },
+        { text: truncateCells(item.output[0], previewWidth), color: item.failed ? theme.error : theme.text },
+      ],
+      width,
+      { toolId: item.stepId }
+    ));
+  }
+  return summaryRows;
 }
 
 type Block = { type: "strip"; id: string; items: QuietItem[] } | { type: "card"; id: string; card: CardModel };
 
 function toBlocks(steps: ThreadStep[], cwd: string, now: number): Block[] {
   const blocks: Block[] = [];
+  let quietItems: QuietItem[] = [];
+  const flushQuiet = () => {
+    if (quietItems.length === 0) return;
+    blocks.push({ type: "strip", id: `inspect_${quietItems[0].stepId}`, items: quietItems });
+    quietItems = [];
+  };
+
   for (const step of steps) {
     if (step.type !== "tool") continue;
     const model = describeStep(step, cwd, now);
     if (model.kind === "card") {
+      flushQuiet();
       blocks.push({ type: "card", id: step.id, card: model.card });
       continue;
     }
-    const last = blocks[blocks.length - 1];
-    if (last?.type === "strip") last.items.push(model.item);
-    else blocks.push({ type: "strip", id: step.id, items: [model.item] });
+    quietItems.push(model.item);
   }
+  flushQuiet();
   return blocks;
 }
 
-function renderBlock(block: Block, open: boolean, width: number): RightLine[] {
+function renderBlock(block: Block, open: boolean, width: number, now: number = Date.now()): RightLine[] {
   const meta: RowMeta = { toolId: block.id };
   if (block.type === "strip") return stripLines(block.items, width, open, meta, `strip_${block.id}`);
-  return cardLines(block.card, width, open, meta);
+  return cardLines(block.card, width, open, meta, now);
+}
+
+function renderTreeBlock(block: Block, open: boolean, width: number, isLast: boolean, now: number = Date.now()): RightLine[] {
+  const branchWidth = 2;
+  const lines = renderBlock(block, open, Math.max(8, width - branchWidth), now);
+  return lines.map((line, index) => {
+    const branch = index === 0 ? `${isLast ? "└" : "├"} ` : `${isLast ? " " : "│"} `;
+    return {
+      ...line,
+      node: (
+        <Text backgroundColor={theme.bg} wrap="truncate-end">
+          <Text color={theme.border}>{branch}</Text>
+          {line.node}
+        </Text>
+      ),
+    };
+  });
 }
 
 function promptExcerpt(prompt: string): string {
@@ -429,12 +782,14 @@ function turnStats(steps: ThreadStep[]): { calls: number; failed: number } {
   return { calls: tools.length, failed: tools.filter((s) => s.isError).length };
 }
 
-function turnSummary(thread: Thread, width: number, open: boolean): RightLine {
+function turnSummary(thread: Thread, width: number, open: boolean, now: number): RightLine {
   const { calls, failed } = turnStats(thread.steps);
   const tail = calls === 0
     ? " · no tools called"
     : ` · ${calls} call${calls === 1 ? "" : "s"}${failed ? ` · ${failed} failed` : ""}`;
-  const head = `${open ? "▾" : "▸"} turn ${thread.index} · `;
+  const pulse = ["◴", "◷", "◶", "◵"][Math.floor(now / 1000) % 4];
+  const activity = thread.status === "running" ? `${pulse} ` : "";
+  const head = `${open ? "▾" : "▸"} ${activity}turn ${thread.index} · `;
   const excerpt = truncateCells(promptExcerpt(thread.prompt), Math.max(4, width - cellWidth(head) - cellWidth(tail)));
   return row(
     `turn_${thread.id}`,
@@ -504,6 +859,7 @@ export function buildActivityLines({
   width,
   toggledIds = new Set(),
   openedTurnIds = new Set(),
+  expandLatestTools = false,
   cwd = process.cwd(),
   now = Date.now(),
 }: ActivityOptions): RightLine[] {
@@ -524,27 +880,47 @@ export function buildActivityLines({
 
   for (const thread of earlier) {
     const open = openedTurnIds.has(thread.id);
-    lines.push(turnSummary(thread, width, open));
+    lines.push(turnSummary(thread, width, open, now));
     if (open && thread.steps.some((s) => s.type === "tool")) {
-      for (const block of toBlocks(thread.steps, cwd, now)) {
-        lines.push(...renderBlock(block, flip(block.id, false), width));
-      }
+      const blocks = toBlocks(thread.steps, cwd, now);
+      blocks.forEach((block, index) => {
+        lines.push(...renderTreeBlock(block, flip(block.id, false), width, index === blocks.length - 1, now));
+      });
     }
   }
 
   const footer = changesLine(edits, width, cwd);
   const latestBlocks = latest.steps.some((s) => s.type === "tool") ? toBlocks(latest.steps, cwd, now) : [];
+  const latestOpen = openedTurnIds.has(latest.id);
 
-  if (latestBlocks.length > 0) {
-    lines.push(turnSummary(latest, width, true));
+  lines.push(turnSummary(latest, width, latestOpen, now));
+  if (latestOpen && latestBlocks.length > 0) {
     const openBlock = focusedBlockId(latest.steps, latestBlocks);
-
-    for (const block of latestBlocks) {
-      const byDefault = block.id === openBlock;
-      lines.push(...renderBlock(block, flip(block.id, byDefault), width));
-    }
-  } else {
-    lines.push(turnSummary(latest, width, true));
+    latestBlocks.forEach((block, index) => {
+      const byDefault = expandLatestTools || block.id === openBlock;
+      lines.push(...renderTreeBlock(block, flip(block.id, byDefault), width, index === latestBlocks.length - 1, now));
+    });
+  } else if (latest.status === "running" && latestBlocks.length > 0) {
+    const activeId = focusedBlockId(latest.steps, latestBlocks);
+    const activeBlock = latestBlocks.find((block) => block.id === activeId);
+    if (activeBlock) lines.push(...renderTreeBlock(activeBlock, false, width, true, now));
+  } else if (latestBlocks.length > 0) {
+    const recentBlock = latestBlocks[latestBlocks.length - 1];
+    lines.push(...renderTreeBlock(recentBlock, false, width, true, now));
+  } else if (latest.status === "running") {
+    const thinking = latest.steps.find((step) => step.type === "thinking" && step.isRunning);
+    const elapsed = thinking?.startTime ? ` · ${Math.floor((now - thinking.startTime) / 1000)}s` : "";
+    const phase = latest.isStreaming ? "writing response" : "thinking";
+    const pulse = ["◴", "◷", "◶", "◵"][Math.floor(now / 1000) % 4];
+    lines.push(row(
+      `turn_${latest.id}_phase`,
+      [
+        { text: `  ${pulse} `, color: theme.accentBright },
+        { text: phase, color: theme.secondary, italic: true },
+        { text: elapsed, color: theme.muted },
+      ],
+      width
+    ));
   }
 
   if (footer) {

@@ -49,6 +49,8 @@ export function highlightCode(line: string, lang?: string): string {
   if (!line || !line.trim()) return line;
 
   const normalizedLang = (lang || "").toLowerCase().trim();
+  if (normalizedLang === "markdown") return highlightMarkdown(line);
+  if (normalizedLang === "text") return line;
 
   // Handle whole-line comments fast
   const trimmed = line.trim();
@@ -60,7 +62,7 @@ export function highlightCode(line: string, lang?: string): string {
     trimmed.startsWith("<!--") ||
     trimmed.startsWith("--")
   ) {
-    return pc.dim(pc.gray(line));
+    return pc.gray(line);
   }
 
   // Token extraction maps to preserve strings and inline comments
@@ -148,7 +150,7 @@ export function highlightCode(line: string, lang?: string): string {
 
   // Operators
   working = working.replace(/(=>|===|!==|==|!=|<=|>=|&&|\|\||[?:+\-*/%&|^~!=<>])/g, (op) =>
-    pc.dim(op)
+    op
   );
 
   // Restore placeholders (strings and comments)
@@ -157,6 +159,49 @@ export function highlightCode(line: string, lang?: string): string {
   }
 
   return working;
+}
+
+function highlightMarkdown(line: string): string {
+  const lineNumber = line.match(/^(\s*\d+:\s?)/);
+  const prefix = lineNumber?.[1] ?? "";
+  let content = line.slice(prefix.length);
+  if (!content.trim()) return line;
+
+  if (/^#{1,6}\s/.test(content)) return prefix + pc.bold(pc.cyan(content));
+  if (/^(?:---+|\*\*\*+|___+)$/.test(content.trim())) return prefix + pc.gray(content);
+  if (/^\s*>/.test(content)) return prefix + pc.blue(content);
+
+  const listMarker = content.match(/^(\s*(?:[-*+]\s+|\d+[.)]\s+))/);
+  if (listMarker) {
+    const marker = listMarker[1];
+    content = pc.bold(pc.cyan(marker)) + highlightMarkdownInline(content.slice(marker.length));
+    return prefix + content;
+  }
+
+  if (content.includes("|") && /^\s*\|/.test(content)) {
+    return prefix + content.replace(/\|/g, (pipe) => pc.gray(pipe));
+  }
+
+  return prefix + highlightMarkdownInline(content);
+}
+
+function highlightMarkdownInline(text: string): string {
+  return text
+    .replace(/`([^`]+)`/g, (_match, code: string) => pc.green(`\`${code}\``))
+    .replace(/!?\[([^\]]+)\]\(([^)]+)\)/g, (match) => pc.underline(pc.cyan(match)))
+    .replace(/\*\*(.+?)\*\*/g, (_match, bold: string) => pc.bold(bold))
+    .replace(/(?<!\*)\*([^*]+)\*(?!\*)/g, (_match, italic: string) => pc.italic(italic));
+}
+
+export function highlightDirectoryTree(line: string): string {
+  const match = line.match(/^([\s│]*[├└]──\s*)(.*)$/);
+  if (match) {
+    const [, branch, name] = match;
+    return `${pc.gray(branch)}${name.endsWith("/") ? pc.bold(pc.cyan(name)) : pc.white(name)}`;
+  }
+  const root = line.match(/^(\s*)(.+\/\s*)$/);
+  if (root) return `${root[1]}${pc.bold(pc.cyan(root[2]))}`;
+  return line;
 }
 
 /**
