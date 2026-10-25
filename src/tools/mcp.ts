@@ -476,16 +476,61 @@ type McpRegistry = {
 
 let persistentRegistry: McpRegistry | undefined;
 
-async function readMcpConfig(): Promise<McpConfig | undefined> {
-  const configPath = path.join(os.homedir(), ".morpheus", "config.json");
-  try {
-    const parsed = JSON.parse(await fs.readFile(configPath, "utf8"));
-    if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) return parsed as McpConfig;
-    return {};
-  } catch (error) {
-    if ((error as NodeJS.ErrnoException).code === "ENOENT") return {};
+export function discoverSeraphServer(): McpServerConfig | undefined {
+  if (process.env.npm_lifecycle_event === "test" && !process.env.MORPHEUS_ENABLE_TEST_MCP) {
     return undefined;
   }
+
+  try {
+    const which = spawnSync("which", ["seraph-mcp"], { encoding: "utf8" });
+    const binPath = which.stdout?.trim();
+    if (binPath && which.status === 0) {
+      return { command: binPath };
+    }
+  } catch {}
+
+  const localBin = path.join(os.homedir(), ".local", "bin", "seraph-mcp");
+  try {
+    const stat = spawnSync("test", ["-x", localBin]);
+    if (stat.status === 0) {
+      return { command: localBin };
+    }
+  } catch {}
+
+  const devSeraphVenv = path.join(os.homedir(), "Developer", "seraph", ".venv", "bin", "python");
+  try {
+    const stat = spawnSync("test", ["-x", devSeraphVenv]);
+    if (stat.status === 0) {
+      return {
+        command: devSeraphVenv,
+        args: ["-m", "seraph.server"],
+      };
+    }
+  } catch {}
+
+  return undefined;
+}
+
+async function readMcpConfig(): Promise<McpConfig | undefined> {
+  const configPath = path.join(os.homedir(), ".morpheus", "config.json");
+  let parsed: McpConfig = {};
+  try {
+    const content = await fs.readFile(configPath, "utf8");
+    const data = JSON.parse(content);
+    if (data && typeof data === "object" && !Array.isArray(data)) parsed = data as McpConfig;
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code !== "ENOENT") return undefined;
+  }
+
+  const servers = { ...(parsed.mcpServers ?? {}) };
+  if (!servers.seraph) {
+    const autoSeraph = discoverSeraphServer();
+    if (autoSeraph) {
+      servers.seraph = autoSeraph;
+    }
+  }
+
+  return { ...parsed, mcpServers: servers };
 }
 
 async function buildRegistry(config: McpConfig, key: string): Promise<McpRegistry> {

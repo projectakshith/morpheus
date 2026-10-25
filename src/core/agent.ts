@@ -283,10 +283,19 @@ export async function runAgent(
       },
     }
   );
-  const mcp = options.toolAccess
-    ? { tools: {}, close: async () => undefined }
-    : await createMcpTools({ persistent: options.persistentMcp });
-  Object.assign(tools, mcp.tools);
+  const mcp = await createMcpTools({ persistent: options.persistentMcp });
+  if (options.toolAccess === "readOnly" || options.toolAccess === "scopedWrite") {
+    /* Restricted subagent workers gain access to safe code intelligence tools (Seraph) */
+    const safeWorkerMcpTools: Record<string, ToolDefinition> = {};
+    for (const [name, tool] of Object.entries(mcp.tools)) {
+      if (name.startsWith("mcp_seraph_") || name === "mcp_status") {
+        safeWorkerMcpTools[name] = tool;
+      }
+    }
+    Object.assign(tools, safeWorkerMcpTools);
+  } else {
+    Object.assign(tools, mcp.tools);
+  }
   /* Cua tool schemas stay out of the prompt until computer use is actually needed. */
   const computerUseSkill = baseContext.skills?.find((skill) => skill.name === "computer_use");
   const hasCuaTools = Object.keys(mcp.tools).some((name) => name.startsWith("mcp_cua_"));
@@ -335,6 +344,16 @@ export async function runAgent(
     }
     if (Object.keys(mcp.tools).length > 0) {
       notes.push("For every MCP call, follow that tool's input schema: provide every required field using the user's request, schema defaults, or prior tool results. Make one MCP call at a time so later calls can use earlier results. Do not guess fields that lack evidence; skip that tool when a required value cannot be grounded.");
+    }
+    const hasSeraph = Object.keys(tools).some((name) => name.startsWith("mcp_seraph_"));
+    if (hasSeraph) {
+      notes.push(
+        "Seraph code intelligence tools (mcp_seraph_*) are active. Prioritize them over raw filesystem grep/reads for navigating code:\n" +
+        "- Use `mcp_seraph_find_symbol` to retrieve exact type signatures, class definitions, and line bounds without reading entire files.\n" +
+        "- Use `mcp_seraph_find_dependencies` and `mcp_seraph_change_impact` to map callers, upstream dependents, and blast radius before modifying code.\n" +
+        "- Use `mcp_seraph_search_code` for intent-based code search across the repository.\n" +
+        "- Use `mcp_seraph_get_repo_map` to orient on workspace structure."
+      );
     }
     if (delegateTool) {
       notes.push(

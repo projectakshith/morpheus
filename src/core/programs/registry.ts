@@ -12,6 +12,7 @@ export const MATRIX_PROGRAMS: Record<ProgramId, ProgramContract> = {
     defaultModelTier: "fast",
     operationalRules: [
       "Inspect API parameters, auth headers, MCP tool schemas, and environment configs without guessing.",
+      "Prioritize Seraph tools: use mcp_seraph_find_symbol to locate definitions and mcp_seraph_get_repo_map to orient on workspace structure.",
       "Identify required credentials and access constraints before execution.",
       "Do not mutate files. Provide an exact integration briefing with endpoint specifications."
     ],
@@ -32,6 +33,7 @@ export const MATRIX_PROGRAMS: Record<ProgramId, ProgramContract> = {
     defaultModelTier: "reasoning",
     operationalRules: [
       "Trace all callers, imports, and downstream dependencies of the target symbols.",
+      "Prioritize Seraph tools: use mcp_seraph_find_dependencies to trace caller trees and mcp_seraph_change_impact to map ripple effects.",
       "Identify breaking type shifts, interface mismatches, and potential circular imports.",
       "Do not modify files. Map ripple effects across the workspace before implementation begins."
     ],
@@ -92,6 +94,7 @@ export const MATRIX_PROGRAMS: Record<ProgramId, ProgramContract> = {
     defaultModelTier: "reasoning",
     operationalRules: [
       "Make surgical, minimal edits only within the assigned workspace files.",
+      "Check mcp_seraph_change_impact before concluding to ensure no unhandled callers or broken tests were missed.",
       "Preserve existing formatting, comments, and project design patterns.",
       "Do not commit changes or run arbitrary shell commands."
     ],
