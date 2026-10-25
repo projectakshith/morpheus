@@ -96,3 +96,31 @@ test("a missing or malformed scope file loads as null", async () => {
     await fs.rm(dir, { recursive: true, force: true });
   }
 });
+
+test("authorization references are single-line and bounded", async () => {
+  const { normalizeAuthorizationReference, createEngagement } = await import("../src/core/engagement");
+  assert.equal(normalizeAuthorizationReference(" ENG-1\n\t APPROVED "), "ENG-1 APPROVED");
+  assert.equal(normalizeAuthorizationReference("x".repeat(300)).length, 200);
+  const engagement = createEngagement({
+    target: "example.edu",
+    authorizedBy: "  ENG\n42  ",
+  });
+  assert.equal(engagement.authorizedBy, "ENG 42");
+});
+
+test("scope cannot be widened with host suffix or userinfo tricks", () => {
+  const engagement = createEngagement({ target: "example.edu", authorizedBy: "ENG-1" }, NOW);
+  const denied = [
+    "https://example.edu.evil.com/",
+    "https://evil-example.edu/",
+    "https://example.edu@evil.com/",
+    "https://evil.com#@example.edu/",
+    "https://evil.com/?next=example.edu",
+    "http://2130706433/",
+  ];
+  for (const target of denied) {
+    assert.equal(checkTarget(engagement, target, "GET", NOW).allowed, false, target);
+  }
+  assert.equal(checkTarget(engagement, "https://sub.example.edu/", "GET", NOW).allowed, true);
+  assert.equal(checkTarget(engagement, "https://example.edu./", "GET", NOW).allowed, true);
+});

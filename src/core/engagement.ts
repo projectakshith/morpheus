@@ -1,5 +1,6 @@
 import fs from "node:fs/promises";
 import path from "node:path";
+import net from "node:net";
 import { randomUUID } from "node:crypto";
 
 export const ENGAGEMENT_METHODS = ["GET", "HEAD", "POST", "PUT", "PATCH", "DELETE"] as const;
@@ -32,9 +33,19 @@ export interface EngagementInput {
 
 const ENGAGEMENT_FILE = path.join(".morpheus", "engagement.json");
 const MAX_REQUESTS_PER_SECOND = 50;
+const MAX_AUTHORIZATION_REFERENCE = 200;
 
 export function engagementPath(cwd: string = process.cwd()): string {
   return path.resolve(cwd, ENGAGEMENT_FILE);
+}
+
+export function normalizeAuthorizationReference(value: unknown): string {
+  return String(value ?? "")
+    .replace(/[\u0000-\u001f\u007f-\u009f]+/g, " ")
+    .replace(/[\u200b-\u200f\u202a-\u202e\u2060-\u206f\ufeff]+/g, "")
+    .replace(/\s+/g, " ")
+    .trim()
+    .slice(0, MAX_AUTHORIZATION_REFERENCE);
 }
 
 export function normalizeHost(input: string): string {
@@ -62,7 +73,7 @@ export function normalizeMethods(methods: string[] = ["GET", "HEAD"]): Engagemen
 export function createEngagement(input: EngagementInput, now: Date = new Date()): Engagement {
   const target = normalizeHost(input.target);
   if (!target) throw new Error("Engagement target must be a host or URL.");
-  const authorizedBy = String(input.authorizedBy || "").trim();
+  const authorizedBy = normalizeAuthorizationReference(input.authorizedBy);
   if (!authorizedBy) throw new Error("Engagement requires an authorization reference.");
   const allowedHosts = (input.allowedHosts?.length ? input.allowedHosts : [target])
     .map(normalizeHost)
@@ -102,7 +113,7 @@ export function validateEngagement(value: unknown): Engagement | null {
   if (!value || typeof value !== "object" || Array.isArray(value)) return null;
   const record = value as Record<string, unknown>;
   const target = normalizeHost(String(record.target ?? ""));
-  const authorizedBy = String(record.authorizedBy ?? "").trim();
+  const authorizedBy = normalizeAuthorizationReference(record.authorizedBy);
   const allowedHosts = Array.isArray(record.allowedHosts)
     ? record.allowedHosts.map((host) => normalizeHost(String(host))).filter(Boolean)
     : [];
@@ -162,7 +173,7 @@ export function checkTarget(
   const host = normalizeHost(target);
   if (!host) return { allowed: false, reason: "Target is not a valid host or URL." };
   const inScope = engagement.allowedHosts.some(
-    (allowed) => host === allowed || host.endsWith(`.${allowed}`)
+    (allowed) => host === allowed || (!net.isIP(host) && !net.isIP(allowed) && host.endsWith(`.${allowed}`))
   );
   if (!inScope) return { allowed: false, reason: `Host ${host} is not in scope.` };
   const normalizedMethod = String(method || "").trim().toUpperCase();
