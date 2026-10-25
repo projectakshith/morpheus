@@ -7,6 +7,7 @@ import type { Engagement } from "../../../core/engagement";
 import type { Finding } from "../../../core/types";
 import {
   SECURITY_PHASES,
+  latestRefusal,
   probeRows,
   scopeView,
   securityPhase,
@@ -58,6 +59,7 @@ export function SecurityHud({ width, height, threads, findings, engagement, targ
   const phase = securityPhase(threads);
   const counts = severityCounts(findings);
   const scope = scopeView(engagement);
+  const refusal = latestRefusal(threads);
   const rows = probeRows(threads, 5);
   const lines: React.ReactNode[] = [];
 
@@ -129,6 +131,25 @@ export function SecurityHud({ width, height, threads, findings, engagement, targ
     </Text>
   );
   lines.push(spacer(inner));
+
+  if (refusal) {
+    const clarify = refusal.kind === "clarify";
+    const state = clarify ? "needs operator" : refusal.retrying ? "retrying" : "final";
+    lines.push(label(clarify ? "INPUT" : "REFUSAL", inner));
+    lines.push(
+      padded(
+        `${refusal.kind.toUpperCase()} · ${state} · ${refusal.model}`,
+        inner,
+        clarify || refusal.retrying ? theme.warning : theme.error
+      )
+    );
+    const excerpt = truncateCells(
+      refusal.text.replace(/\s+/g, " ").trim(),
+      Math.max(8, inner - 4)
+    );
+    lines.push(padded(`“${excerpt}”`, inner, theme.muted));
+    lines.push(spacer(inner));
+  }
 
   lines.push(label("ACTIVITY", inner));
   if (rows.length === 0) {

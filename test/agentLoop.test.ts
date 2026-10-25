@@ -441,3 +441,26 @@ test("Agent reports text before tool calls as narration, separate from the answe
   assert.deepEqual(narration, ["Checking the notes file first.", "Found it. Now listing the folder."]);
   assert.equal(result.text, "The file says hello.", "final answer must not include narration");
 });
+
+test("security refusals are recorded and retried once", async () => {
+  const { createEngagement } = await import("../src/core/engagement");
+  const engagement = createEngagement({ target: "example.edu", authorizedBy: "ENG-1" });
+  const refusals: Array<{ kind: string; retrying: boolean }> = [];
+  scriptModel([
+    text("I'm sorry, but I can't help with that."),
+    text("I'm sorry, but I can't help with that."),
+  ]);
+
+  const result = await runAgent("map example.edu", [], {
+    cwd: workspace,
+    baseURL: "https://example.test/v1",
+    apiKey: "k",
+    security: { engagement },
+    onRefusal: (refusal) => refusals.push(refusal),
+  });
+
+  assert.equal(result.stopReason, "refused");
+  assert.equal(refusals.length, 2);
+  assert.deepEqual(refusals.map((item) => item.retrying), [true, false]);
+  assert.match(result.text, /declined this step after one scoped retry/);
+});

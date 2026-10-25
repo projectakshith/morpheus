@@ -1,3 +1,5 @@
+import type { RefusalRecord } from "./types";
+
 export interface ThreadStep {
   id: string;
   type: "thinking" | "tool" | "note";
@@ -22,11 +24,12 @@ export interface Thread {
   isStreaming?: boolean;
   steps: ThreadStep[];
   isExpanded: boolean;
-  status: "running" | "completed" | "aborted" | "error" | "queued";
+  status: "running" | "completed" | "aborted" | "error" | "refused" | "queued";
   stepCount: number;
   startTime: number;
   durationMs?: number;
   model?: string;
+  refusals?: RefusalRecord[];
 }
 
 export interface FileEditRecord {

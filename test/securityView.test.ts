@@ -4,6 +4,7 @@ import type { Thread, ThreadStep } from "../src/core/thread";
 import type { Finding } from "../src/core/types";
 import { createEngagement } from "../src/core/engagement";
 import {
+  latestRefusal,
   probeRows,
   scopeView,
   securityPhase,
@@ -34,6 +35,7 @@ test("phases advance from recon to report", () => {
   assert.equal(stepPhase(step("security_recon", { mode: "headers" })), 1);
   assert.equal(stepPhase(step("security_recon", { mode: "paths" })), 1);
   assert.equal(stepPhase(step("http_request", { method: "GET" })), 2);
+  assert.equal(stepPhase(step("http_probe", { method: "GET" })), 2);
   assert.equal(stepPhase(step("record_finding", {})), 3);
   assert.equal(stepPhase(step("write_file", { filePath: "reports/report.md" })), 4);
   assert.equal(stepPhase(step("read_file", { filePath: "src/a.ts" })), null);
@@ -67,7 +69,7 @@ test("probe rows describe recon, requests, and findings", () => {
   const rows = probeRows([
     thread([
       step("security_recon", { mode: "headers", target: "example.edu" }, { output: "headers · example.edu · 200" }),
-      step("http_request", { method: "GET", url: "https://example.edu/api/users/101" }, { output: "Status: HTTP/200" }),
+      step("http_probe", { method: "GET", url: "https://example.edu/api/users/101" }, { output: "Status: HTTP/200" }),
       step("record_finding", { severity: "high", endpoint: "/api/users/101", takeaway: "cross-account read" }),
     ]),
   ]);
@@ -84,6 +86,14 @@ test("running probes are marked", () => {
   ]);
   assert.equal(rows[0].status, "…");
   assert.equal(rows[0].isRunning, true);
+});
+
+test("the latest refusal is exposed for the hud", () => {
+  const first = { ...thread([]), refusals: [{ id: "r1", kind: "hard" as const, text: "no", model: "flash", retrying: true, createdAt: 10 }] };
+  const second = { ...thread([]), refusals: [{ id: "r2", kind: "partial" as const, text: "maybe", model: "sonnet", retrying: false, createdAt: 20 }] };
+  const latest = latestRefusal([first, second]);
+  assert.equal(latest?.id, "r2");
+  assert.equal(latestRefusal([thread([])]), null);
 });
 
 test("scope view reports expiry", () => {

@@ -1,11 +1,11 @@
-import type { Finding, TokenUsage } from "../core/types";
+import type { Finding, RefusalRecord, TokenUsage } from "../core/types";
 import type { Thread, FileEditRecord } from "../core/thread";
 import type { AutocompleteResult } from "../autocomplete/types";
 
 export const PROTOCOL_VERSION = 1;
 
 export type SessionStatus = "idle" | "running" | "error" | "aborted";
-export type TurnOutcome = "completed" | "aborted" | "error";
+export type TurnOutcome = "completed" | "aborted" | "error" | "refused";
 
 export interface WorkspaceInfo {
   isGit: boolean;
@@ -50,6 +50,7 @@ export type EventBody =
   | { type: "permission.requested"; threadId: string; requestId: string; tool: string; args: Record<string, unknown>; reason: string }
   | { type: "permission.resolved"; requestId: string; decision: "allow" | "deny" }
   | { type: "file.edited"; record: FileEditRecord }
+  | { type: "refusal"; threadId: string; refusal: RefusalRecord }
   | { type: "findings"; findings: Finding[] }
   | { type: "thread.upserted"; thread: Thread }
   | { type: "thread.removed"; threadId: string }

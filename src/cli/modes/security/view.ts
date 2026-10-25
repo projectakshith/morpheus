@@ -1,6 +1,6 @@
 import type { Thread, ThreadStep } from "../../../core/thread";
 import type { Engagement } from "../../../core/engagement";
-import type { Finding, FindingSeverity } from "../../../core/types";
+import type { Finding, FindingSeverity, RefusalRecord } from "../../../core/types";
 
 export const SECURITY_PHASES = ["RECON", "STATIC", "PROBE", "IMPACT", "REPORT"] as const;
 
@@ -31,7 +31,7 @@ export function stepPhase(step: ThreadStep): number | null {
     if (mode === "paths") return 1;
     return 0;
   }
-  if (step.name === "http_request" || step.name === "security_probe") return 2;
+  if (step.name === "http_request" || step.name === "http_probe" || step.name === "security_probe") return 2;
   if (step.name === "record_finding") return 3;
   const filePath = String(step.args?.filePath ?? "");
   if ((step.name === "write_file" || step.name === "edit_file") && /(^|\/)report\.md$/.test(filePath)) {
@@ -84,7 +84,7 @@ function rowFor(step: ThreadStep): ProbeRow | null {
       isError: Boolean(step.isError),
     };
   }
-  if (step.name === "http_request") {
+  if (step.name === "http_request" || step.name === "http_probe") {
     const method = String(step.args?.method ?? "GET").toUpperCase();
     const url = String(step.args?.url ?? "");
     let path = url;
@@ -126,6 +126,16 @@ export function probeRows(threads: Thread[], limit: number = 6): ProbeRow[] {
     }
   }
   return rows.slice(-limit);
+}
+
+export function latestRefusal(threads: Thread[]): RefusalRecord | null {
+  let latest: RefusalRecord | null = null;
+  for (const thread of threads) {
+    for (const refusal of thread.refusals ?? []) {
+      if (!latest || refusal.createdAt >= latest.createdAt) latest = refusal;
+    }
+  }
+  return latest;
 }
 
 export function scopeView(engagement: Engagement | null, now: Date = new Date()): ScopeView | null {

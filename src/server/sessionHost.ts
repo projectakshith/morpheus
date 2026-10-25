@@ -348,7 +348,7 @@ export class SessionHost {
       }
     };
 
-    let outcome: "completed" | "aborted" | "error" = "completed";
+    let outcome: "completed" | "aborted" | "error" | "refused" = "completed";
     const securityActive = getSecuritySession().active;
     const securityScope = securityActive ? await loadEngagement(this.state.cwd) : null;
     try {
@@ -397,6 +397,7 @@ export class SessionHost {
         },
         onToolResult: (name, res, callId) => finishTool(name, res, callId),
         onPermissionResult: (name, res, callId) => finishTool(name, res, callId, true),
+        onRefusal: (refusal) => this.emit({ type: "refusal", threadId, refusal }),
       });
 
       endThinking();
@@ -409,7 +410,13 @@ export class SessionHost {
       }
 
       const partial = this.threadResponse(threadId);
-      outcome = result.error ? "error" : result.aborted ? "aborted" : "completed";
+      outcome = result.error
+        ? "error"
+        : result.aborted
+          ? "aborted"
+          : result.stopReason === "refused"
+            ? "refused"
+            : "completed";
       const response = result.error
         ? `${partial ? `${partial}\n\n` : ""}${formatAgentError(result.error, this.deps.baseURL)}`
         : result.aborted
@@ -434,7 +441,7 @@ export class SessionHost {
 
     this.refreshWorkspace();
     await this.persist();
-    this.drainQueue(outcome === "completed" ? "idle" : outcome);
+    this.drainQueue(outcome === "completed" || outcome === "refused" ? "idle" : outcome);
   }
 
   resolvePermission(requestId: string, decision: "allow" | "deny"): boolean {

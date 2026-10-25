@@ -182,6 +182,13 @@ export function applyEvent(state: SessionSnapshot, event: MorpheusEvent): Sessio
       next.fileEdits = [...state.fileEdits, event.record];
       return next;
 
+    case "refusal":
+      next.threads = updateThread(state, event.threadId, (t) => ({
+        ...t,
+        refusals: [...(t.refusals ?? []), event.refusal],
+      }));
+      return next;
+
     case "usage":
       next.usage = event.usage;
       return next;
