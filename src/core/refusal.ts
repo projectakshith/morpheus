@@ -14,7 +14,7 @@ const HARD_PATTERNS = [
 const HEDGE_PATTERN = /\b(?:sorry|unfortunately|apologi[sz]e)\b/i;
 
 const TECHNICAL_PATTERN =
-  /\b(?:GET|POST|PUT|PATCH|DELETE|HEAD|HTTP|header|host|endpoint|port|DNS|subdomain|payload|response|request|status|cookie|token|credential|repository|file|code)\b/i;
+  /\b(?:GET|POST|PUT|PATCH|DELETE|HEAD|HTTP|header|host|endpoint|port|DNS|subdomain|payload|response|request|status|cookie|token|credential|repository|file|code|scan|probe|target)\b/i;
 
 export function classifyRefusal(text: string, finishReason?: string): RefusalKind {
   if (finishReason === "content_filter") return "hard";

@@ -80,7 +80,8 @@ export type AgentStopReason =
   | "context_limit"
   | "step_limit"
   | "loop_guard"
-  | "truncated_tool";
+  | "truncated_tool"
+  | "refused";
 
 export type PermissionMode = "guarded" | "fullAccess";
 
