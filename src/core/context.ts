@@ -1,5 +1,8 @@
 import { execSync } from "node:child_process";
+import { existsSync } from "node:fs";
+import path from "node:path";
 import type { AgentContext } from "./types";
+import { getSecuritySession } from "./securitySession";
 import { generateRepoMap } from "./repomap";
 import {
   loadSkills,
@@ -46,11 +49,16 @@ export function getGitInfo(cwd: string = process.cwd()): { isGit: boolean; branc
   return { isGit, branch, gitStatus };
 }
 
+export function securitySkillsEnabled(cwd: string = process.cwd()): boolean {
+  return getSecuritySession().active || existsSync(path.join(cwd, ".morpheus", "engagement.json"));
+}
+
 export function gatherContext(cwd: string = process.cwd()): AgentContext {
   const { isGit, branch, gitStatus } = getGitInfo(cwd);
 
   const repoMap = generateRepoMap(cwd);
-  const skills = loadSkills(cwd);
+  const security = securitySkillsEnabled(cwd);
+  const skills = loadSkills(cwd).filter((skill) => security || skill.category !== "security");
   const rules = loadRules(cwd);
 
   return {

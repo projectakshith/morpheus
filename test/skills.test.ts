@@ -83,7 +83,7 @@ Body content here.`;
   });
 
   it("formats token-efficient skills manifest", () => {
-    const skills = loadSkills(process.cwd());
+    const skills = loadSkills(process.cwd()).filter((skill) => skill.category !== "security");
     const manifest = formatSkillsManifest(skills);
 
     assert.ok(manifest.startsWith("<skills>"));
