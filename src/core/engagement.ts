@@ -70,11 +70,14 @@ export function createEngagement(input: EngagementInput, now: Date = new Date())
   if (allowedHosts.length === 0) throw new Error("Engagement requires at least one allowed host.");
   const allowedMethods = normalizeMethods(input.allowedMethods);
   if (allowedMethods.length === 0) throw new Error("Engagement requires at least one allowed method.");
+  const requestedRps = Number(input.maxRequestsPerSecond ?? 5);
+  const requestRate = Number.isFinite(requestedRps) ? requestedRps : 5;
   const maxRequestsPerSecond = Math.min(
     MAX_REQUESTS_PER_SECOND,
-    Math.max(1, Math.floor(input.maxRequestsPerSecond ?? 5))
+    Math.max(1, Math.floor(requestRate))
   );
-  const days = Math.min(90, Math.max(1, Math.floor(input.days ?? 30)));
+  const requestedDays = Number(input.days ?? 30);
+  const days = Math.min(90, Math.max(1, Math.floor(Number.isFinite(requestedDays) ? requestedDays : 30)));
   const createdAt = now.toISOString();
   const expiresAt = new Date(now.getTime() + days * 24 * 60 * 60 * 1000).toISOString();
   return {

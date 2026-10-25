@@ -29,6 +29,8 @@ const BUILTIN_COMMANDS: CommandDef[] = [
   { name: "/morpheus", description: "Display operative Morpheus TrueColor avatar", aliases: ["/avatar"] },
   { name: "/skills", description: "List all available agent skills and playbooks", aliases: ["/skill"] },
   { name: "/cua", description: "Configure and check Cua Driver computer use", hasArgs: true },
+  { name: "/attack", description: "Declare an authorized engagement and switch to attack view", hasArgs: true },
+  { name: "/normal", description: "Leave attack view and return to coding mode" },
   { name: "/exit", description: "Exit Morpheus CLI", aliases: ["/quit"] },
 ];
 
