@@ -208,6 +208,8 @@ export function getToolBadge(name?: string): ToolBadgeInfo {
       return { label: "UPLINK", color: t.accent };
     case "record_finding":
       return { label: "FINDING", color: t.accentBright };
+    case "security_recon":
+      return { label: "RECON", color: t.warning };
     default:
       return { label: (name || "TOOL").toUpperCase().slice(0, 7), color: t.muted };
   }
