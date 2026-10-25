@@ -15,6 +15,8 @@ import type { CommandContext } from "../commands/types";
 import { applyEvent } from "../protocol/reducer";
 import type { EventBody, MorpheusEvent, SessionSnapshot } from "../protocol/types";
 import { savePreferredModel } from "../core/userSettings";
+import { loadEngagement } from "../core/engagement";
+import { getSecuritySession } from "../core/securitySession";
 
 const REPLAY_BUFFER_SIZE = 20_000;
 
@@ -346,6 +348,9 @@ export class SessionHost {
     };
 
     let outcome: "completed" | "aborted" | "error" = "completed";
+    const securityScope = getSecuritySession().active
+      ? await loadEngagement(this.state.cwd)
+      : null;
     try {
       const result = await this.deps.runAgent(prompt, this.history, {
         cwd: this.state.cwd,
@@ -361,6 +366,7 @@ export class SessionHost {
         persistentMcp: true,
         sessionId: this.state.id,
         findings: this.state.findings,
+        security: securityScope ? { engagement: securityScope } : undefined,
         onPermissionRequest: (request) => new Promise((resolve) => {
           this.permissionWaiters.set(request.id, resolve);
           this.permissionCancels.set(request.id, request.cancel);

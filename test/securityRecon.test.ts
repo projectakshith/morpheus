@@ -6,6 +6,10 @@ import path from "node:path";
 import { createEngagement } from "../src/core/engagement";
 import { createTools } from "../src/tools/index";
 import {
+  activateSecuritySession,
+  deactivateSecuritySession,
+} from "../src/core/securitySession";
+import {
   baseUrl,
   buildPathList,
   isInterestingStatus,
@@ -106,7 +110,7 @@ test("paths mode reports only interesting routes", async () => {
   });
 });
 
-test("the recon tool appears only when a scope exists", async () => {
+test("the recon tool appears only in attack mode", async () => {
   const dir = await fs.mkdtemp(path.join(os.tmpdir(), "morpheus-tools-"));
   try {
     assert.equal(createTools(dir).security_recon, undefined);
@@ -116,8 +120,13 @@ test("the recon tool appears only when a scope exists", async () => {
       JSON.stringify(engagement),
       "utf8"
     );
+    assert.equal(createTools(dir).security_recon, undefined);
+    activateSecuritySession(engagement);
     assert.ok(createTools(dir).security_recon);
+    deactivateSecuritySession();
+    assert.equal(createTools(dir).security_recon, undefined);
   } finally {
+    deactivateSecuritySession();
     await fs.rm(dir, { recursive: true, force: true });
   }
 });

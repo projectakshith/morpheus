@@ -226,6 +226,7 @@ export function createSubagentRunnerOptions(input: {
       disableSubagents: true,
       toolAccess: input.task.role === "implement" ? "scopedWrite" : "readOnly",
       allowedWritePaths,
+      ...(input.parent.security ? { security: input.parent.security } : {}),
     },
   };
 }

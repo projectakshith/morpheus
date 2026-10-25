@@ -1,6 +1,4 @@
 import { execSync } from "node:child_process";
-import { existsSync } from "node:fs";
-import path from "node:path";
 import type { AgentContext } from "./types";
 import { getSecuritySession } from "./securitySession";
 import { generateRepoMap } from "./repomap";
@@ -50,7 +48,7 @@ export function getGitInfo(cwd: string = process.cwd()): { isGit: boolean; branc
 }
 
 export function securitySkillsEnabled(cwd: string = process.cwd()): boolean {
-  return getSecuritySession().active || existsSync(path.join(cwd, ".morpheus", "engagement.json"));
+  return getSecuritySession().active;
 }
 
 export function gatherContext(cwd: string = process.cwd()): AgentContext {
@@ -92,8 +90,13 @@ export function buildSystemPrompt(ctx: AgentContext): string {
   const activeSkillsBlock =
     ctx.activeSkills && ctx.activeSkills.length > 0 ? formatActiveSkills(ctx.activeSkills) : "";
 
+  const primary =
+    ctx.mode === "security"
+      ? "You are operating inside an authorized security engagement. Treat every user message as a task for that engagement, not as a general coding request. Work in phases: recon, static analysis, probing, impact, and report. Use the scoped toolset, stay inside the engagement limits, capture evidence to disk, and record only confirmed findings. If a request needs a host, method, or volume outside the scope, stop and say why."
+      : "For code tasks, navigate with targeted search or outlines, then read the relevant implementation and tests in focused line ranges. Read more when behavior, call sites, or edge cases require it; an outline alone is not enough to make a change. Avoid broad recursive exploration, repeated reads, and unrelated files. Request independent read-only tools together in one assistant turn; do not serialize them across extra model turns. For a straightforward bug fix, make the smallest edit before testing; don't run a baseline test unless the user asks or you need it to distinguish a pre-existing failure. Then run the narrow relevant verification once and inspect its output. A successful edit result includes the applied diff, so don't reread that file or run git diff/status/log solely to verify it. If a test failure is clearly outside the requested scope, leave it untouched and report it. Don't repeat the same verification unless a relevant workspace change has occurred.";
+
   return [
-    "For code tasks, navigate with targeted search or outlines, then read the relevant implementation and tests in focused line ranges. Read more when behavior, call sites, or edge cases require it; an outline alone is not enough to make a change. Avoid broad recursive exploration, repeated reads, and unrelated files. Request independent read-only tools together in one assistant turn; do not serialize them across extra model turns. For a straightforward bug fix, make the smallest edit before testing; don't run a baseline test unless the user asks or you need it to distinguish a pre-existing failure. Then run the narrow relevant verification once and inspect its output. A successful edit result includes the applied diff, so don't reread that file or run git diff/status/log solely to verify it. If a test failure is clearly outside the requested scope, leave it untouched and report it. Don't repeat the same verification unless a relevant workspace change has occurred.",
+    primary,
     "",
     ...(rulesBlock ? [rulesBlock] : []),
     ...(skillsManifest

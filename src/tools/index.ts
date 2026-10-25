@@ -1,6 +1,5 @@
 import path from "node:path";
 import fs from "node:fs/promises";
-import { existsSync } from "node:fs";
 import type { ToolDefinition, Skill, Finding } from "../core/types";
 import { createReadTool } from "./read";
 import { createWriteTool } from "./write";
@@ -13,6 +12,7 @@ import { createHttpTool } from "./http";
 import { createFindingTool } from "./finding";
 import { createSkillTool } from "./skill";
 import { createSecurityReconTool } from "./security";
+import { getSecuritySession } from "../core/securitySession";
 import {
   createUplinkSearchTool,
   createUplinkBrowseTool,
@@ -67,7 +67,7 @@ export function createTools(
     tools.load_skill = createSkillTool(skills, onActivateSkill);
   }
 
-  if (existsSync(path.join(cwd, ".morpheus", "engagement.json"))) {
+  if (getSecuritySession().active) {
     tools.security_recon = createSecurityReconTool();
   }
 

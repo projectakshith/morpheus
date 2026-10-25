@@ -1,3 +1,5 @@
+import type { Engagement } from "./engagement";
+
 export type MessageRole = "system" | "user" | "assistant" | "tool";
 
 export interface ToolCallFunction {
@@ -117,6 +119,7 @@ export interface AgentContext {
   gitStatus?: string;
   platform: string;
   date: string;
+  mode?: "coding" | "security";
   repoMap?: string;
   siblings?: string[];
   findings?: Finding[];
@@ -162,6 +165,7 @@ export interface AgentOptions {
   verbose?: boolean;
   /** Full access bypasses all action approval prompts. */
   permissionMode?: PermissionMode;
+  security?: { engagement: Engagement };
 }
 
 export type SubagentRole = "explore" | "review" | "implement";
