@@ -103,13 +103,13 @@ export function App({
     if (security.active) {
       if (getActiveThemeName() !== "attack") {
         previousThemeRef.current = getActiveThemeName();
-        transitionTheme("attack", 420);
+        transitionTheme("attack", 700);
       }
       void loadEngagement(process.cwd()).then(setEngagement);
       return;
     }
     if (getActiveThemeName() === "attack") {
-      transitionTheme(previousThemeRef.current, 320);
+      transitionTheme(previousThemeRef.current, 500);
     }
     setEngagement(null);
   }, [security.active, security.target]);

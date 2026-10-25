@@ -114,20 +114,20 @@ export const BUILTIN_THEMES: Record<string, ThemeColors> = {
     warning: "#ffe600",
   },
   attack: {
-    bg: "#0b0b0d",
-    bgFeed: "#0b0b0d",
-    bgColumn: "#0b0b0d",
-    bgUser: "#161417",
-    bgCode: "#08080a",
+    bg: "#0d0a0b",
+    bgFeed: "#0d0a0b",
+    bgColumn: "#0d0a0b",
+    bgUser: "#1b1114",
+    bgCode: "#090607",
     bgDiffAdd: "#0f1f16",
     bgDiffRemove: "#241012",
-    text: "#e8e3da",
+    text: "#f2d6ce",
     secondary: "#ffb454",
     accent: "#e5484d",
     accentBright: "#ff6369",
-    border: "#2b2b30",
-    borderSubtle: "#1c1c21",
-    muted: "#7d7d85",
+    border: "#33282b",
+    borderSubtle: "#1e1719",
+    muted: "#a38780",
     success: "#5bb98c",
     diffAdd: "#5bb98c",
     diffRemove: "#e5484d",
@@ -207,7 +207,7 @@ export function setTheme(name: string): boolean {
   return true;
 }
 
-export function transitionTheme(name: string, durationMs = 360): boolean {
+export function transitionTheme(name: string, durationMs = 650): boolean {
   const target = THEMES[name];
   if (!target) return false;
   cancelThemeTransition();
@@ -224,13 +224,13 @@ export function transitionTheme(name: string, durationMs = 360): boolean {
       notifyTheme();
       return;
     }
-    const eased = 1 - Math.pow(1 - progress, 3);
+    const eased = progress * progress * (3 - 2 * progress);
     currentColors = lerpTheme(from, target, eased);
     notifyTheme();
   };
   frame();
   if (!done) {
-    transitionTimer = setInterval(frame, 32);
+    transitionTimer = setInterval(frame, 28);
     transitionTimer.unref?.();
   }
   return true;
