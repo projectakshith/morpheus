@@ -35,13 +35,18 @@ export class SessionLogger {
     return this.latestPath;
   }
 
-  async init(task: string, cwd: string, model: string, tokenBudget?: number) {
+  async init(task: string, cwd: string, model: string, tokenBudget?: number, sessionId?: string) {
     try {
       await fs.mkdir(LOGS_DIR, { recursive: true });
       this.startTime = Date.now();
+      if (sessionId) {
+        const safeSessionId = sessionId.replace(/[^a-zA-Z0-9_-]/g, "_");
+        this.logPath = path.join(LOGS_DIR, `session_${safeSessionId}.log`);
+      }
       const header = [
         "============================================================",
         `MORPHEUS SESSION LOG - ${new Date().toISOString()}`,
+        ...(sessionId ? [`Session ID: ${sessionId}`] : []),
         `CWD: ${cwd}`,
         `Model: ${model}`,
         ...(tokenBudget ? [`Token Budget: ${tokenBudget.toLocaleString()} total`] : []),

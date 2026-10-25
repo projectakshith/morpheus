@@ -3,11 +3,10 @@
  */
 
 import fs from "node:fs/promises";
-import path from "node:path";
-import os from "node:os";
 import type { CommandHandler, CommandContext } from "./types";
 import type { Thread } from "../core/thread";
 import { listSessions, loadSession } from "../core/session";
+import { LOGS_DIR } from "../core/logger";
 
 function formatAge(timestamp: number): string {
   if (!timestamp) return "unknown";
@@ -30,6 +29,8 @@ export class SessionCommand implements CommandHandler {
     return (
       trimmed === "/log" ||
       trimmed === "/logs" ||
+      trimmed.startsWith("/log ") ||
+      trimmed.startsWith("/logs ") ||
       trimmed === "/session" ||
       trimmed === "/sessions" ||
       trimmed === "/new" ||
@@ -44,20 +45,41 @@ export class SessionCommand implements CommandHandler {
     const sub = parts[0] === "/session" ? parts[1]?.toLowerCase() : parts[0].slice(1).toLowerCase();
 
     /* /log or /logs: raw execution log viewer */
-    if (trimmed === "/log" || trimmed === "/logs") {
+    if (trimmed === "/log" || trimmed === "/logs" || trimmed.startsWith("/log ") || trimmed.startsWith("/logs ")) {
       let logContent = "";
+      const requestedId = parts[1] || ctx.sessionId;
       try {
-        const latestPath = path.join(os.homedir(), ".morpheus", "logs", "latest.log");
-        const raw = await fs.readFile(latestPath, "utf-8");
+        const logPath = requestedId
+          ? `${LOGS_DIR}/session_${requestedId.replace(/[^a-zA-Z0-9_-]/g, "_")}.log`
+          : `${LOGS_DIR}/latest.log`;
+        const raw = await fs.readFile(logPath, "utf-8");
         const lines = raw.trim().split("\n");
-        logContent = lines.slice(-40).join("\n");
+        logContent = lines.slice(-80).join("\n");
       } catch {
-        logContent = "No previous session log found at ~/.morpheus/logs/latest.log";
+        if (requestedId) {
+          const saved = await loadSession(requestedId);
+          const toolHistory = saved?.threads.flatMap((thread) => {
+            const calls = thread.steps.filter((step) => step.type === "tool");
+            if (calls.length === 0) return [];
+            return [
+              `\n[TURN ${thread.index}] ${thread.prompt}`,
+              ...calls.flatMap((step) => [
+                `[TOOL CALL] ${step.name ?? "tool"}${step.args ? `\nArguments:\n${JSON.stringify(step.args, null, 2)}` : ""}`,
+                `[TOOL RESULT] ${step.name ?? "tool"} (${step.isError ? "FAILED" : step.isRunning ? "RUNNING" : "SUCCESS"})\nOutput:\n${step.output ?? step.outputPreview?.join("\n") ?? step.outputSummary ?? "(no saved output)"}`,
+              ]),
+            ];
+          }).join("\n");
+          logContent = toolHistory
+            ? `Stored session tool history for ${saved?.title ?? requestedId} (${saved?.cwd ?? "unknown folder"}).\n${toolHistory}`
+            : `No tool output is available for session ${requestedId}.`;
+        } else {
+          logContent = "No previous session log found at ~/.morpheus/logs/latest.log";
+        }
       }
 
       this.createFeedbackThread(
         ctx,
-        `Latest session log (~/.morpheus/logs/latest.log):\n\`\`\`\n${logContent}\n\`\`\``
+        `${requestedId ? `Session log for \`${requestedId}\`` : "Latest session log"} (~/.morpheus/logs):\n\`\`\`\n${logContent}\n\`\`\``
       );
       return true;
     }
@@ -101,11 +123,11 @@ export class SessionCommand implements CommandHandler {
 
     /* /sessions or /session list: list past sessions in text mode */
     if (trimmed === "/sessions" || sub === "list" || sub === "ls" || trimmed === "/resume") {
-      const summaries = await listSessions(process.cwd(), 10);
+      const summaries = await listSessions(undefined, 10);
       if (summaries.length === 0) {
         this.createFeedbackThread(
           ctx,
-          "## No Saved Sessions Found\nNo previous sessions recorded in this repository."
+          "## No Saved Sessions Found\nNo previous Morpheus sessions have been recorded yet."
         );
         return true;
       }
@@ -113,7 +135,7 @@ export class SessionCommand implements CommandHandler {
       const rows = summaries.map((s, idx) => {
         const activeMarker = s.id === ctx.sessionId ? " *(active)*" : "";
         const age = formatAge(s.updatedAt);
-        return `${idx + 1}. \`${s.id}\`${activeMarker} · **${s.title}** (${s.turnCount} turns, ${age})`;
+        return `${idx + 1}. \`${s.id}\`${activeMarker} · **${s.title}** (${s.turnCount} turns, ${age}) · \`${s.cwd}\``;
       });
 
       const message = [

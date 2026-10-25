@@ -254,6 +254,10 @@ export class SessionHost {
       } catch {
       }
     }
+    if (event.type === "turn.queued" || event.type === "turn.started" ||
+        event.type === "tool.finished" || event.type === "turn.finished") {
+      void this.persist();
+    }
   }
 
   private persist(): Promise<void> {
@@ -355,6 +359,7 @@ export class SessionHost {
         subagents: { models: this.deps.subagentModels?.() },
         permissionMode: this.deps.permissionMode?.(),
         persistentMcp: true,
+        sessionId: this.state.id,
         findings: this.state.findings,
         onPermissionRequest: (request) => new Promise((resolve) => {
           this.permissionWaiters.set(request.id, resolve);

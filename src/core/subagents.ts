@@ -219,6 +219,7 @@ export function createSubagentRunnerOptions(input: {
       apiKey: input.parent.apiKey,
       baseURL: input.parent.baseURL,
       isLocal: input.parent.isLocal,
+      sessionId: input.parent.sessionId,
       maxTotalTokens: input.maxTotalTokens,
       maxSteps: input.maxSteps,
       abortSignal: input.parent.abortSignal,

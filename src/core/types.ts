@@ -139,6 +139,7 @@ export interface AgentOptions {
   /** Reuse MCP server processes across runs; the host must call closeMcpConnections() before exiting. */
   persistentMcp?: boolean;
   promptCacheKey?: string;
+  sessionId?: string;
   abortSignal?: AbortSignal;
   findings?: Finding[];
   onStepStart?: (stepNumber: number) => void;
