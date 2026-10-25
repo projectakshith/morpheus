@@ -299,7 +299,7 @@ export async function runAgent(
     }
     if (delegateTool) {
       notes.push(
-        "Use delegate_tasks only for genuinely independent work. Give each worker a focused task and only the context it needs. Review worker findings and verify any changes yourself before reporting completion."
+        "Use delegate_tasks only for genuinely independent work. Assign Matrix program personas to workers when specialized heuristics are beneficial: 'keymaker' (MCP/protocols), 'merovingian' (causality/blast-radius), 'oracle' (foresight/test design), 'architect' (types/modularity), 'sati' (surgical code edits), 'smith' (adversarial review), or 'twins' (comparative scout). Give each worker a focused task and only the context it needs. Review worker findings and verify any changes yourself before reporting completion."
       );
     }
     return notes.length ? `${systemPrompt}\n\n${notes.join("\n\n")}` : systemPrompt;

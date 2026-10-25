@@ -1,8 +1,10 @@
 import path from "node:path";
 import type { AgentOptions, AgentRunResult, SubagentOptions, SubagentRole, ToolDefinition } from "./types";
+import { resolveProgram, compileProgramPrompt, type ProgramId } from "./programs";
 
 export interface SubagentTask {
   role: SubagentRole;
+  program?: ProgramId;
   task: string;
   context?: string;
   files?: string[];
@@ -52,8 +54,17 @@ function parseTasks(value: unknown, maxTasks: number): SubagentTask[] {
   return value.map((candidate, index) => {
     if (!candidate || typeof candidate !== "object") throw new Error(`tasks[${index}] must be an object`);
     const task = candidate as Record<string, unknown>;
-    if (task.role !== "explore" && task.role !== "review" && task.role !== "implement") {
-      throw new Error(`tasks[${index}].role must be explore, review, or implement`);
+    let programId: ProgramId | undefined;
+    if (task.program !== undefined) {
+      const resolved = resolveProgram(task.program);
+      if (!resolved) {
+        throw new Error(`tasks[${index}].program '${String(task.program)}' is not a recognized Matrix program`);
+      }
+      programId = resolved.id;
+    }
+    const role = (task.role ?? (programId ? resolveProgram(programId)?.role : undefined)) as SubagentRole | undefined;
+    if (role !== "explore" && role !== "review" && role !== "implement") {
+      throw new Error(`tasks[${index}].role must be explore, review, or implement (or specify a valid Matrix program)`);
     }
     if (typeof task.task !== "string" || !task.task.trim() || task.task.length > 4000) {
       throw new Error(`tasks[${index}].task must be 1-4000 characters`);
@@ -65,14 +76,15 @@ function parseTasks(value: unknown, maxTasks: number): SubagentTask[] {
       throw new Error(`tasks[${index}].files must be an array of paths`);
     }
     const files = task.files as string[] | undefined;
-    if (task.role === "implement" && (!files?.length || files.length > 20)) {
+    if (role === "implement" && (!files?.length || files.length > 20)) {
       throw new Error(`tasks[${index}] implement role requires 1-20 allowed files`);
     }
-    if (task.role !== "implement" && files?.length) {
+    if (role !== "implement" && files?.length) {
       throw new Error(`tasks[${index}].files is only valid for implement tasks`);
     }
     return {
-      role: task.role,
+      role,
+      program: programId,
       task: task.task.trim(),
       context: typeof task.context === "string" ? task.context : undefined,
       files,
@@ -81,6 +93,12 @@ function parseTasks(value: unknown, maxTasks: number): SubagentTask[] {
 }
 
 function workerPrompt(task: SubagentTask): string {
+  if (task.program) {
+    const prog = resolveProgram(task.program);
+    if (prog) {
+      return compileProgramPrompt(task, prog);
+    }
+  }
   const roleInstruction = task.role === "explore"
     ? "Research the assigned question. Do not modify files. Return concise findings with file paths and line references."
     : task.role === "review"
@@ -107,7 +125,7 @@ export function createDelegateTasksTool(
 
   return {
     name: "delegate_tasks",
-    description: "Run up to three independent, bounded worker tasks in parallel. Each worker gets only its task and supplied context. Roles: explore/review are read-only; implement may edit only its required files list and cannot run shell commands or commit. Results and token usage return to you. Use when tasks are genuinely independent.",
+    description: "Run up to three independent, bounded worker tasks in parallel. Each worker gets only its task and supplied context. Roles: explore/review are read-only; implement may edit only its required files list and cannot run shell commands or commit. Matrix programs (keymaker, merovingian, oracle, architect, sati, smith, twins) provide specialized personas and operational directives. Results and token usage return to you. Use when tasks are genuinely independent.",
     parameters: {
       type: "object",
       properties: {
@@ -117,7 +135,12 @@ export function createDelegateTasksTool(
           items: {
             type: "object",
             properties: {
-              role: { type: "string", description: "Worker role", enum: ["explore", "review", "implement"] },
+              program: {
+                type: "string",
+                description: "Optional Matrix program persona: 'keymaker' (MCP/APIs), 'merovingian' (causality/blast-radius), 'oracle' (foresight/test design), 'architect' (types/modularity), 'sati' (surgical implementer), 'smith' (adversarial review), 'twins' (comparative scout)",
+                enum: ["keymaker", "merovingian", "oracle", "architect", "sati", "smith", "twins"],
+              },
+              role: { type: "string", description: "Worker role (defaults to the program's native role if program is specified)", enum: ["explore", "review", "implement"] },
               task: { type: "string", description: "One self-contained assignment" },
               context: { type: "string", description: "Relevant facts/files/results the coordinator wants this worker to receive" },
               files: {
@@ -126,7 +149,7 @@ export function createDelegateTasksTool(
                 items: { type: "string" },
               },
             },
-            required: ["role", "task"],
+            required: ["task"],
           },
         },
       },
@@ -167,7 +190,11 @@ export function createDelegateTasksTool(
             continue;
           }
           const task = tasks[index];
-          const model = policy.models?.[task.role] || parentModel;
+          const programContract = task.program ? resolveProgram(task.program) : undefined;
+          const model = (task.program && policy.models?.[task.program]) || policy.models?.[task.role] || parentModel;
+          const workerLabel = programContract
+            ? `${programContract.icon} ${programContract.callsign} (${task.role})`
+            : `${task.role} worker`;
           try {
             const result = await runWorker({
               task: { ...task, task: workerPrompt(task) },
@@ -177,14 +204,14 @@ export function createDelegateTasksTool(
             });
             spentTokens += result.usage.reported === false ? perWorkerBudget : result.usage.totalTokens;
             const details = [
-              `### ${task.role} worker · ${model}`,
+              `### ${workerLabel} · ${model}`,
               result.error ? `error: ${result.error}` : compactResult(result.text) || "(no result)",
               `usage: ${result.usage.totalTokens} tokens${result.usage.reported === false ? " (provider count unavailable)" : ""}`,
               result.stopReason && result.stopReason !== "completed" ? `stopped: ${result.stopReason}` : "",
             ].filter(Boolean);
             outputs[index] = details.join("\n");
           } catch (error) {
-            outputs[index] = `### ${task.role} worker · ${model}\nerror: ${error instanceof Error ? error.message : String(error)}`;
+            outputs[index] = `### ${workerLabel} · ${model}\nerror: ${error instanceof Error ? error.message : String(error)}`;
           }
         }
       }));

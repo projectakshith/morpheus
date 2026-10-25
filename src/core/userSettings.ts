@@ -5,7 +5,7 @@ import path from "node:path";
 import { randomUUID } from "node:crypto";
 import type { PermissionMode, SubagentRole } from "./types";
 
-export type SubagentModelMap = Partial<Record<SubagentRole, string>>;
+export type SubagentModelMap = Partial<Record<SubagentRole | string, string>>;
 
 export function loadPreferredModel(filePath = settingsPath()): string | undefined {
   try {
@@ -65,9 +65,12 @@ export function loadSubagentModels(filePath = settingsPath()): SubagentModelMap 
   try {
     const parsed = JSON.parse(fs.readFileSync(filePath, "utf8")) as { subagentModels?: Record<string, unknown> };
     const models: SubagentModelMap = {};
-    for (const role of ["explore", "review", "implement"] as const) {
-      const model = parsed.subagentModels?.[role];
-      if (typeof model === "string" && model.trim()) models[role] = model;
+    if (parsed.subagentModels && typeof parsed.subagentModels === "object") {
+      for (const [key, model] of Object.entries(parsed.subagentModels)) {
+        if (typeof model === "string" && model.trim()) {
+          models[key] = model.trim();
+        }
+      }
     }
     return models;
   } catch {

@@ -172,8 +172,8 @@ export type SubagentRole = "explore" | "review" | "implement";
 
 export interface SubagentOptions {
   enabled?: boolean;
-  /** Route roles to provider model IDs (for example `claude/claude-sonnet`). */
-  models?: Partial<Record<SubagentRole, string>>;
+  /** Route roles or specific Matrix programs to provider model IDs (for example `claude/claude-sonnet`). */
+  models?: Partial<Record<SubagentRole | string, string>>;
   maxParallel?: number;
   maxTasksPerRun?: number;
   maxTokensPerAgent?: number;
