@@ -3,7 +3,7 @@ import path from "node:path";
 import { createTools } from "../tools/index";
 import { createMcpTools } from "../tools/mcp";
 import { Operator } from "../provider/operator";
-import { gatherContext, buildSystemPrompt, securitySkillsEnabled } from "./context";
+import { gatherContext, buildSystemPrompt } from "./context";
 import { classifyRefusal, shouldRecover } from "./refusal";
 import { formatEngagementBlock, formatPendingScopeBlock, withSecurityRouter } from "./securityPrompt";
 import { compactHistory, dropOldToolVisuals } from "./compaction";
@@ -14,6 +14,7 @@ import { isConversationalStall } from "./stallGuard";
 import { ToolCallGuard, isVerificationCommand } from "./callGuard";
 import { matchSkills } from "./skills";
 import { createDelegateTasksTool, createSubagentRunnerOptions, resolveSubagentOptions } from "./subagents";
+import { classifyTaskArchetype, getWorkflow, formatWorkflowPrompt } from "./workflows";
 import { permissionReason } from "./permissions";
 import {
   calculateInitialStepBudget,
@@ -27,6 +28,8 @@ import type {
   AgentRunResult,
   ChatMessage,
   Finding,
+  RefusalKind,
+  RefusalRecord,
   Skill,
   TokenUsage,
   AgentStopReason,
@@ -136,6 +139,7 @@ export async function runAgent(
 ): Promise<AgentRunResult> {
   const cwd = options.cwd ?? process.cwd();
   const findings: Finding[] = [];
+  const refusals: RefusalRecord[] = [];
   const rememberFinding = (finding: Finding) => {
     const topic = compactFindingText(finding.topic, 80);
     const takeaway = compactFindingText(finding.takeaway, MAX_FINDING_TAKEAWAY_CHARS);
@@ -155,6 +159,7 @@ export async function runAgent(
   for (const finding of options.findings ?? []) rememberFinding(finding);
   const securityMode = Boolean(options.security);
   const securityEngagement = options.security?.engagement ?? null;
+  const workflow = getWorkflow(classifyTaskArchetype(prompt));
   const baseContext = gatherContext(cwd);
   const matchedSkills = matchSkills(prompt, baseContext.skills ?? []);
   const activeSkills: Skill[] = withSecurityRouter(
@@ -205,6 +210,23 @@ export async function runAgent(
     isLocal: options.isLocal,
     promptCacheKey: options.promptCacheKey ?? randomUUID(),
   });
+  const noteRefusal = (
+    kind: RefusalKind,
+    text: string,
+    retrying: boolean
+  ) => {
+    if (kind === "none") return;
+    const record: RefusalRecord = {
+      id: randomUUID(),
+      kind,
+      text: compactFindingText(text, 400),
+      model: operator.getModel(),
+      retrying,
+      createdAt: Date.now(),
+    };
+    refusals.push(record);
+    options.onRefusal?.(record);
+  };
   const runTokenBudget = options.maxTotalTokens ?? DEFAULT_RUN_TOKEN_BUDGET;
   const explorationTokenBudget = calculateExplorationTokenBudget(runTokenBudget);
   let activeReadOutputBudgetBytes = 16 * 1024;
@@ -293,6 +315,8 @@ export async function runAgent(
           ? formatEngagementBlock(securityEngagement)
           : formatPendingScopeBlock()
       );
+    } else {
+      notes.push(formatWorkflowPrompt(workflow));
     }
     if (Object.keys(mcp.tools).length > 0) {
       notes.push("For every MCP call, follow that tool's input schema: provide every required field using the user's request, schema defaults, or prior tool results. Make one MCP call at a time so later calls can use earlier results. Do not guess fields that lack evidence; skip that tool when a required value cannot be grounded.");
@@ -500,27 +524,32 @@ export async function runAgent(
         break;
       }
 
-      const refusalKind = securitySkillsEnabled(cwd)
+      const refusalKind = securityMode
         ? classifyRefusal(assistantContent, finishReason)
         : "none";
       if (shouldRecover(refusalKind) && refusalRecoveries < 1) {
         refusalRecoveries++;
+        noteRefusal(refusalKind, assistantContent, true);
         options.onNarration?.(assistantContent);
         accumulatedResponse = "";
         workingMessages.push({ role: "assistant", content: assistantContent || "[refused]" });
         workingMessages.push({
           role: "user",
           content:
-            "[System Notice: An authorized engagement scope is active for this workspace. Continue with the smallest read-only step: name the check, call the tool, and report the evidence. Do not restate policy.]",
+            "[System Notice: The model declined part of the task. Do not restate policy. If a read-only, in-scope verification can answer the operator's question, do that now and report the evidence. Otherwise state the exact missing authorization or capability in one sentence.]",
         });
         continue;
       }
       if (shouldRecover(refusalKind)) {
+        noteRefusal(refusalKind, assistantContent, false);
         stopReason = "refused";
         completedCleanly = true;
-        fullResponse = `${accumulatedResponse}${assistantContent}\n\n[security] The model declined this step. The engagement is still active; narrow the request or switch the model with /model.`;
+        fullResponse = `${accumulatedResponse}${assistantContent}\n\n[security] The model declined this step after one scoped retry. The engagement is still active; narrow the request, use a read-only check, or switch the model with /model.`;
         workingMessages.push({ role: "assistant", content: assistantContent || "[refused]" });
         break;
+      }
+      if (refusalKind === "clarify") {
+        noteRefusal(refusalKind, assistantContent, false);
       }
 
       if (!assistantContent.trim()) {
@@ -961,6 +990,8 @@ export async function runAgent(
     usage,
     stopReason,
     findings,
+    refusals,
+    archetype: workflow.archetype,
     aborted: wasAborted,
     error: finalError,
     logPath: logger.getLogPath(),

@@ -96,6 +96,17 @@ export interface Finding {
   endpoint?: string;
 }
 
+export type RefusalKind = "none" | "hard" | "partial" | "clarify";
+
+export interface RefusalRecord {
+  id: string;
+  kind: Exclude<RefusalKind, "none">;
+  text: string;
+  model: string;
+  retrying: boolean;
+  createdAt: number;
+}
+
 export interface Skill {
   name: string;
   category: string;
@@ -159,6 +170,7 @@ export interface AgentOptions {
   onPermissionResult?: (toolName: string, result: ToolResult, callId?: string) => void;
   /** Runs only for actions classified as high impact; callers should deny if no user can decide. */
   onPermissionRequest?: (request: { id: string; tool: string; args: Record<string, unknown>; reason: string; cancel: () => void }) => Promise<"allow" | "deny">;
+  onRefusal?: (refusal: RefusalRecord) => void;
   onUsage?: (usage: TokenUsage) => void;
   /* Called when a step's streamed text turns out to be narration rather than the final answer. */
   onNarration?: (text: string) => void;
@@ -188,6 +200,8 @@ export interface AgentRunResult {
   usage: TokenUsage;
   stopReason?: AgentStopReason;
   findings?: Finding[];
+  refusals?: RefusalRecord[];
+  archetype?: string;
   aborted?: boolean;
   error?: string;
   logPath?: string;
