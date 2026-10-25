@@ -202,6 +202,7 @@ export interface AgentRunResult {
   findings?: Finding[];
   refusals?: RefusalRecord[];
   archetype?: string;
+  artifactPath?: string;
   aborted?: boolean;
   error?: string;
   logPath?: string;

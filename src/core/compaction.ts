@@ -1,5 +1,6 @@
 import type { ChatMessage, CoreMessage } from "./types";
 import { isToolError } from "../utils/errors";
+import { saveCompactionCheckpoint } from "./artifacts/saver";
 
 export interface CompactionOptions {
   /**
@@ -88,6 +89,9 @@ function compactOlderTurns(
   const clipSummary = (value: string) => value.length <= MAX_OLDER_TURN_SUMMARY_CHARS
     ? value
     : `[Earlier items omitted]\n${value.slice(-(MAX_OLDER_TURN_SUMMARY_CHARS - 25))}`;
+
+  const fullSummary = `${HISTORY_SUMMARY_USER}\n${requests}\n\n${HISTORY_SUMMARY_ASSISTANT}\n${outcomes}`;
+  void saveCompactionCheckpoint(undefined, fullSummary).catch(() => {});
 
   const summaryMessages: ChatMessage[] = [
     { role: "user", content: `${HISTORY_SUMMARY_USER}\n${clipSummary(requests)}` },

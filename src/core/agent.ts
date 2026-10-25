@@ -15,6 +15,7 @@ import { ToolCallGuard, isVerificationCommand } from "./callGuard";
 import { matchSkills } from "./skills";
 import { createDelegateTasksTool, createSubagentRunnerOptions, resolveSubagentOptions } from "./subagents";
 import { classifyTaskArchetype, getWorkflow, formatWorkflowPrompt } from "./workflows";
+import { saveWorkflowArtifact } from "./artifacts";
 import { permissionReason } from "./permissions";
 import {
   calculateInitialStepBudget,
@@ -983,6 +984,16 @@ export async function runAgent(
   await logger.logStopReason(stopReason, finalError);
   await logger.logFinish(usage, wasAborted);
 
+  let artifactPath: string | undefined;
+  if (fullResponse.trim().length > 100 && stopReason === "completed" && !wasAborted) {
+    try {
+      const saved = await saveWorkflowArtifact(cwd, workflow.artifactFilename, fullResponse, workflow.archetype);
+      artifactPath = saved.workspacePath ?? saved.globalPath;
+    } catch {
+      // Non-fatal if report persistence fails
+    }
+  }
+
   return {
     text: fullResponse,
     steps: stepCount,
@@ -992,6 +1003,7 @@ export async function runAgent(
     findings,
     refusals,
     archetype: workflow.archetype,
+    artifactPath,
     aborted: wasAborted,
     error: finalError,
     logPath: logger.getLogPath(),
