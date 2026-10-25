@@ -367,6 +367,7 @@ export function buildHeroFeedLines(width: number, totalLines: number, quote?: st
   const rawQuote = quote || MATRIX_QUOTES[0];
 
   const lines: FeedLine[] = [];
+  const midY = Math.floor(H / 2);
   const artAnchorX = W >= 70 ? Math.floor(W * 0.62) : Math.floor(W / 2);
 
   const textRows: Record<number, Array<{ text: string; color: string }>> = {};
@@ -410,7 +411,7 @@ export function buildHeroFeedLines(width: number, totalLines: number, quote?: st
   }
 
   for (let y = 0; y < H; y++) {
-    const srcY = y;
+    const srcY = 25 + (y - midY);
 
     interface Cell {
       ch: string;
