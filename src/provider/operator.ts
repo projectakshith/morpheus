@@ -331,6 +331,7 @@ export class Operator {
     const formattedTools = formatToolsForPayload(options.tools);
     if (formattedTools) {
       payload.tools = formattedTools;
+      payload.parallel_tool_calls = false;
     }
     const promptCacheKey = options.promptCacheKey ?? this.promptCacheKey;
     const isNeoProxy = /(?:localhost|127\.0\.0\.1):8787(?:\/|$)/.test(this.baseURL);

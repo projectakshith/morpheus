@@ -14,8 +14,9 @@ fs.mkdirSync(workspace);
 fs.writeFileSync(path.join(workspace, "big.ts"), Array.from({ length: 200 }, (_, i) => `const v${i} = ${i};`).join("\n"));
 
 let runAgent: typeof import("../src/core/agent").runAgent;
+let completeGroundedMcpArguments: typeof import("../src/core/agent").completeGroundedMcpArguments;
 before(async () => {
-  ({ runAgent } = await import("../src/core/agent"));
+  ({ runAgent, completeGroundedMcpArguments } = await import("../src/core/agent"));
 });
 
 const realFetch = globalThis.fetch;
@@ -43,6 +44,23 @@ function toolCall(id: string, name: string, args: object, usage?: { promptTokens
     { choices: [{ delta: {}, finish_reason: "tool_calls" }] },
   ], usage);
 }
+
+test("MCP search calls inherit a missing query from the user request without guessing symbols", () => {
+  const tool = {
+    name: "mcp_seraph_search_code",
+    description: "Search code",
+    parameters: {
+      type: "object" as const,
+      properties: { query: { type: "string", description: "Search query" }, symbol: { type: "string" } },
+      required: ["query", "symbol"],
+    },
+    execute: async () => "",
+  };
+  assert.deepEqual(
+    completeGroundedMcpArguments(tool, {}, "Inspect how this repository starts subprocesses"),
+    { query: "Inspect how this repository starts subprocesses" }
+  );
+});
 
 function multipleToolCalls(calls: Array<{ id: string; name: string; args: object }>): Response {
   return sse([
@@ -104,6 +122,48 @@ test("Agent stops a redundant-call loop and still returns a final answer", async
   assert.equal(result.stopReason, "loop_guard");
   assert.ok(requests.every((request) => request.prompt_cache_key === requests[0].prompt_cache_key));
   assert.ok(requests[0].prompt_cache_key, "provider prompt cache key is stable within the run");
+});
+
+test("Agent validates required tool arguments before invoking handlers", async () => {
+  scriptModel([
+    toolCall("missing-path", "read_file", {}),
+    text("I need a file path before I can read anything."),
+  ]);
+
+  const result = await runAgent("inspect the packaging script", [], {
+    cwd: workspace,
+    baseURL: "https://example.test/v1",
+    apiKey: "k",
+  });
+
+  const invalidCall = toolResults(result.messages).find((message) => message.tool_call_id === "missing-path");
+  assert.ok(invalidCall);
+  assert.match(String(invalidCall.content), /required argument is missing: filePath/);
+  assert.doesNotMatch(String(invalidCall.content), /Received undefined/);
+  assert.equal(result.text, "I need a file path before I can read anything.");
+});
+
+test("Agent skips repeated malformed calls without stopping unrelated tool work", async () => {
+  const { requests } = scriptModel([
+    toolCall("missing-path-1", "read_file", {}),
+    toolCall("missing-path-2", "read_file", {}),
+    text("I could not read because the required file path was omitted."),
+  ]);
+
+  const result = await runAgent("explore the repository with Seraph", [], {
+    cwd: workspace,
+    baseURL: "https://example.test/v1",
+    apiKey: "k",
+  });
+
+  const results = toolResults(result.messages);
+  assert.equal(results.length, 2);
+  assert.match(String(results[0].content), /required argument is missing: filePath/);
+  assert.match(String(results[1].content), /required argument is missing: filePath/);
+  assert.notEqual(result.stopReason, "loop_guard");
+  assert.equal(result.text, "I could not read because the required file path was omitted.");
+  assert.equal(requests.length, 3);
+  assert.ok(requests[2].tools, "the agent can continue with other tools after an invalid call");
 });
 
 test("Agent treats repeated output from novel commands as no progress", async () => {

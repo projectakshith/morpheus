@@ -39,6 +39,7 @@ const NO_PROGRESS_STEP_THRESHOLD = 3;
 const MAX_FINDINGS = 12;
 const MAX_FINDING_TAKEAWAY_CHARS = 320;
 type AgentLifecycle = "exploring" | "synthesizing" | "finished";
+
 const WORKSPACE_TOOLS = new Set([
   "read_file",
   "write_file",
@@ -55,12 +56,60 @@ function compactFindingText(value: string, limit: number): string {
 }
 
 /* Safely executes a tool handler, extracting output and detecting errors cleanly. */
+function missingRequiredArguments(tool: ToolDefinition, args: Record<string, unknown>): string[] {
+  return (tool.parameters.required ?? []).filter((key) => {
+    const value = args[key];
+    return value === undefined || value === null || (typeof value === "string" && value.trim() === "");
+  });
+}
+
+export function completeGroundedMcpArguments(
+  tool: ToolDefinition,
+  args: Record<string, unknown>,
+  userPrompt: string
+): Record<string, unknown> {
+  if (!tool.name.startsWith("mcp_")) return args;
+  const completed = { ...args };
+  for (const key of tool.parameters.required ?? []) {
+    if (completed[key] !== undefined && completed[key] !== null && completed[key] !== "") continue;
+    const property = tool.parameters.properties[key] as ((typeof tool.parameters.properties)[string] & { default?: unknown }) | undefined;
+    if (!property) continue;
+    if (property.default !== undefined) {
+      completed[key] = property.default;
+      continue;
+    }
+    const isText = property.type === "string";
+    const describesRequest = /\b(query|search terms?|task|instruction|prompt|question|request)\b/i
+      .test(`${key} ${property.description ?? ""}`);
+    if (isText && describesRequest && userPrompt.trim()) completed[key] = userPrompt.trim();
+  }
+  return completed;
+}
+
+function missingArgumentMessage(tool: ToolDefinition, missing: string[]): string {
+  const schema = tool.parameters.properties;
+  const details = missing.map((key) => {
+    const description = schema[key]?.description;
+    return description ? `${key} (${description})` : key;
+  });
+  return `Error: Tool '${tool.name}' was not run because required argument${missing.length === 1 ? " is" : "s are"} missing: ${details.join(", ")}. Retry with the required value${missing.length === 1 ? "" : "s"} from the user's request or prior tool results.`;
+}
+
 async function executeToolSafely(
   tool: ToolDefinition,
   args: Record<string, unknown>,
   cwd: string,
   signal?: AbortSignal
 ): Promise<{ output: string; isError: boolean; metadata?: Record<string, unknown> }> {
+  const missing = missingRequiredArguments(tool, args);
+  if (missing.length > 0) {
+    return {
+      output: missingArgumentMessage(tool, missing),
+      isError: true,
+      metadata: { invalidArguments: true, missingArguments: missing },
+    };
+  }
+
   try {
     const res = await tool.execute(args, cwd, signal);
     const output = typeof res === "string" ? res : res.output;
@@ -207,11 +256,15 @@ export async function runAgent(
     }
   };
   if (hasCuaTools && historyUsedCua) activateComputerUse();
-  const visibleTools = (): Record<string, ToolDefinition> => {
+  const baseVisibleTools = (): Record<string, ToolDefinition> => {
     if (!hasCuaTools || !computerUseSkill || activeSkills.some((skill) => skill.name === computerUseSkill.name)) {
       return tools;
     }
     return Object.fromEntries(Object.entries(tools).filter(([name]) => !name.startsWith("mcp_cua_")));
+  };
+  const suppressedInvalidTools = new Set<string>();
+  const visibleTools = (): Record<string, ToolDefinition> => {
+    return Object.fromEntries(Object.entries(baseVisibleTools()).filter(([name]) => !suppressedInvalidTools.has(name)));
   };
   const buildRunSystemPrompt = () => {
     const systemPrompt = buildSystemPrompt({
@@ -219,12 +272,19 @@ export async function runAgent(
       findings: [...findings],
       activeSkills: [...activeSkills],
     });
-    return delegateTool
-      ? `${systemPrompt}\n\nUse delegate_tasks only for genuinely independent work. Give each worker a focused task and only the context it needs. Review worker findings and verify any changes yourself before reporting completion.`
-      : systemPrompt;
+    const notes: string[] = [];
+    if (Object.keys(mcp.tools).length > 0) {
+      notes.push("For every MCP call, follow that tool's input schema: provide every required field using the user's request, schema defaults, or prior tool results. Make one MCP call at a time so later calls can use earlier results. Do not guess fields that lack evidence; skip that tool when a required value cannot be grounded.");
+    }
+    if (delegateTool) {
+      notes.push(
+        "Use delegate_tasks only for genuinely independent work. Give each worker a focused task and only the context it needs. Review worker findings and verify any changes yourself before reporting completion."
+      );
+    }
+    return notes.length ? `${systemPrompt}\n\n${notes.join("\n\n")}` : systemPrompt;
   };
   const logger = new SessionLogger();
-  await logger.init(prompt, cwd, operator.getModel(), runTokenBudget);
+  await logger.init(prompt, cwd, operator.getModel(), runTokenBudget, options.sessionId);
 
   const workingMessages: ChatMessage[] = [
     ...compactHistory(history, { recentTurnsToProtect: 1, summarizeOlderTurns: true }),
@@ -460,6 +520,7 @@ export async function runAgent(
      * recorded and appended in model order below so the transcript stays valid. */
     const parallelReadResults = new Map<string, ReturnType<typeof executeToolSafely>>();
     const parallelReadTools = new Set(["read_file", "list_dir", "grep_code", "outline_code"]);
+    const canParallelRead = (name: string) => parallelReadTools.has(name);
     const reserveTokens = 2048;
     const availableReadTokens = Math.max(256, tokenSafetyCeiling - currentPromptTokens - reserveTokens);
     const readOutputBytes = Math.min(16 * 1024, availableReadTokens * 4);
@@ -467,9 +528,9 @@ export async function runAgent(
     for (let start = 0; start < toolCalls.length;) {
       if (loopStopReason || options.abortSignal?.aborted) break;
       const firstName = toolCalls[start].function.name;
-      if (!parallelReadTools.has(firstName)) { start++; continue; }
+      if (!canParallelRead(firstName)) { start++; continue; }
       let end = start + 1;
-      while (end < toolCalls.length && parallelReadTools.has(toolCalls[end].function.name)) end++;
+      while (end < toolCalls.length && canParallelRead(toolCalls[end].function.name)) end++;
       const batch = toolCalls.slice(start, end);
       if (batch.length < 2) { start = end; continue; }
 
@@ -522,10 +583,11 @@ export async function runAgent(
         parsedArgs = { raw: toolCall.function.arguments };
       }
 
+      const targetTool = tools[toolName];
+      if (targetTool) parsedArgs = completeGroundedMcpArguments(targetTool, parsedArgs, prompt);
       options.onToolCall?.(toolName, parsedArgs, toolCall.id);
       await logger.logToolCall(stepCount, toolName, parsedArgs);
 
-      const targetTool = tools[toolName];
       let outputStr = "";
       let isError = false;
       let toolExecuted = false;
@@ -533,12 +595,17 @@ export async function runAgent(
       let toolChanged = true;
       let toolImages: { mimeType: string; data: string }[] = [];
       if (toolName.startsWith("mcp_cua_")) activateComputerUse();
+      const missingArguments = targetTool ? missingRequiredArguments(targetTool, parsedArgs) : [];
 
       if (loopStopReason) {
         outputStr = "[Tool skipped because the run was stopped.]";
       } else if (options.abortSignal?.aborted) {
         wasAborted = true;
         outputStr = "[Tool cancelled before execution.]";
+      } else if (targetTool && missingArguments.length > 0) {
+        outputStr = `${missingArgumentMessage(targetTool, missingArguments)} Those values could not be grounded, so this tool is temporarily withheld while other work continues.`;
+        suppressedInvalidTools.add(toolName);
+        isError = true;
       } else if (!targetTool) {
         outputStr = `Error: Tool '${toolName}' not found. Available tools: ${Object.keys(tools).join(", ")}`;
         isError = true;
@@ -621,6 +688,7 @@ export async function runAgent(
             outputStr.trim().length > 0 &&
             !outputStr.includes("completed with no output") && !outputStr.includes("cancelled");
           if (usefulOutput && inScope) {
+            suppressedInvalidTools.clear();
             const stableOutput = outputStr
               .replace(/tool_\d+_[a-z0-9]+\.log/g, "tool_<id>.log")
               .replace(/\b(capture_[0-9a-f_]+|s[0-9a-f]{8}(:\d+)?)\b/g, "<id>");
