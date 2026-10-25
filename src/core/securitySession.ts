@@ -42,6 +42,10 @@ export function beginSecuritySession(target?: string): void {
 }
 
 export function deactivateSecuritySession(): void {
-  state = { active: false };
+  state = {
+    active: false,
+    target: undefined,
+    engagementId: undefined,
+  };
   for (const listener of listeners) listener();
 }

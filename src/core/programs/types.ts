@@ -1,4 +1,5 @@
 import type { SubagentRole } from "../types";
+export type { SubagentRole };
 
 export type ProgramId =
   | "keymaker"

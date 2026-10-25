@@ -1,6 +1,6 @@
 import path from "node:path";
 import type { AgentOptions, AgentRunResult, SubagentOptions, SubagentRole, ToolDefinition } from "./types";
-import { resolveProgram, compileProgramPrompt, type ProgramId } from "./programs";
+import { resolveProgram, compileProgramPrompt, programTelemetry, type ProgramId } from "./programs";
 
 export interface SubagentTask {
   role: SubagentRole;
@@ -195,6 +195,16 @@ export function createDelegateTasksTool(
           const workerLabel = programContract
             ? `${programContract.icon} ${programContract.callsign} (${task.role})`
             : `${task.role} worker`;
+          const runId = `prog_${Date.now()}_${index}`;
+          if (task.program) {
+            programTelemetry.recordStart({
+              runId,
+              programId: task.program,
+              role: task.role,
+              model,
+              task: task.task,
+            });
+          }
           try {
             const result = await runWorker({
               task: { ...task, task: workerPrompt(task) },
@@ -202,6 +212,14 @@ export function createDelegateTasksTool(
               maxTotalTokens: perWorkerBudget,
               maxSteps: policy.maxStepsPerAgent,
             });
+            if (task.program) {
+              programTelemetry.recordFinish(runId, {
+                tokensUsed: result.usage.totalTokens,
+                status: result.error ? "failed" : "completed",
+                outputPreview: result.text,
+                error: result.error,
+              });
+            }
             spentTokens += result.usage.reported === false ? perWorkerBudget : result.usage.totalTokens;
             const details = [
               `### ${workerLabel} · ${model}`,
@@ -211,6 +229,12 @@ export function createDelegateTasksTool(
             ].filter(Boolean);
             outputs[index] = details.join("\n");
           } catch (error) {
+            if (task.program) {
+              programTelemetry.recordFinish(runId, {
+                status: "failed",
+                error: error instanceof Error ? error.message : String(error),
+              });
+            }
             outputs[index] = `### ${workerLabel} · ${model}\nerror: ${error instanceof Error ? error.message : String(error)}`;
           }
         }
